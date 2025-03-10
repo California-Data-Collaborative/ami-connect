@@ -121,18 +121,22 @@ class SentryxAdapter(BaseAMIAdapter):
         headers = {
             "Authorization": self.api_key,
         }
+        
+        params = {"pager.skip": 0, "pager.take": 25}
 
         meters = []
 
         last_page = False
+        num_meters = 0
         while last_page is False:
-            response = requests.get(url, headers=headers)
+            logger.info(f"Extracting meters for {self.utility}, skip={params["pager.skip"]}")
+            response = requests.get(url, headers=headers, params=params)
             if not response.ok:
                 logger.warning(f"Non-200 response from devices endpoint: {response.status_code}")
                 return []
-            # TODO Error handling
             data = response.json()
             raw_meters = data.get("meters", [])
+            num_meters += len(raw_meters)
             for raw_meter in raw_meters:
                 meters.append(
                     SentryxMeter(
@@ -151,7 +155,10 @@ class SentryxAdapter(BaseAMIAdapter):
                         meter_size=raw_meter["meterSize"]
                     )    
                 )
-            last_page = True
+            params["pager.skip"] = num_meters
+            last_page = not raw_meters
+
+        logger.info(f"Extracted {len(meters)} meters for {self.utility}")
 
         return meters
 
