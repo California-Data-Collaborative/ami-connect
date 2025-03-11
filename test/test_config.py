@@ -1,7 +1,7 @@
 import os
 from unittest import mock, TestCase
 
-from config import AMIAdapterConfiguration
+from amiadapters.config import AMIAdapterConfiguration
 
 
 class TestConfig(TestCase):

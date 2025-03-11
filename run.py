@@ -1,8 +1,8 @@
 import logging
 import sys
 
-from adapters.sentryx import SentryxAdapter
-from config import AMIAdapterConfiguration
+from amiadapters.sentryx import SentryxAdapter
+from amiadapters.config import AMIAdapterConfiguration
 
 logger = logging.getLogger(__name__)
 

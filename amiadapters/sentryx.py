@@ -6,9 +6,9 @@ import requests
 import os
 from typing import List
 
-from adapters.base import BaseAMIAdapter, DataclassJSONEncoder, \
+from amiadapters.base import BaseAMIAdapter, DataclassJSONEncoder, \
     GeneralMeter, GeneralMeterRead, GeneralModelJSONEncoder
-from config import AMIAdapterConfiguration
+from amiadapters.config import AMIAdapterConfiguration
 
 logger = logging.getLogger(__name__)
 

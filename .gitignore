@@ -171,4 +171,4 @@ cython_debug/
 .pypirc
 ami-connect/secrets.py
 
-ami-ingest-adapters/output/
+output
