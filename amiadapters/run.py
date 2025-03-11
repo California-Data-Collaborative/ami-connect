@@ -1,15 +1,15 @@
 import logging
-import sys
 
-from adapters.sentryx import SentryxAdapter
-from config import AMIAdapterConfiguration
+from amiadapters.config import AMIAdapterConfiguration
+from amiadapters.sentryx import SentryxAdapter
 
 logger = logging.getLogger(__name__)
 
 
-def run():
-    logging.basicConfig(level=logging.INFO)
-    
+def run_extract_transform():
+    """
+    Run AMI API adapters to fetch AMI data, then shape it into generalized format.
+    """
     config = AMIAdapterConfiguration.from_env()
     adapters = [
         SentryxAdapter(config)
@@ -27,12 +27,3 @@ def run():
         logger.info(f"Transformed data for {adapter.name()} to {config.output_folder}")
     
     logger.info(f"Transformed data for {len(adapters)} adapters")
-    
-    return 0
-
-
-if __name__ == "__main__":
-    """
-    Run AMI API adapters to fetch AMI data, then shape it into generalized format.
-    """
-    sys.exit(run())
