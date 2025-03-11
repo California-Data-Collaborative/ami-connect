@@ -6,8 +6,8 @@ import requests
 import os
 from typing import List
 
-from adapters.base import BaseAMIAdapter
-from adapters.base import DataclassJSONEncoder
+from adapters.base import BaseAMIAdapter, DataclassJSONEncoder, \
+    GeneralMeter, GeneralMeterRead, GeneralModelJSONEncoder
 from config import AMIAdapterConfiguration
 
 logger = logging.getLogger(__name__)
@@ -94,6 +94,46 @@ class SentryxMeter:
     meter_size: str
 
 
+@dataclass
+class SentryxMeterRead:
+    time_stamp: str
+    reading: float
+
+
+@dataclass
+class SentryxMeterWithReads:
+    """
+    "deviceId": 601133200,
+    "bodySerialNumber": "1800132722",
+    "muellerSerialNumber": "6011332",
+    "registerSerialNumber": "1800132722",
+    "units": "CF",
+    "data": [
+        {
+            "timeStamp": "2024-07-07T01:00:00",
+            "reading": 35828,
+            "consumption": 0
+        },
+        ...
+    ]
+    """
+    device_id: str
+    units: str
+    data: List[SentryxMeterRead]
+
+    @classmethod
+    def from_json(cls, d: str):
+        """
+        Dataclass doesn't handle nested JSON well, so we roll our own.
+        """
+        meter = SentryxMeterWithReads(**json.loads(d))
+        reads = []
+        for read in meter.data:
+            reads.append(SentryxMeterRead(**read))
+        meter.data = reads
+        return meter
+
+
 class SentryxAdapter(BaseAMIAdapter):
 
     def __init__(self, config: AMIAdapterConfiguration):
@@ -110,9 +150,9 @@ class SentryxAdapter(BaseAMIAdapter):
             content = "\n".join(json.dumps(m, cls=DataclassJSONEncoder) for m in meters)
             f.write(content)
 
-        meter_consumption_response = self._extract_consumption_for_all_meters()
+        meters_with_reads = self._extract_consumption_for_all_meters()
         with open(self._raw_reads_output_file(), "w") as f:
-            content = "\n".join(json.dumps(m) for m in meter_consumption_response.json()["meters"])
+            content = "\n".join(json.dumps(m, cls=DataclassJSONEncoder) for m in meters_with_reads)
             f.write(content)
     
     def _extract_all_meters(self) -> List[SentryxMeter]:
@@ -162,7 +202,7 @@ class SentryxAdapter(BaseAMIAdapter):
 
         return meters
 
-    def _extract_consumption_for_all_meters(self):
+    def _extract_consumption_for_all_meters(self) -> List[SentryxMeterWithReads]:
         url = f"{BASE_URL}/{self.utility}/devices/consumption"
     
         headers = {
@@ -171,55 +211,85 @@ class SentryxAdapter(BaseAMIAdapter):
 
         end_date = datetime.today()
         start_date = end_date - timedelta(days=2)
+        # TODO configurable date range
         params = {
-            "Skip": 0,
-            "Take": 25,
+            "skip": 0,
+            "take": 25,
             "StartDate": start_date.isoformat(),
             "EndDate": end_date.isoformat(),
         }
-
-        # TODO pagination
-        # TODO configurable date range
-        response = requests.get(url, params=params, headers=headers)
-        return response
+        last_page = False
+        num_meters = 0
+        meters = []
+        while last_page is False:
+            logger.info(f"Extracting meter reads for {self.utility}, skip={params["skip"]}")
+            response = requests.get(url, headers=headers, params=params)
+            if not response.ok:
+                logger.warning(f"Non-200 response from device consumption endpoint: {response.status_code}")
+                return
+            data = response.json()
+            raw_meters = data.get("meters", [])
+            num_meters += len(raw_meters)
+            for raw_meter in raw_meters:
+                reads = [SentryxMeterRead(time_stamp=i["timeStamp"], reading=i["reading"]) for i in raw_meter["data"]]
+                meters.append(
+                    SentryxMeterWithReads(
+                        device_id=raw_meter["deviceId"],
+                        units=raw_meter["units"],
+                        data=reads,
+                    )
+                )
+            params["skip"] = num_meters
+            last_page = not raw_meters
+            
+        return meters
 
     def transform(self):
+        with open(self._raw_meter_output_file(), "r") as f:
+            text = f.read()
+            raw_meters = [SentryxMeter(**json.loads(d)) for d in text.strip().split("\n")]
+            
+        
         with open(self._raw_reads_output_file(), "r") as f:
             text = f.read()
-            raw_meter_reads = [json.loads(d) for d in text.strip().split("\n")]
+            raw_meters_with_reads = [SentryxMeterWithReads.from_json(d) for d in text.strip().split("\n")]
 
         meters_by_id = {}
-        meter_reads_by_meter_id = {}
-        for raw_meter in raw_meter_reads:
-            device_id = raw_meter.get("deviceId")
-            if device_id is None:
-                continue
-            
-            if device_id not in meters_by_id:
-                meters_by_id[device_id] = {
-                    "meter_id": device_id,
-                }
-            
-            for raw_read in raw_meter.get("data", []):
-                # TODO normalize datetimes
-                flowtime = raw_read.get("timeStamp")
-                value = raw_read.get("reading")
-                if flowtime is None or value is None:
-                    continue
-                read = {
-                    "meter_id": device_id,
-                    "flowtime": flowtime,
-                    "raw_value": value
-                }
-                if device_id not in meter_reads_by_meter_id:
-                    meter_reads_by_meter_id[device_id] = []
-                meter_reads_by_meter_id[device_id].append(read)
+        for raw_meter in raw_meters:
+            # TODO Location? We have components like street, city, state, but no ID
+            meter = GeneralMeter(
+                meter_id=raw_meter.device_id,
+                account_id=raw_meter.account_id,
+                size_inches=raw_meter.meter_size,
+                location_id=None,
+            )
+            meters_by_id[meter.meter_id] = meter
+
+        meter_reads = []
+        for raw_meter in raw_meters_with_reads:
+            device_id = raw_meter.device_id
+            meter_metadata = meters_by_id.get(device_id)
+            account_id = meter_metadata.account_id if meter_metadata is not None else None
+            for raw_read in raw_meter.data:
+                # TODO set the timezone if/when we can confirm what it is.
+                flowtime = datetime.fromisoformat(raw_read.time_stamp)
+                value = raw_read.reading
+                read = GeneralMeterRead(
+                    meter_id=device_id,
+                    account_id=account_id,
+                    location_id=None,
+                    flowtime=flowtime,
+                    raw_value=value,
+                    # TODO should this be normalized?
+                    raw_unit=raw_meter.units
+                )
+                meter_reads.append(read)
         
         with open(self._transformed_meter_output_file(), "w") as f:
-            f.write(json.dumps(list(meters_by_id.values())))
+            f.write("\n".join(json.dumps(v, cls=GeneralModelJSONEncoder) for v in meters_by_id.values()))
 
         with open(self._transformed_reads_output_file(), "w") as f:
-            f.write(json.dumps(list(meter_reads_by_meter_id.values())))
+            f.write("\n".join(json.dumps(m, cls=GeneralModelJSONEncoder) for m in meter_reads))
 
     def _raw_meter_output_file(self) -> str:
         return os.path.join(self.output_folder, f"{self.name()}-raw-meters.txt")
