@@ -1,5 +1,6 @@
 import logging
 
+from amiadapters.beacon import Beacon360Adapter
 from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.sentryx import SentryxAdapter
 
@@ -12,7 +13,8 @@ def run_extract_transform():
     """
     config = AMIAdapterConfiguration.from_env()
     adapters = [
-        SentryxAdapter(config)
+        # SentryxAdapter(config),
+        Beacon360Adapter(config),
     ]
     for adapter in adapters:
         logger.info(f"Extracting data for {adapter.name()}")
