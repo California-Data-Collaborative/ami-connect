@@ -1,10 +1,13 @@
+import csv
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-import logging
+from io import StringIO
 import json
+import logging
 import os
 import requests
 import time
+from typing import List
 
 from amiadapters.base import BaseAMIAdapter, DataclassJSONEncoder
 from amiadapters.config import AMIAdapterConfiguration
@@ -126,22 +129,115 @@ class Beacon360MeterAndRead:
     """
     Representation of row in the Beacon 360 range report CSV, which includes
     meter metadata and meter read data.
+
+    We make the attribute names match the column names in the Beacon 360 CSV for code convenience.
     """
-    account_id: str
-    location_id: str
-    location_address_line_1: str
-    location_address_line_2: str
-    location_address_line_3: str
-    location_city: str
-    location_country: str
-    location_state: str
-    location_zip: str
-    meter_id: str
-    meter_install_date: str
-    meter_size: str
-    flow_time: str
-    flow_unit: str
-    raw_read: float
+    Account_Billing_Cycle: str
+    Account_Email: str
+    Account_First_Name: str
+    Account_Full_Name: str
+    Account_ID: str
+    Account_Last_Name: str
+    Account_Phone: str
+    Account_Portal_Status: str
+    Account_Status: str
+    Alert_Code: str
+    Backflow_Gallons: str
+    Battery_Level: str
+    Billing_Address_Line1: str
+    Billing_Address_Line2: str
+    Billing_Address_Line3: str
+    Billing_City: str
+    Billing_Country: str
+    Billing_State: str
+    Billing_ZIP: str
+    Connector_Type: str
+    Current_Leak_Rate: str
+    Current_Leak_Start_Date: str
+    Demand_Zone_ID: str
+    Dials: str
+    Endpoint_Install_Date: str
+    Endpoint_SN: str
+    Endpoint_Status: str
+    Endpoint_Type: str
+    Estimated_Flag: str
+    Flow: str
+    Flow_Time: str
+    Flow_Unit: str
+    High_Read_Limit: str
+    Last_Comm_Time: str
+    Location_Address_Line1: str
+    Location_Address_Line2: str
+    Location_Address_Line3: str
+    Location_Address_Parity: str
+    Location_Area: str
+    Location_Bathrooms: str
+    Location_Building_Number: str
+    Location_Building_Type: str
+    Location_City: str
+    Location_Continuous_Flow: str
+    Location_Country: str
+    Location_County_Name: str
+    Location_DHS_Code: str
+    Location_District: str
+    Location_Funding: str
+    Location_ID: str
+    Location_Irrigated_Area: str
+    Location_Irrigation: str
+    Location_Latitude: str
+    Location_Longitude: str
+    Location_Main_Use: str
+    Location_Name: str
+    Location_Pool: str
+    Location_Population: str
+    Location_Site: str
+    Location_State: str
+    Location_Water_Type: str
+    Location_Year_Built: str
+    Location_ZIP: str
+    Low_Read_Limit: str
+    Meter_Continuous_Flow: str
+    Meter_ID: str
+    Meter_Install_Date: str
+    Meter_Manufacturer: str
+    Meter_Model: str
+    Meter_Note: str
+    Meter_Size: str
+    Meter_Size_Desc: str
+    Meter_Size_Unit: str
+    Meter_SN: str
+    Person_ID: str
+    Portal_ID: str
+    Raw_Read: str
+    Read: str
+    Read_Code_1: str
+    Read_Code_2: str
+    Read_Code_3: str
+    Read_Method: str
+    Read_Note: str
+    Read_Sequence: str
+    Read_Time: str
+    Read_Unit: str
+    Reader_Initials: str
+    Register_Note: str
+    Register_Number: str
+    Register_Resolution: str
+    Register_Unit_Of_Measure: str
+    SA_Start_Date: str
+    Service_Point_Class_Code: str
+    Service_Point_Class_Code_Normalized: str
+    Service_Point_Cycle: str
+    Service_Point_ID: str
+    Service_Point_Latitude: str
+    Service_Point_Longitude: str
+    Service_Point_Route: str
+    Service_Point_Timezone: str
+    Service_Point_Type: str
+    Signal_Strength: str
+    Supply_Zone_ID: str
+    Trouble_Code: str
+    Utility_Use_1: str
+    Utility_Use_2: str
 
 
 class Beacon360Adapter(BaseAMIAdapter):
@@ -160,18 +256,7 @@ class Beacon360Adapter(BaseAMIAdapter):
     
     def extract(self):
         report = self._fetch_range_report()
-
-        report_csv_rows = report.strip().split("\n")
-        meter_with_reads = []
-        for row in report_csv_rows:
-            # TODO should probably just dump out every column we get, which helps w/ debugging and future data needs
-            import pdb; pdb.set_trace()
-            meter_with_reads.append(
-                Beacon360MeterAndRead(
-
-                )
-            )
-
+        meter_with_reads = self._parse_raw_range_report(report)
         with open(self._raw_reads_output_file(), "w") as f:
             content = "\n".join(json.dumps(m, cls=DataclassJSONEncoder) for m in meter_with_reads)
             f.write(content)
@@ -291,6 +376,25 @@ class Beacon360Adapter(BaseAMIAdapter):
             with open(self._cached_report_file(), "r") as f:
                 return f.read()
         return None
+
+    def _parse_raw_range_report(self, report: str) -> List[Beacon360MeterAndRead]:
+        """
+        Convert the CSV string of a range report into our
+        raw model in prep for output.
+
+        Assumes Beacon360MeterAndRead attributes are identical to CSV column names.
+        """
+        report_csv_rows = report.strip().split("\n")
+        if not report_csv_rows:
+            return
+
+        csv_reader = csv.DictReader(StringIO(report), delimiter=',')
+        meter_with_reads = []
+        for data in csv_reader:
+            meter_and_read = Beacon360MeterAndRead(**data)
+            meter_with_reads.append(meter_and_read)
+        
+        return meter_with_reads
     
     def transform(self):
         return super().transform()
