@@ -11,7 +11,7 @@ from amiadapters.config import AMIAdapterConfiguration
 
 logger = logging.getLogger(__name__)
 
-METER_COLUMNS = [
+REQUESTED_COLUMNS = [
     'Account_Billing_Cycle',
     'Account_Email',
     'Account_First_Name',
@@ -143,23 +143,6 @@ class Beacon360MeterAndRead:
     flow_unit: str
     raw_read: float
 
-# 'Flow',
-#     'Flow_Time',
-#     'Flow_Unit',
-# 'Location_Address_Line1',
-#     'Location_Address_Line2',
-#     'Location_Address_Line3',
-#     'Location_City',
-#     'Location_Country',
-#     'Location_ID',
-#     'Location_State',
-#     'Location_Zip',
-# 'Meter_ID',
-#     'Meter_Install_Date',
-#     'Meter_Size',
-# 'Raw_Read',
-#     'Read',
-
 
 class Beacon360Adapter(BaseAMIAdapter):
 
@@ -169,6 +152,7 @@ class Beacon360Adapter(BaseAMIAdapter):
         self.password = config.beacon_360_password
         # Use locally cached report instead of fetching from API
         # Probably don't want to use this in production
+        # TODO expose this in settings, maybe make it default false?
         self.use_cache = True
     
     def name(self) -> str:
@@ -192,12 +176,16 @@ class Beacon360Adapter(BaseAMIAdapter):
             content = "\n".join(json.dumps(m, cls=DataclassJSONEncoder) for m in meter_with_reads)
             f.write(content)
     
-    def _fetch_range_report(self):
+    def _fetch_range_report(self) -> str:
+        """
+        Return range report as CSV string, first line with headers.
+        Retrieve from cache if configured to do so.
+        """
         if self.use_cache:
-            if os.path.exists(self._cached_report_file()):
+            cached_report = self._get_cached_report()
+            if cached_report is not None:
                 logger.info("Loading report from cache")
-                with open(self._cached_report_file(), "r") as f:
-                    return f.read()
+                return cached_report
         
         auth = requests.auth.HTTPBasicAuth(self.user, self.password)
         
@@ -205,13 +193,13 @@ class Beacon360Adapter(BaseAMIAdapter):
             'Start_Date': datetime(2024,8,1),
             'End_Date': datetime(2024,8,2),
             'Resolution': "hourly",
-            'Header_Columns': ','.join(METER_COLUMNS),
+            'Header_Columns': ','.join(REQUESTED_COLUMNS),
             'Has_Endpoint': True
         }
 
         headers = {'Content-Type': 'application/x-www-form-urlencoded'}
 
-        # Request report generation, get back a link for watching its status
+        # Request report generation, receive a link for watching its status
         logger.info(f"Requesting report for meter reads between {params['Start_Date']} and {params['End_Date']} at {params['Resolution']} resolution")
         generate_report_response = requests.post(
             url='https://api.beaconama.net/v2/eds/range',
@@ -222,7 +210,7 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         if generate_report_response.status_code == 429:
             # Rate limit exceeded
-            t = json.loads(generate_report_response.text)
+            t = generate_report_response.json()
             secs_to_wait = int(t['args'][2])
             time_to_resume = datetime.now() + timedelta(seconds=secs_to_wait)
             logger.warning(f"need to wait {secs_to_wait} seconds until {time_to_resume} ({t})")
@@ -231,14 +219,18 @@ class Beacon360Adapter(BaseAMIAdapter):
             logger.error(f"error when requesting report. status code: {generate_report_response.status_code}")
             raise Exception("Failed request to generate report")
         
-        status_url = json.loads(generate_report_response.text)['statusUrl']
+        status_url = generate_report_response.json()['statusUrl']
 
         # Poll for report status
         i = 0
         max_attempts = 15  # 15 minutes
-        while i < max_attempts:
+        while True:
             i += 1
+            if i >= max_attempts:
+                raise Exception(f"Reached max attempts ({max_attempts}) polling for report status")
+            
             logger.info(f"Attempt {i}/{max_attempts} while polling for status on report at {status_url}")
+            
             status_response = requests.get(
                 url=f"https://api.beaconama.net{status_url}",
                 headers=headers,
@@ -248,7 +240,7 @@ class Beacon360Adapter(BaseAMIAdapter):
                 logger.error(f"error when requesting status. status code: {status_response.status_code} message: {status_response.text}")
                 raise Exception("Failed request to get report status")
 
-            status_response_data = json.loads(status_response.text)
+            status_response_data = status_response.json()
             logger.info(f"Status: {status_response_data}")
 
             if status_response_data.get("state") == "done":
@@ -293,6 +285,12 @@ class Beacon360Adapter(BaseAMIAdapter):
             headers=headers,
             auth=auth
         )
+    
+    def _get_cached_report(self) -> str:
+        if os.path.exists(self._cached_report_file()):
+            with open(self._cached_report_file(), "r") as f:
+                return f.read()
+        return None
     
     def transform(self):
         return super().transform()
