@@ -16,12 +16,12 @@ def run_extract_transform():
         # SentryxAdapter(config),
         Beacon360Adapter(config),
     ]
-    for adapter in adapters:
-        logger.info(f"Extracting data for {adapter.name()}")
-        adapter.extract()
-        logger.info(f"Extracted data for {adapter.name()} to {config.output_folder}")
+    # for adapter in adapters:
+    #     logger.info(f"Extracting data for {adapter.name()}")
+    #     adapter.extract()
+    #     logger.info(f"Extracted data for {adapter.name()} to {config.output_folder}")
     
-    logger.info(f"Extracted data for {len(adapters)} adapters")
+    # logger.info(f"Extracted data for {len(adapters)} adapters")
 
     for adapter in adapters:
         logger.info(f"Transforming data for {adapter.name()} from {config.output_folder}")

@@ -7,9 +7,10 @@ import logging
 import os
 import requests
 import time
-from typing import List
+from typing import List, Tuple
 
-from amiadapters.base import BaseAMIAdapter, DataclassJSONEncoder
+from amiadapters.base import BaseAMIAdapter, DataclassJSONEncoder, GeneralMeter, \
+    GeneralMeterRead, GeneralModelJSONEncoder
 from amiadapters.config import AMIAdapterConfiguration
 
 logger = logging.getLogger(__name__)
@@ -241,6 +242,11 @@ class Beacon360MeterAndRead:
 
 
 class Beacon360Adapter(BaseAMIAdapter):
+    """
+    AMI Adapter that retrieves data from the Beacon 360 V2 API.
+
+    API Documentation: https://helpbeaconama.net/beacon-web-services/export-data-service-v2-api-preview/#POSTread
+    """
 
     def __init__(self, config: AMIAdapterConfiguration):
         self.output_folder = config.output_folder
@@ -397,7 +403,50 @@ class Beacon360Adapter(BaseAMIAdapter):
         return meter_with_reads
     
     def transform(self):
-        return super().transform()
+        with open(self._raw_reads_output_file(), "r") as f:
+            text = f.read()
+            raw_meters_with_reads = [Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")]
+        
+        transformed_meters, transformed_reads = self._transform_meters_and_reads(raw_meters_with_reads)
+
+        with open(self._transformed_meter_output_file(), "w") as f:
+            f.write("\n".join(json.dumps(v, cls=GeneralModelJSONEncoder) for v in transformed_meters))
+
+        with open(self._transformed_reads_output_file(), "w") as f:
+            f.write("\n".join(json.dumps(m, cls=GeneralModelJSONEncoder) for m in transformed_reads))
+    
+    def _transform_meters_and_reads(self, raw_meters_with_reads: List[Beacon360MeterAndRead]) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
+        transformed_meters = set()
+        transformed_reads = []
+        for meter_and_read in raw_meters_with_reads:
+            account_id = meter_and_read.Account_ID
+            location_id = meter_and_read.Location_ID
+            meter_id = meter_and_read.Meter_ID
+
+            meter = GeneralMeter(
+                account_id=account_id,
+                location_id=location_id,
+                meter_id=meter_id,
+                size_inches=meter_and_read.Meter_Size_Desc,
+            )
+            transformed_meters.add(meter)
+
+            flowtime = datetime.fromisoformat(meter_and_read.Read_Time) if meter_and_read.Read_Time else None
+            if flowtime is None:
+                logger.info(f"Skipping read with no flowtime for account={account_id} location={location_id} meter={meter_id}")
+                continue
+
+            read = GeneralMeterRead(
+                account_id=account_id,
+                location_id=location_id,
+                meter_id=meter_id,
+                flowtime=flowtime,
+                raw_value=float(meter_and_read.Read),
+                raw_unit=meter_and_read.Read_Unit,
+            )
+            transformed_reads.append(read)
+
+        return list(transformed_meters), transformed_reads
     
     def _cached_report_file(self) -> str:
         return os.path.join(self.output_folder, f"{self.name()}-cached-report.txt")
