@@ -24,7 +24,7 @@ class BaseAMIAdapter(ABC):
         pass
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class GeneralMeter:
     """
     General model of a Meter and its metadata, which includes information about the
@@ -36,7 +36,7 @@ class GeneralMeter:
     size_inches: str
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class GeneralMeterRead:
     """
     General model of a Meter Read at a point in time. Includes metadata we'd use to join it with
