@@ -25,10 +25,10 @@ def mocked_get_devices_response_first_page(*args, **kwargs):
                 "isDisconnectableDevice": False,
                 "serviceStatus": "NotRDM",
                 "deviceStatus": "OK",
-                "street": "10327 SW SHAD RD, ",
-                "city": "CROOKED RIVER RANCH                               ",
+                "street": "10 SW MYROAD RD",
+                "city": "Town",
                 "state": None,
-                "zip": "97760",
+                "zip": "10101",
                 "description": "Mueller Systems SSR Ext-3/4(CF)-Pit  Plastic   Positive Displacement ",
                 "manufacturer": None,
                 "installNotes": "",
@@ -41,7 +41,7 @@ def mocked_get_devices_response_first_page(*args, **kwargs):
                 "meterSize": "3/4\"",
                 "socketId": "131216BB00200",
                 "billingCycle": 1,
-                "firstName": "TODD_ MARK",
+                "firstName": "BOB",
                 "lastName": "",
                 "email": None,
                 "dials": None,
@@ -52,7 +52,7 @@ def mocked_get_devices_response_first_page(*args, **kwargs):
                 "port": 1,
                 "installDate": "2022-02-08T20:16:41",
                 "unbilledConsumption": None,
-                "installerName": "crrwater",
+                "installerName": "installer",
                 "installerEmail": None,
                 "route": "1",
                 "lateral": "",
@@ -148,35 +148,39 @@ def mocked_get_consumption_response_last_page(*args, **kwargs):
 
 class TestSentryxAdapter(TestCase):
 
+    def setUp(self):
+        config = AMIAdapterConfiguration(
+            utility_name="my-utility",
+            output_folder="output",
+            sentryx_api_key="key",
+        )
+        self.adapter = SentryxAdapter(config)
+
     def test_init(self):
         config = AMIAdapterConfiguration(
+            utility_name="my-utility",
             output_folder="output",
             sentryx_api_key="key",
         )
         adapter = SentryxAdapter(config)
         self.assertEqual("output", adapter.output_folder)
         self.assertEqual("key", adapter.api_key)
-        self.assertEqual("crookedriverranchor", adapter.utility)
-        self.assertEqual("sentryx-api-crookedriverranchor", adapter.name())
+        self.assertEqual("my-utility", adapter.utility)
+        self.assertEqual("sentryx-api-my-utility", adapter.name())
     
     @mock.patch('requests.get', side_effect=[mocked_get_devices_response_first_page(), mocked_get_devices_response_last_page()])
     def test_extract_all_meters(self, mock_get):
-        config = AMIAdapterConfiguration(
-            output_folder="output",
-            sentryx_api_key="key",
-        )
-        adapter = SentryxAdapter(config)
-        result = adapter._extract_all_meters()
+        result = self.adapter._extract_all_meters()
         self.assertEqual(1, len(result))
         meter = result[0]
         self.assertEqual("1", meter.account_id)
         self.assertEqual(654419700, meter.device_id)
         self.assertEqual("OK", meter.device_status)
         self.assertEqual("NotRDM", meter.service_status)
-        self.assertEqual("10327 SW SHAD RD, ", meter.street)
-        self.assertEqual("CROOKED RIVER RANCH                               ", meter.city)
+        self.assertEqual("10 SW MYROAD RD", meter.street)
+        self.assertEqual("Town", meter.city)
         self.assertEqual(None, meter.state)
-        self.assertEqual("97760", meter.zip)
+        self.assertEqual("10101", meter.zip)
         self.assertEqual("Mueller Systems SSR Ext-3/4(CF)-Pit  Plastic   Positive Displacement ", meter.description)
         self.assertEqual(None, meter.manufacturer)
         self.assertEqual("", meter.install_notes)
@@ -184,29 +188,19 @@ class TestSentryxAdapter(TestCase):
         self.assertEqual("3/4\"", meter.meter_size)
 
         calls = [
-            mock.call('https://api.sentryx.io/v1-wm/sites/crookedriverranchor/devices', headers={'Authorization': 'key'}, params={'pager.skip': 0, 'pager.take': 25}),
-            mock.call('https://api.sentryx.io/v1-wm/sites/crookedriverranchor/devices', headers={'Authorization': 'key'}, params={'pager.skip': 1, 'pager.take': 25})
+            mock.call('https://api.sentryx.io/v1-wm/sites/my-utility/devices', headers={'Authorization': 'key'}, params={'pager.skip': 0, 'pager.take': 25}),
+            mock.call('https://api.sentryx.io/v1-wm/sites/my-utility/devices', headers={'Authorization': 'key'}, params={'pager.skip': 1, 'pager.take': 25})
         ]
         self.assertListEqual(calls, mock_get.call_args_list)
     
     @mock.patch('requests.get', side_effect=[mocked_get_devices_response_first_page(), mocked_response_500()])
     def test_extract_all_meters__non_200_status_code(self, mock_get):
-        config = AMIAdapterConfiguration(
-            output_folder="output",
-            sentryx_api_key="key",
-        )
-        adapter = SentryxAdapter(config)
-        result = adapter._extract_all_meters()
+        result = self.adapter._extract_all_meters()
         self.assertEqual(0, len(result))
     
     @mock.patch('requests.get', side_effect=[mocked_get_consumption_response_first_page(), mocked_get_consumption_response_last_page()])
     def test_extract_consumption_for_all_meters(self, mock_get):
-        config = AMIAdapterConfiguration(
-            output_folder="output",
-            sentryx_api_key="key",
-        )
-        adapter = SentryxAdapter(config)
-        result = adapter._extract_consumption_for_all_meters()
+        result = self.adapter._extract_consumption_for_all_meters()
         expected = [
             SentryxMeterWithReads(device_id=1, units='CF', data=[SentryxMeterRead(time_stamp='2024-07-07T01:00:00', reading=116233.61)]), 
             SentryxMeterWithReads(device_id=2, units='CF', data=[SentryxMeterRead(time_stamp='2024-07-08T01:00:00', reading=22.61)])
@@ -214,34 +208,24 @@ class TestSentryxAdapter(TestCase):
         self.assertListEqual(expected, result)
 
         calls = [
-            mock.call('https://api.sentryx.io/v1-wm/sites/crookedriverranchor/devices/consumption', headers={'Authorization': 'key'}, params={'skip': 0, 'take': 25, 'StartDate': '2025-03-09T11:02:26.011959', 'EndDate': '2025-03-11T11:02:26.011959'}),
-            mock.call('https://api.sentryx.io/v1-wm/sites/crookedriverranchor/devices/consumption', headers={'Authorization': 'key'}, params={'skip': 2, 'take': 25, 'StartDate': '2025-03-09T11:02:26.011959', 'EndDate': '2025-03-11T11:02:26.011959'})
+            mock.call('https://api.sentryx.io/v1-wm/sites/my-utility/devices/consumption', headers={'Authorization': 'key'}, params={'skip': 0, 'take': 25, 'StartDate': '2025-03-09T11:02:26.011959', 'EndDate': '2025-03-11T11:02:26.011959'}),
+            mock.call('https://api.sentryx.io/v1-wm/sites/my-utility/devices/consumption', headers={'Authorization': 'key'}, params={'skip': 2, 'take': 25, 'StartDate': '2025-03-09T11:02:26.011959', 'EndDate': '2025-03-11T11:02:26.011959'})
         ]
         self.assertListEqual(calls, mock_get.call_args_list)
     
     @mock.patch('requests.get', side_effect=[mocked_get_consumption_response_first_page(), mocked_response_500()])
     def test_extract_consumption_for_all_meters__non_200_response(self, mock_get):
-        config = AMIAdapterConfiguration(
-            output_folder="output",
-            sentryx_api_key="key",
-        )
-        adapter = SentryxAdapter(config)
-        result = adapter._extract_consumption_for_all_meters()
+        result = self.adapter._extract_consumption_for_all_meters()
         self.assertEqual(0, len(result))
     
     def test_transform_meters_and_reads(self):
-        config = AMIAdapterConfiguration(
-            output_folder="output",
-            sentryx_api_key="key",
-        )
-        adapter = SentryxAdapter(config)
         meters = [SentryxMeter(device_id=1, account_id="101", meter_size="3/8\"", device_status=None, service_status=None, street=None, city=None, state=None, zip=None, description=None, manufacturer=None, install_notes=None, install_date=None)]
         reads = [
             SentryxMeterWithReads(device_id=1, units='CF', data=[SentryxMeterRead(time_stamp='2024-07-07T01:00:00', reading=116233.61)]),
             SentryxMeterWithReads(device_id=2, units='CF', data=[SentryxMeterRead(time_stamp='2024-07-07T01:00:00', reading=11)])
         ]
         
-        transformed_meters, transformed_reads = adapter._transform_meters_and_reads(meters, reads)
+        transformed_meters, transformed_reads = self.adapter._transform_meters_and_reads(meters, reads)
 
         expected_meters = [
             GeneralMeter(meter_id="1", account_id="101", location_id=None, size_inches="3/8\"")

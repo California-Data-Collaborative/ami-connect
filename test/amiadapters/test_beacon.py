@@ -250,8 +250,8 @@ class TestBeacon360Adapter(TestCase):
         transformed_meters, transformed_reads = self.adapter._transform_meters_and_reads(raw_meters_with_reads)
 
         expected_meters = [
+            GeneralMeter(account_id='1', location_id='303022', meter_id='10101', size_inches='5/8"'),
             GeneralMeter(account_id='303022', location_id='303022', meter_id='1470158170', size_inches='5/8"'),
-            GeneralMeter(account_id='1', location_id='303022', meter_id='10101', size_inches='5/8"')
         ]
         self.assertListEqual(expected_meters, transformed_meters)
 

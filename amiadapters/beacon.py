@@ -446,7 +446,10 @@ class Beacon360Adapter(BaseAMIAdapter):
             )
             transformed_reads.append(read)
 
-        return list(transformed_meters), transformed_reads
+        # Sort for deterministic unit tests. If this becomes a performance issue, we may be able to revisit.
+        meters_sorted = list(sorted(transformed_meters, key=lambda m: m.meter_id))
+        
+        return meters_sorted, transformed_reads
     
     def _cached_report_file(self) -> str:
         return os.path.join(self.output_folder, f"{self.name()}-cached-report.txt")

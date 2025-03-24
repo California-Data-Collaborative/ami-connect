@@ -24,19 +24,19 @@ class SentryxMeter:
     {
             "dmaObjectId": 6,
             "dmaName": null,
-            "deviceId": 603451200,
+            "deviceId": 12312414,
             "isDisconnectableDevice": false,
             "serviceStatus": "NotRDM",
             "deviceStatus": "OK",
-            "street": "5800 SW HADDOCK DR, ",
-            "city": "CROOKED RIVER RANCH                               ",
+            "street": "58 MY STREET DR, ",
+            "city": "MY TOWN                               ",
             "state": null,
-            "zip": "97760",
+            "zip": "10101",
             "description": "Mueller Systems SSR Ext-3/4(CF)",
             "manufacturer": null,
             "installNotes": "AMR to AMI Conversion",
             "lastReadingDateTime": "2025-03-10T06:00:00",
-            "accountId": "1009",
+            "accountId": "12",
             "lastBilledDate": null,
             "lastBilledRead": null,
             "lastReading": 311315,
@@ -44,7 +44,7 @@ class SentryxMeter:
             "meterSize": "3/4\"",
             "socketId": "131225B002700",
             "billingCycle": 1,
-            "firstName": "BROOKS_ MITCH & MIRIAM",
+            "firstName": "JANE",
             "lastName": "",
             "email": null,
             "dials": null,
@@ -70,9 +70,9 @@ class SentryxMeter:
             "taskType": "",
             "extSSR": true,
             "isGeneric": false,
-            "muellerSerialNumber": "6034512",
-            "registerSerialNumber": "1800132638",
-            "bodySerialNumber": "1800132638",
+            "muellerSerialNumber": "123",
+            "registerSerialNumber": "12412312",
+            "bodySerialNumber": "12412312",
             "batteryPlan": null,
             "edrxStartTime": null,
             "edrxEndTime": null,
@@ -103,10 +103,10 @@ class SentryxMeterRead:
 @dataclass
 class SentryxMeterWithReads:
     """
-    "deviceId": 601133200,
-    "bodySerialNumber": "1800132722",
-    "muellerSerialNumber": "6011332",
-    "registerSerialNumber": "1800132722",
+    "deviceId": 123,
+    "bodySerialNumber": "2132132",
+    "muellerSerialNumber": "124132314",
+    "registerSerialNumber": "2132132",
     "units": "CF",
     "data": [
         {
@@ -139,7 +139,7 @@ class SentryxAdapter(BaseAMIAdapter):
     def __init__(self, config: AMIAdapterConfiguration):
         self.output_folder = config.output_folder
         self.api_key = config.sentryx_api_key
-        self.utility = "crookedriverranchor"
+        self.utility = config.utility_name
     
     def name(self) -> str:
         return f"sentryx-api-{self.utility}"
