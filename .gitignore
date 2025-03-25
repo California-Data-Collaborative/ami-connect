@@ -171,4 +171,5 @@ cython_debug/
 .pypirc
 ami-connect/secrets.py
 
+airflow
 output
