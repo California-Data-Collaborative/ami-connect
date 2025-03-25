@@ -23,11 +23,6 @@ def ami_control_dag():
     ]
 
     @task()
-    def create_configuration():
-        
-        return {"config": config, "adapters": adapters}
-
-    @task()
     def extract(adapter: BaseAMIAdapter):
         adapter.extract()
     
@@ -35,15 +30,11 @@ def ami_control_dag():
     def transform(adapter: BaseAMIAdapter):
         adapter.transform()
 
-    # config_data = create_configuration()
-    # import pdb; pdb.set_trace()
-    # for adapter in config_data["adapters"]:
     for adapter in adapters:
-        extract.override(task_id=f"extract-{adapter.name()}")
-        extract(adapter)
+        extract.override(task_id=f"extract-{adapter.name()}")(adapter)
     
     for adapter in adapters:
-        transform(adapter)
+        transform.override(task_id=f"transform-{adapter.name()}")(adapter)
 
 
 ami_control_dag()
