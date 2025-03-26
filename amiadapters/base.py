@@ -30,6 +30,7 @@ class GeneralMeter:
     General model of a Meter and its metadata, which includes information about the
     account and location it's currently associated with.
     """
+
     meter_id: str
     account_id: str
     location_id: str
@@ -42,6 +43,7 @@ class GeneralMeterRead:
     General model of a Meter Read at a point in time. Includes metadata we'd use to join it with
     other data.
     """
+
     meter_id: str
     account_id: str
     location_id: str
@@ -54,16 +56,18 @@ class DataclassJSONEncoder(json.JSONEncoder):
     """
     Helps write data classes into JSON.
     """
+
     def default(self, o):
         if dataclasses.is_dataclass(o):
             return dataclasses.asdict(o)
         return super().default(o)
-    
+
 
 class GeneralModelJSONEncoder(DataclassJSONEncoder):
     """
     Standardizes how we serialize our general models into JSON.
     """
+
     def default(self, o):
         # Datetimes use isoformat
         if isinstance(o, datetime):
