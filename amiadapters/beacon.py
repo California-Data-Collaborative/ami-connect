@@ -461,10 +461,22 @@ class Beacon360Adapter(BaseAMIAdapter):
             meter_id = meter_and_read.Meter_ID
 
             meter = GeneralMeter(
+                # TODO org ID should be configured
+                org_id="my org",
+                device_id=meter_id,
                 account_id=account_id,
                 location_id=location_id,
                 meter_id=meter_id,
-                size_inches=meter_and_read.Meter_Size_Desc,
+                endpoint_id=meter_and_read.Endpoint_SN,
+                meter_install_date=self.datetime_from_iso_str(
+                    meter_and_read.Meter_Install_Date, None
+                ),
+                meter_size=meter_and_read.Meter_Size,
+                meter_manufacturer=meter_and_read.Meter_Manufacturer,
+                multiplier=None,
+                location_address=meter_and_read.Location_Address_Line1,
+                location_state=meter_and_read.Location_City,
+                location_zip=meter_and_read.Location_ZIP,
             )
             transformed_meters.add(meter)
 

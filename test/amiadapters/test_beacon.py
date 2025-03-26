@@ -710,10 +710,19 @@ class TestBeacon360Adapter(TestCase):
 
         expected_meters = [
             GeneralMeter(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
                 meter_id="1470158170",
-                size_inches='5/8"',
+                endpoint_id="130615549",
+                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_size="0.625",
+                meter_manufacturer="Sensus",
+                multiplier=None,
+                location_address="5391 E. MYSTREET",
+                location_state="Apple",
+                location_zip="93727",
             )
         ]
         self.assertListEqual(expected_meters, transformed_meters)
@@ -963,16 +972,34 @@ class TestBeacon360Adapter(TestCase):
 
         expected_meters = [
             GeneralMeter(
+                org_id="my org",
+                device_id="10101",
                 account_id="1",
                 location_id="303022",
                 meter_id="10101",
-                size_inches='5/8"',
+                endpoint_id="130615549",
+                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_size="0.625",
+                meter_manufacturer="Sensus",
+                multiplier=None,
+                location_address="5391 E. MYSTREET",
+                location_state="Apple",
+                location_zip="93727",
             ),
             GeneralMeter(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
                 meter_id="1470158170",
-                size_inches='5/8"',
+                endpoint_id="130615549",
+                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_size="0.625",
+                meter_manufacturer="Sensus",
+                multiplier=None,
+                location_address="5391 E. MYSTREET",
+                location_state="Apple",
+                location_zip="93727",
             ),
         ]
         self.assertListEqual(expected_meters, transformed_meters)
@@ -1115,10 +1142,19 @@ class TestBeacon360Adapter(TestCase):
 
         expected_meters = [
             GeneralMeter(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
                 meter_id="1470158170",
-                size_inches='5/8"',
+                endpoint_id="130615549",
+                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_size="0.625",
+                meter_manufacturer="Sensus",
+                multiplier=None,
+                location_address="5391 E. MYSTREET",
+                location_state="Apple",
+                location_zip="93727",
             ),
         ]
         self.assertListEqual(expected_meters, transformed_meters)
