@@ -315,7 +315,7 @@ class TestSentryxAdapter(TestCase):
         transformed_meters, transformed_reads = (
             self.adapter._transform_meters_and_reads(meters, reads)
         )
-        self.maxDiff = None
+
         expected_meters = [
             GeneralMeter(
                 org_id="my org",
@@ -336,20 +336,26 @@ class TestSentryxAdapter(TestCase):
 
         expected_reads = [
             GeneralMeterRead(
-                meter_id="1",
+                org_id="my org",
+                device_id="1",
                 account_id="101",
                 location_id=None,
                 flowtime=datetime.datetime(2024, 7, 7, 1, 0),
-                raw_value=116233.61,
-                raw_unit="CF",
+                register_value=116233.61,
+                register_unit="CF",
+                interval_value=None,
+                interval_unit=None,
             ),
             GeneralMeterRead(
-                meter_id="2",
+                org_id="my org",
+                device_id="2",
                 account_id=None,
                 location_id=None,
                 flowtime=datetime.datetime(2024, 7, 7, 1, 0),
-                raw_value=11,
-                raw_unit="CF",
+                register_value=11,
+                register_unit="CF",
+                interval_value=None,
+                interval_unit=None,
             ),
         ]
 

@@ -729,20 +729,26 @@ class TestBeacon360Adapter(TestCase):
 
         expected_reads = [
             GeneralMeterRead(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
-                meter_id="1470158170",
                 flowtime=datetime.datetime(2024, 8, 1, 0, 59),
-                raw_value=227.6,
-                raw_unit="CCF",
+                register_value=227.6,
+                register_unit="CCF",
+                interval_value=None,
+                interval_unit=None,
             ),
             GeneralMeterRead(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
-                meter_id="1470158170",
                 flowtime=datetime.datetime(2024, 8, 1, 1, 59),
-                raw_value=227.6,
-                raw_unit="CCF",
+                register_value=227.6,
+                register_unit="CCF",
+                interval_value=None,
+                interval_unit=None,
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)
@@ -1006,20 +1012,26 @@ class TestBeacon360Adapter(TestCase):
 
         expected_reads = [
             GeneralMeterRead(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
-                meter_id="1470158170",
                 flowtime=datetime.datetime(2024, 8, 1, 0, 59),
-                raw_value=227.6,
-                raw_unit="CCF",
+                register_value=227.6,
+                register_unit="CCF",
+                interval_value=None,
+                interval_unit=None,
             ),
             GeneralMeterRead(
+                org_id="my org",
+                device_id="10101",
                 account_id="1",
                 location_id="303022",
-                meter_id="10101",
                 flowtime=datetime.datetime(2024, 8, 1, 1, 59),
-                raw_value=227.6,
-                raw_unit="CCF",
+                register_value=227.6,
+                register_unit="CCF",
+                interval_value=None,
+                interval_unit=None,
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)

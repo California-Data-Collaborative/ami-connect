@@ -41,14 +41,15 @@ class BaseAMIAdapter(ABC):
         }
         return mapping.get(size)
 
-    def get_unit_of_measure(self, unit_of_measure: str) -> str:
+    def map_unit_of_measure(self, unit_of_measure: str) -> str:
         """
         Map an AMI data provider meter read's unit of measure to one
         of our generalized values. Return None if it can't be mapped.
         """
         mapping = {
-            "CCF": GeneralMeterUnitOfMeasure.CCF,
-            "Gallon": GeneralMeterUnitOfMeasure.GAL,
+            "CF": GeneralMeterUnitOfMeasure.CUBIC_FEET,
+            "CCF": GeneralMeterUnitOfMeasure.HUNDRED_CUBIC_FEET,
+            "Gallon": GeneralMeterUnitOfMeasure.GALLON,
         }
         return mapping.get(unit_of_measure)
 
@@ -59,8 +60,9 @@ class GeneralMeterUnitOfMeasure:
     values should be mapped to one of these.
     """
 
-    CCF = "CCF"
-    GAL = "Gallon"
+    CUBIC_FEET = "CF"
+    HUNDRED_CUBIC_FEET = "CCF"
+    GALLON = "Gallon"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -107,14 +109,28 @@ class GeneralMeterRead:
     """
     General model of a Meter Read at a point in time. Includes metadata we'd use to join it with
     other data.
+
+    Attributes:
+        org_id: Same as org_id for GeneralMeter
+        device_id: Same as device_id for GeneralMeter
+        account_id: Same as account_id for GeneralMeter. Represents account at time of measurement.
+        location_id: Same as location_id for GeneralMeter. Represents account at time of measurement.
+        flowtime: Time of measurement in UTC.
+        register_value: Value of cumulative measured consumption at the flowtime.
+        register_unit: Unit of register_value measurement
+        interval_value: Value of measured consumption in the time interval since the last reading.
+        interval_unit: Unit of interval_value measurement
     """
 
-    meter_id: str
+    org_id: str
+    device_id: str
     account_id: str
     location_id: str
     flowtime: datetime
-    raw_value: float
-    raw_unit: str
+    register_value: float
+    register_unit: str
+    interval_value: float
+    interval_unit: str
 
 
 class DataclassJSONEncoder(json.JSONEncoder):
