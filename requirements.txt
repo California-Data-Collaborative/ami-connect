@@ -4,5 +4,6 @@ idna==3.10
 python-dotenv==1.0.1
 requests==2.32.3
 urllib3==2.3.0
+black==25.1.0
 # Installs with constraints for Python 3.12
 apache-airflow==2.10.5 --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.12.txt
