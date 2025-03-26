@@ -7,15 +7,15 @@ from amiadapters.config import AMIAdapterConfiguration
 class TestConfig(TestCase):
 
     @mock.patch.dict(
-        os.environ, 
+        os.environ,
         {
             "UTILITY_NAME": "test-utility",
-            "AMI_DATA_OUTPUT_FOLDER": "ad_output_folder", 
+            "AMI_DATA_OUTPUT_FOLDER": "ad_output_folder",
             "SENTRYX_API_KEY": "sentryx_key",
             "BEACON_AUTH_USER": "beacon_user",
             "BEACON_AUTH_PASSWORD": "beacon_pass",
-        }, 
-        clear=True
+        },
+        clear=True,
     )
     def test_can_instantiate_via_env(self):
         config = AMIAdapterConfiguration.from_env()

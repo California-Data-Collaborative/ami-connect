@@ -25,14 +25,14 @@ def ami_control_dag():
     @task()
     def extract(adapter: BaseAMIAdapter):
         adapter.extract()
-    
+
     @task()
     def transform(adapter: BaseAMIAdapter):
         adapter.transform()
 
     for adapter in adapters:
         extract.override(task_id=f"extract-{adapter.name()}")(adapter)
-    
+
     for adapter in adapters:
         transform.override(task_id=f"transform-{adapter.name()}")(adapter)
 

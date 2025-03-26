@@ -22,6 +22,14 @@ pip install -r requirements.txt
 
 You may need to install `rust` to get airflow to install. Follow instructions in the rust error message.
 
+### Formatting
+
+We use `black` to format Python files. Before making a commit, format files with:
+
+```
+black .
+```
+
 ### Testing
 
 Run unit tests from the project's root directory with
