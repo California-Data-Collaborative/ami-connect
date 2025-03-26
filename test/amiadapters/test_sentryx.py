@@ -285,14 +285,14 @@ class TestSentryxAdapter(TestCase):
                 meter_size='3/8"',
                 device_status=None,
                 service_status=None,
-                street=None,
-                city=None,
-                state=None,
-                zip=None,
+                street="my street",
+                city="my town",
+                state="CA",
+                zip="12312",
                 description=None,
-                manufacturer=None,
+                manufacturer="manufacturer",
                 install_notes=None,
-                install_date=None,
+                install_date="2022-02-08T22:10:43",
             )
         ]
         reads = [
@@ -318,26 +318,44 @@ class TestSentryxAdapter(TestCase):
 
         expected_meters = [
             GeneralMeter(
-                meter_id="1", account_id="101", location_id=None, size_inches='3/8"'
-            )
+                org_id="my org",
+                device_id="1",
+                account_id="101",
+                location_id=None,
+                meter_id="1",
+                endpoint_id=None,
+                meter_install_date=datetime.datetime(2022, 2, 8, 22, 10, 43),
+                meter_size="0.375",
+                meter_manufacturer="manufacturer",
+                multiplier=None,
+                location_address="my street",
+                location_state="CA",
+                location_zip="12312",
+            ),
         ]
 
         expected_reads = [
             GeneralMeterRead(
-                meter_id="1",
+                org_id="my org",
+                device_id="1",
                 account_id="101",
                 location_id=None,
                 flowtime=datetime.datetime(2024, 7, 7, 1, 0),
-                raw_value=116233.61,
-                raw_unit="CF",
+                register_value=116233.61,
+                register_unit="CF",
+                interval_value=None,
+                interval_unit=None,
             ),
             GeneralMeterRead(
-                meter_id="2",
+                org_id="my org",
+                device_id="2",
                 account_id=None,
                 location_id=None,
                 flowtime=datetime.datetime(2024, 7, 7, 1, 0),
-                raw_value=11,
-                raw_unit="CF",
+                register_value=11,
+                register_unit="CF",
+                interval_value=None,
+                interval_unit=None,
             ),
         ]
 

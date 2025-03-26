@@ -710,30 +710,45 @@ class TestBeacon360Adapter(TestCase):
 
         expected_meters = [
             GeneralMeter(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
                 meter_id="1470158170",
-                size_inches='5/8"',
+                endpoint_id="130615549",
+                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_size="0.625",
+                meter_manufacturer="Sensus",
+                multiplier=None,
+                location_address="5391 E. MYSTREET",
+                location_state="Apple",
+                location_zip="93727",
             )
         ]
         self.assertListEqual(expected_meters, transformed_meters)
 
         expected_reads = [
             GeneralMeterRead(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
-                meter_id="1470158170",
                 flowtime=datetime.datetime(2024, 8, 1, 0, 59),
-                raw_value=227.6,
-                raw_unit="CCF",
+                register_value=227.6,
+                register_unit="CCF",
+                interval_value=None,
+                interval_unit=None,
             ),
             GeneralMeterRead(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
-                meter_id="1470158170",
                 flowtime=datetime.datetime(2024, 8, 1, 1, 59),
-                raw_value=227.6,
-                raw_unit="CCF",
+                register_value=227.6,
+                register_unit="CCF",
+                interval_value=None,
+                interval_unit=None,
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)
@@ -963,36 +978,60 @@ class TestBeacon360Adapter(TestCase):
 
         expected_meters = [
             GeneralMeter(
+                org_id="my org",
+                device_id="10101",
                 account_id="1",
                 location_id="303022",
                 meter_id="10101",
-                size_inches='5/8"',
+                endpoint_id="130615549",
+                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_size="0.625",
+                meter_manufacturer="Sensus",
+                multiplier=None,
+                location_address="5391 E. MYSTREET",
+                location_state="Apple",
+                location_zip="93727",
             ),
             GeneralMeter(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
                 meter_id="1470158170",
-                size_inches='5/8"',
+                endpoint_id="130615549",
+                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_size="0.625",
+                meter_manufacturer="Sensus",
+                multiplier=None,
+                location_address="5391 E. MYSTREET",
+                location_state="Apple",
+                location_zip="93727",
             ),
         ]
         self.assertListEqual(expected_meters, transformed_meters)
 
         expected_reads = [
             GeneralMeterRead(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
-                meter_id="1470158170",
                 flowtime=datetime.datetime(2024, 8, 1, 0, 59),
-                raw_value=227.6,
-                raw_unit="CCF",
+                register_value=227.6,
+                register_unit="CCF",
+                interval_value=None,
+                interval_unit=None,
             ),
             GeneralMeterRead(
+                org_id="my org",
+                device_id="10101",
                 account_id="1",
                 location_id="303022",
-                meter_id="10101",
                 flowtime=datetime.datetime(2024, 8, 1, 1, 59),
-                raw_value=227.6,
-                raw_unit="CCF",
+                register_value=227.6,
+                register_unit="CCF",
+                interval_value=None,
+                interval_unit=None,
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)
@@ -1115,10 +1154,19 @@ class TestBeacon360Adapter(TestCase):
 
         expected_meters = [
             GeneralMeter(
+                org_id="my org",
+                device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
                 meter_id="1470158170",
-                size_inches='5/8"',
+                endpoint_id="130615549",
+                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_size="0.625",
+                meter_manufacturer="Sensus",
+                multiplier=None,
+                location_address="5391 E. MYSTREET",
+                location_state="Apple",
+                location_zip="93727",
             ),
         ]
         self.assertListEqual(expected_meters, transformed_meters)

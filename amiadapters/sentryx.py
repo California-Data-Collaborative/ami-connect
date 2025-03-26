@@ -303,12 +303,23 @@ class SentryxAdapter(BaseAMIAdapter):
     ) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
         meters_by_id = {}
         for raw_meter in raw_meters:
-            # TODO Location? We have components like street, city, state, but no ID
+            device_id = str(raw_meter.device_id)
             meter = GeneralMeter(
-                meter_id=str(raw_meter.device_id),
+                org_id="my org",
+                device_id=device_id,
                 account_id=raw_meter.account_id,
-                size_inches=raw_meter.meter_size,
                 location_id=None,
+                meter_id=device_id,
+                endpoint_id=None,
+                meter_install_date=self.datetime_from_iso_str(
+                    raw_meter.install_date, None
+                ),
+                meter_size=self.map_meter_size(raw_meter.meter_size),
+                meter_manufacturer=raw_meter.manufacturer,
+                multiplier=None,
+                location_address=raw_meter.street,
+                location_state=raw_meter.state,
+                location_zip=raw_meter.zip,
             )
             meters_by_id[meter.meter_id] = meter
 
@@ -320,17 +331,17 @@ class SentryxAdapter(BaseAMIAdapter):
                 meter_metadata.account_id if meter_metadata is not None else None
             )
             for raw_read in raw_meter.data:
-                # TODO set the timezone if/when we can confirm what it is.
-                flowtime = datetime.fromisoformat(raw_read.time_stamp)
                 value = raw_read.reading
                 read = GeneralMeterRead(
-                    meter_id=device_id,
+                    org_id="my org",
+                    device_id=device_id,
                     account_id=account_id,
                     location_id=None,
-                    flowtime=flowtime,
-                    raw_value=value,
-                    # TODO should this be normalized?
-                    raw_unit=raw_meter.units,
+                    flowtime=self.datetime_from_iso_str(raw_read.time_stamp, None),
+                    register_value=value,
+                    register_unit=self.map_unit_of_measure(raw_meter.units),
+                    interval_value=None,
+                    interval_unit=None,
                 )
                 meter_reads.append(read)
 
