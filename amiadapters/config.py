@@ -11,6 +11,13 @@ class AMIAdapterConfiguration:
         self.sentryx_api_key = kwargs.get("sentryx_api_key")
         self.beacon_360_user = kwargs.get("beacon_360_user")
         self.beacon_360_password = kwargs.get("beacon_360_password")
+        self.snowflake_user = kwargs.get("snowflake_user")
+        self.snowflake_password = kwargs.get("snowflake_password")
+        self.snowflake_account = kwargs.get("snowflake_account")
+        self.snowflake_warehouse = kwargs.get("snowflake_warehouse")
+        self.snowflake_database = kwargs.get("snowflake_database")
+        self.snowflake_schema = kwargs.get("snowflake_schema")
+        self.snowflake_role = kwargs.get("snowflake_role")
 
     @classmethod
     def from_env(cls):
@@ -27,4 +34,11 @@ class AMIAdapterConfiguration:
             sentryx_api_key=sentryx_api_key,
             beacon_360_user=beacon_360_user,
             beacon_360_password=beacon_360_password,
+            snowflake_user=os.environ.get("SNOWFLAKE_USER"),
+            snowflake_password=os.environ.get("SNOWFLAKE_PASSWORD"),
+            snowflake_account=os.environ.get("SNOWFLAKE_ACCOUNT"),
+            snowflake_warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE"),
+            snowflake_database=os.environ.get("SNOWFLAKE_DATABASE"),
+            snowflake_schema=os.environ.get("SNOWFLAKE_SCHEMA"),
+            snowflake_role=os.environ.get("SNOWFLAKE_ROLE"),
         )

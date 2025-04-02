@@ -5,6 +5,7 @@ from io import StringIO
 import json
 import logging
 import os
+import pytz
 import requests
 import time
 from typing import List, Tuple
@@ -39,7 +40,7 @@ REQUESTED_COLUMNS = [
     "Billing_City",
     "Billing_Country",
     "Billing_State",
-    "Billing_Zip",
+    "Billing_ZIP",
     "Connector_Type",
     "Current_Leak_Rate",
     "Current_Leak_Start_Date",
@@ -83,7 +84,7 @@ REQUESTED_COLUMNS = [
     "Location_State",
     "Location_Water_Type",
     "Location_Year_Built",
-    "Location_Zip",
+    "Location_ZIP",
     "Low_Read_Limit",
     "Meter_Continuous_Flow",
     "Meter_ID",
@@ -274,6 +275,27 @@ class Beacon360Adapter(BaseAMIAdapter):
                 json.dumps(m, cls=DataclassJSONEncoder) for m in meter_with_reads
             )
             f.write(content)
+    
+    def load_base_sql(self):
+        with open(self._raw_reads_output_file(), "r") as f:
+            text = f.read()
+            raw_meters_with_reads = [
+                Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
+            ]
+
+        columns = ", ".join(REQUESTED_COLUMNS)
+        qmarks = "?, " * (len(REQUESTED_COLUMNS) - 1) + "?"
+        sql = f"""
+            INSERT INTO beacon_360_base (org_id, device_id, created_time, {columns}) 
+                VALUES (?, ?, ?, {qmarks})
+        """
+        created_time = datetime.now(tz=pytz.UTC)
+
+        rows = [
+            tuple(["my-org", i.Meter_ID, created_time] + [i.__getattribute__(name) for name in REQUESTED_COLUMNS])
+            for i in raw_meters_with_reads
+        ]
+        return sql, rows
 
     def _fetch_range_report(self) -> str:
         """
@@ -285,12 +307,12 @@ class Beacon360Adapter(BaseAMIAdapter):
             if cached_report is not None:
                 logger.info("Loading report from cache")
                 return cached_report
-
+        print(self.user, self.password)
         auth = requests.auth.HTTPBasicAuth(self.user, self.password)
 
         params = {
-            "Start_Date": datetime(2024, 8, 1),
-            "End_Date": datetime(2024, 8, 2),
+            "Start_Date": datetime(2024, 8, 1, 0, 0),
+            "End_Date": datetime(2024, 8, 1, 5, 0),
             "Resolution": "hourly",
             "Header_Columns": ",".join(REQUESTED_COLUMNS),
             "Has_Endpoint": True,
@@ -322,13 +344,13 @@ class Beacon360Adapter(BaseAMIAdapter):
             logger.error(
                 f"error when requesting report. status code: {generate_report_response.status_code}"
             )
-            raise Exception("Failed request to generate report")
+            raise Exception(f"Failed request to generate report. Response: {generate_report_response}")
 
         status_url = generate_report_response.json()["statusUrl"]
 
         # Poll for report status
         i = 0
-        max_attempts = 15  # 15 minutes
+        max_attempts = 45  # 45 minutes
         while True:
             i += 1
             if i >= max_attempts:
@@ -385,10 +407,9 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         report = report_response.text
 
-        if self.use_cache:
-            logger.info(f"Caching report contents at {self._cached_report_file()}")
-            with open(self._cached_report_file(), "w") as f:
-                f.write(report)
+        logger.info(f"Caching report contents at {self._cached_report_file()}")
+        with open(self._cached_report_file(), "w") as f:
+            f.write(report)
 
         return report
 

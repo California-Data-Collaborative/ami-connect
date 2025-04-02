@@ -1,5 +1,7 @@
 import logging
 
+import snowflake.connector
+
 from amiadapters.beacon import Beacon360Adapter
 from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.sentryx import SentryxAdapter
@@ -13,21 +15,35 @@ def run_extract_transform():
     """
     config = AMIAdapterConfiguration.from_env()
     adapters = [
-        SentryxAdapter(config),
+        # SentryxAdapter(config),
         Beacon360Adapter(config),
     ]
-    for adapter in adapters:
-        logger.info(f"Extracting data for {adapter.name()}")
-        adapter.extract()
-        logger.info(f"Extracted data for {adapter.name()} to {config.output_folder}")
 
-    logger.info(f"Extracted data for {len(adapters)} adapters")
+    # for adapter in adapters:
+    #     logger.info(f"Extracting data for {adapter.name()}")
+    #     adapter.extract()
+    #     logger.info(f"Extracted data for {adapter.name()} to {config.output_folder}")
 
-    for adapter in adapters:
-        logger.info(
-            f"Transforming data for {adapter.name()} from {config.output_folder}"
-        )
-        adapter.transform()
-        logger.info(f"Transformed data for {adapter.name()} to {config.output_folder}")
+    # logger.info(f"Extracted data for {len(adapters)} adapters")
 
-    logger.info(f"Transformed data for {len(adapters)} adapters")
+    # for adapter in adapters:
+    #     logger.info(
+    #         f"Transforming data for {adapter.name()} from {config.output_folder}"
+    #     )
+    #     adapter.transform()
+    #     logger.info(f"Transformed data for {adapter.name()} to {config.output_folder}")
+
+    # logger.info(f"Transformed data for {len(adapters)} adapters")
+
+    conn = snowflake.connector.connect(
+        account=config.snowflake_account,
+        user=config.snowflake_user,
+        password=config.snowflake_password,
+        warehouse=config.snowflake_warehouse,
+        database=config.snowflake_database,
+        schema=config.snowflake_schema,
+        role=config.snowflake_role,
+        paramstyle='qmark',
+    )
+    sql, rows = adapters[0].load_base_sql()
+    conn.cursor().executemany(sql, rows)
