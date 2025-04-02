@@ -23,17 +23,4 @@ final_beacon as (
     from latest_beacon_reads l
 )
 
--- create or replace TABLE READINGS (
---   ORG_ID VARCHAR(16777216),  // Allows for multitenant storage
--- 	ACCOUNT_ID VARCHAR(16777216),
--- 	LOCATION_ID VARCHAR(16777216),
--- 	DEVICE_ID VARCHAR(16777216) NOT NULL,
--- 	FLOWTIME TIMESTAMP_TZ(9) NOT NULL,  // Time of measurement in UTC
--- 	REGISTER_VALUE FLOAT,  // Cumulative measurement of usage
--- 	REGISTER_UNIT VARCHAR(16777216),  // e.g. CCF or GAL
--- 	INTERVAL_VALUE FLOAT,  // Measurement of usage since last hour/day/etc
--- 	INTERVAL_UNIT VARCHAR(16777216),  // e.g. CCF or GAL
---   UNIQUE (ORG_ID, ACCOUNT_ID, LOCATION_ID, DEVICE_ID, FLOWTIME)
--- );
-
 select * from final_beacon
