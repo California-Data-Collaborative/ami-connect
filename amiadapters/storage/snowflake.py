@@ -44,12 +44,12 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
     
     def _upsert_meters(self, meters: List[GeneralMeter], conn):
 
-        sql = "CREATE OR REPLACE TEMPORARY TABLE TEMP_METERS LIKE METERS;"
-        conn.cursor().execute(sql)
+        create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE TEMP_METERS LIKE METERS;"
+        conn.cursor().execute(create_temp_table_sql)
 
         row_active_from = datetime.now(tz=pytz.UTC)
 
-        sql = """
+        insert_to_temp_table_sql = """
             INSERT INTO temp_meters (
                 org_id, device_id, account_id, location_id, meter_id, 
                 endpoint_id, meter_install_date, meter_size, meter_manufacturer, 
@@ -59,7 +59,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         rows = [self._meter_tuple(m, row_active_from) for m in meters]
-        conn.cursor().executemany(sql, rows)
+        conn.cursor().executemany(insert_to_temp_table_sql, rows)
 
         # We use a Type 2 Slowly Changing Dimension pattern for our meters table
         # Our implementation follows a pattern in this blog post: https://medium.com/@amit-jsr/implementing-scd2-in-snowflake-slowly-changing-dimension-type-2-7ff793647150
@@ -125,10 +125,10 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
 
     def _upsert_reads(self, reads: List[GeneralMeterRead], conn):
 
-        sql = "CREATE OR REPLACE TEMPORARY TABLE temp_readings LIKE readings;"
-        conn.cursor().execute(sql)
+        create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_readings LIKE readings;"
+        conn.cursor().execute(create_temp_table_sql)
 
-        sql = """
+        insert_to_temp_table_sql = """
             INSERT INTO temp_readings (
                 org_id, device_id, account_id, location_id, flowtime, 
                 register_value, register_unit, interval_value, interval_unit
@@ -136,7 +136,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         rows = [self._meter_read_tuple(m) for m in reads]
-        conn.cursor().executemany(sql, rows)
+        conn.cursor().executemany(insert_to_temp_table_sql, rows)
 
         merge_sql = """
             MERGE INTO readings AS target

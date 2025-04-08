@@ -266,14 +266,14 @@ class Beacon360Adapter(BaseAMIAdapter):
         # Probably don't want to use this in production
         # TODO expose this in settings, maybe make it default false?
         self.use_cache = True
-        storage_adapters = [
+        storage_sinks = [
             BeaconSnowflakeStorageSink(
                 self._transformed_meter_output_file(), 
                 self._transformed_reads_output_file(), 
                 self._raw_reads_output_file()
             )
         ]
-        super().__init__(storage_adapters)
+        super().__init__(storage_sinks)
 
     def name(self) -> str:
         return f"beacon-360-api"
@@ -558,18 +558,43 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
             paramstyle='qmark',
         )
 
+        create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_beacon_360_base LIKE beacon_360_base;"
+        conn.cursor().execute(create_temp_table_sql)
+
         columns = ", ".join(REQUESTED_COLUMNS)
         qmarks = "?, " * (len(REQUESTED_COLUMNS) - 1) + "?"
-        # TODO We don't want to append rows every time we run. Do we need Slowly Changing dimension pattern here? Or is it ok to just overwrite old data?
-        sql = f"""
-            INSERT INTO beacon_360_base (org_id, device_id, created_time, {columns}) 
+        insert_temp_data_sql = f"""
+            INSERT INTO temp_beacon_360_base (org_id, device_id, created_time, {columns}) 
                 VALUES (?, ?, ?, {qmarks})
         """
         created_time = datetime.now(tz=pytz.UTC)
-
         rows = [
             tuple(["my-org", i.Meter_ID, created_time] + [i.__getattribute__(name) for name in REQUESTED_COLUMNS])
             for i in raw_meters_with_reads
         ]
+        conn.cursor().executemany(insert_temp_data_sql, rows)
 
-        conn.cursor().executemany(sql, rows)
+        merge_sql = f"""
+            MERGE INTO beacon_360_base AS target
+            USING (
+                -- Use GROUP BY to ensure there are no duplicate rows before merge
+                SELECT 
+                    org_id,
+                    device_id, 
+                    Read_Time, 
+                    {", ".join([f"max({name}) as {name}" for name in REQUESTED_COLUMNS if name not in {"Read_Time",}])}, 
+                    max(created_time) as created_time
+                FROM temp_beacon_360_base
+                GROUP BY org_id, device_id, Read_Time
+            ) AS source
+            ON source.org_id = target.org_id 
+                AND source.device_id = target.device_id
+                AND source.Read_Time = target.Read_Time
+            WHEN MATCHED THEN
+                UPDATE SET
+                    {",".join([f"target.{name} = source.{name}" for name in REQUESTED_COLUMNS])}
+            WHEN NOT MATCHED THEN
+                INSERT (org_id, device_id, {", ".join(name for name in REQUESTED_COLUMNS)}, created_time) 
+                        VALUES (source.org_id, source.device_id, {", ".join(f"source.{name}" for name in REQUESTED_COLUMNS)}, source.created_time)
+        """
+        conn.cursor().execute(merge_sql)

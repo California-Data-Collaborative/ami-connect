@@ -1,7 +1,6 @@
 from datetime import datetime
 
 from airflow.decorators import dag, task
-import snowflake.connector
 
 from amiadapters.base import BaseAMIAdapter
 from amiadapters.beacon import Beacon360Adapter
