@@ -15,8 +15,8 @@ class BaseAMIAdapter(ABC):
     set you up to include it in our data pipeline.
     """
 
-    def __init__(self, storage_adapters: List[BaseAMIStorageSink] = None):
-        self.storage_adapters = storage_adapters if storage_adapters is not None else []
+    def __init__(self, storage_sinks: List[BaseAMIStorageSink] = None):
+        self.storage_sinks = storage_sinks if storage_sinks is not None else []
 
     @abstractmethod
     def name(self) -> str:
@@ -31,12 +31,12 @@ class BaseAMIAdapter(ABC):
         pass
 
     def load_raw(self, config: AMIAdapterConfiguration):
-        for storage_adapter in self.storage_adapters:
-            storage_adapter.store_raw(config)
+        for sink in self.storage_sinks:
+            sink.store_raw(config)
 
     def load_transformed(self, config: AMIAdapterConfiguration):
-        for storage_adapter in self.storage_adapters:
-            storage_adapter.store_transformed(config)
+        for sink in self.storage_sinks:
+            sink.store_transformed(config)
 
     def datetime_from_iso_str(self, datetime_str: str, org_timezone: str) -> datetime:
         # TODO timezones
