@@ -43,12 +43,14 @@ def run_extract_transform():
         logger.info(f"Loaded raw data for {adapter.name()} to {config.output_folder}")
 
     logger.info(f"Loaded raw data for {len(adapters)} adapters")
-    
+
     for adapter in adapters:
         logger.info(
             f"Loading transformed data for {adapter.name()} from {config.output_folder}"
         )
         adapter.load_transformed(config)
-        logger.info(f"Loaded transformed data for {adapter.name()} to {config.output_folder}")
+        logger.info(
+            f"Loaded transformed data for {adapter.name()} to {config.output_folder}"
+        )
 
     logger.info(f"Loaded transformed data for {len(adapters)} adapters")

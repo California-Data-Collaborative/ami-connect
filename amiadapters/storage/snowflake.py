@@ -26,7 +26,9 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
 
         with open(self.transformed_reads_file, "r") as f:
             text = f.read()
-            reads = [GeneralMeterRead(**json.loads(d)) for d in text.strip().split("\n")]
+            reads = [
+                GeneralMeterRead(**json.loads(d)) for d in text.strip().split("\n")
+            ]
 
         conn = snowflake.connector.connect(
             account=config.snowflake_account,
@@ -36,15 +38,17 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             database=config.snowflake_database,
             schema=config.snowflake_schema,
             role=config.snowflake_role,
-            paramstyle='qmark',
+            paramstyle="qmark",
         )
 
         self._upsert_meters(meters, conn)
         self._upsert_reads(reads, conn)
-    
+
     def _upsert_meters(self, meters: List[GeneralMeter], conn):
 
-        create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE TEMP_METERS LIKE METERS;"
+        create_temp_table_sql = (
+            "CREATE OR REPLACE TEMPORARY TABLE TEMP_METERS LIKE METERS;"
+        )
         conn.cursor().execute(create_temp_table_sql)
 
         row_active_from = datetime.now(tz=pytz.UTC)
@@ -102,7 +106,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                         '{row_active_from.isoformat()}');
         """
         conn.cursor().execute(merge_sql)
-    
+
     def _meter_tuple(self, meter: GeneralMeter, row_active_from: datetime):
         result = [
             "org_id",
@@ -119,13 +123,15 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             None,
             meter.location_state,
             meter.location_zip,
-            row_active_from
+            row_active_from,
         ]
         return tuple(result)
 
     def _upsert_reads(self, reads: List[GeneralMeterRead], conn):
 
-        create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_readings LIKE readings;"
+        create_temp_table_sql = (
+            "CREATE OR REPLACE TEMPORARY TABLE temp_readings LIKE readings;"
+        )
         conn.cursor().execute(create_temp_table_sql)
 
         insert_to_temp_table_sql = """
@@ -166,7 +172,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     source.register_value, source.register_unit, source.interval_value, source.interval_unit)
         """
         conn.cursor().execute(merge_sql)
-    
+
     def _meter_read_tuple(self, read: GeneralMeterRead):
         result = [
             "org_id",
@@ -180,6 +186,3 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             read.interval_unit,
         ]
         return tuple(result)
-        
-
-

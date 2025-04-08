@@ -268,9 +268,9 @@ class Beacon360Adapter(BaseAMIAdapter):
         self.use_cache = True
         storage_sinks = [
             BeaconSnowflakeStorageSink(
-                self._transformed_meter_output_file(), 
-                self._transformed_reads_output_file(), 
-                self._raw_reads_output_file()
+                self._transformed_meter_output_file(),
+                self._transformed_reads_output_file(),
+                self._raw_reads_output_file(),
             )
         ]
         super().__init__(storage_sinks)
@@ -536,7 +536,12 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
     data, this stores raw meters and reads into a Snowflake table.
     """
 
-    def __init__(self, transformed_meter_file: str, transformed_reads_file: str, raw_meter_and_reads_file: str):
+    def __init__(
+        self,
+        transformed_meter_file: str,
+        transformed_reads_file: str,
+        raw_meter_and_reads_file: str,
+    ):
         super().__init__(transformed_meter_file, transformed_reads_file)
         self.raw_meter_and_reads_file = raw_meter_and_reads_file
 
@@ -555,7 +560,7 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
             database=config.snowflake_database,
             schema=config.snowflake_schema,
             role=config.snowflake_role,
-            paramstyle='qmark',
+            paramstyle="qmark",
         )
 
         create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_beacon_360_base LIKE beacon_360_base;"
@@ -569,7 +574,10 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
         """
         created_time = datetime.now(tz=pytz.UTC)
         rows = [
-            tuple(["my-org", i.Meter_ID, created_time] + [i.__getattribute__(name) for name in REQUESTED_COLUMNS])
+            tuple(
+                ["my-org", i.Meter_ID, created_time]
+                + [i.__getattribute__(name) for name in REQUESTED_COLUMNS]
+            )
             for i in raw_meters_with_reads
         ]
         conn.cursor().executemany(insert_temp_data_sql, rows)
