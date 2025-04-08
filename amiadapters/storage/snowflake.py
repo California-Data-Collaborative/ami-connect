@@ -49,35 +49,38 @@ class SnowflakeStorageAdapter(BaseAMIStorageAdapter):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         rows = [self._meter_tuple(m, row_active_from) for m in meters]
-        # import pdb; pdb.set_trace()
         conn.cursor().executemany(sql, rows)
 
+        # We use a Type 2 Slowly Changing Dimension pattern for our meters table
+        # Our implementation follows a pattern in this blog post: https://medium.com/@amit-jsr/implementing-scd2-in-snowflake-slowly-changing-dimension-type-2-7ff793647150
+        # It's extremely important that the source table has no duplicates on the "merge_key"!
+        # Also, if new columns are added, be careful to update this query in each place column names are referenced.
         merge_sql = f"""
             MERGE INTO meters AS target
             USING(
-                SELECT
-                    *
-                FROM
-                    temp_meters
+                SELECT CONCAT(tm.org_id, '|', tm.device_id) as merge_key, tm.*
+                FROM temp_meters tm
+                
+                UNION ALL
+                
+                SELECT NULL as merge_key, tm2.*
+                FROM temp_meters tm2
+                JOIN meters m2 ON tm2.org_id = m2.org_id AND tm2.device_id = m2.device_id
+                WHERE m2.row_active_until IS NULL AND
+                    CONCAT(tm2.account_id, '|', tm2.location_id, '|', tm2.meter_id, '|', tm2.endpoint_id, '|', tm2.meter_install_date, '|', tm2.meter_size, '|', tm2.meter_manufacturer, '|', tm2.multiplier, '|', tm2.location_address, '|', tm2.location_city, '|', tm2.location_state, '|', tm2.location_zip, '|')
+                    <>
+                    CONCAT(m2.account_id, '|', m2.location_id, '|', m2.meter_id, '|', m2.endpoint_id, '|', m2.meter_install_date, '|', m2.meter_size, '|', m2.meter_manufacturer, '|', m2.multiplier, '|', m2.location_address, '|', m2.location_city, '|', m2.location_state, '|', m2.location_zip, '|')
             ) AS source
 
-            ON target.org_id = source.org_id 
-                AND target.device_id = source.device_id
-            WHEN MATCHED THEN
+            ON CONCAT(target.org_id, '|', target.device_id) = source.merge_key
+            WHEN MATCHED 
+                AND target.row_active_until IS NULL
+                AND CONCAT(target.account_id, '|', target.location_id, '|', target.meter_id, '|', target.endpoint_id, '|', target.meter_install_date, '|', target.meter_size, '|', target.meter_manufacturer, '|', target.multiplier, '|', target.location_address, '|', target.location_city, '|', target.location_state, '|', target.location_zip, '|')
+                    <>
+                    CONCAT(source.account_id, '|', source.location_id, '|', source.meter_id, '|', source.endpoint_id, '|', source.meter_install_date, '|', source.meter_size, '|', source.meter_manufacturer, '|', source.multiplier, '|', source.location_address, '|', source.location_city, '|', source.location_state, '|', source.location_zip, '|')
+            THEN
                 UPDATE SET
-                    target.account_id = source.account_id,
-                    target.location_id = source.location_id,
-                    target.meter_id = source.meter_id,
-                    target.endpoint_id = source.endpoint_id,
-                    target.meter_install_date = source.meter_install_date,
-                    target.meter_size = source.meter_size,
-                    target.meter_manufacturer = source.meter_manufacturer,
-                    target.multiplier = source.multiplier,
-                    target.location_address = source.location_address,
-                    target.location_city = source.location_city,
-                    target.location_state = source.location_state,
-                    target.location_zip = source.location_zip,
-                    target.row_active_until = source.row_active_from
+                    target.row_active_until = '{row_active_from.isoformat()}'
             WHEN NOT MATCHED THEN
                 INSERT (org_id, device_id, account_id, location_id, meter_id, 
                         endpoint_id, meter_install_date, meter_size, meter_manufacturer, 
@@ -86,8 +89,9 @@ class SnowflakeStorageAdapter(BaseAMIStorageAdapter):
                 VALUES (source.org_id, source.device_id, source.account_id, source.location_id, source.meter_id, 
                         source.endpoint_id, source.meter_install_date, source.meter_size, source.meter_manufacturer, 
                         source.multiplier, source.location_address, source.location_city, source.location_state, source.location_zip,
-                        source.row_active_from);
+                        '{row_active_from.isoformat()}');
         """
+        # import pdb; pdb.set_trace()
         conn.cursor().execute(merge_sql)
     
     def _meter_tuple(self, meter: GeneralMeter, row_active_from: datetime):
