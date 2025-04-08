@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from amiadapters.config import AMIAdapterConfiguration
 
 
-class BaseAMIStorageAdapter(ABC):
+class BaseAMIStorageSink(ABC):
 
     def __init__(self, transformed_meter_file: str, transformed_reads_file):
         self.transformed_meter_file = transformed_meter_file

@@ -5,7 +5,7 @@ import json
 from typing import List
 
 from amiadapters.config import AMIAdapterConfiguration
-from amiadapters.storage.base import BaseAMIStorageAdapter
+from amiadapters.storage.base import BaseAMIStorageSink
 
 
 class BaseAMIAdapter(ABC):
@@ -15,7 +15,7 @@ class BaseAMIAdapter(ABC):
     set you up to include it in our data pipeline.
     """
 
-    def __init__(self, storage_adapters: List[BaseAMIStorageAdapter] = None):
+    def __init__(self, storage_adapters: List[BaseAMIStorageSink] = None):
         self.storage_adapters = storage_adapters if storage_adapters is not None else []
 
     @abstractmethod

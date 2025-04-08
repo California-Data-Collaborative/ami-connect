@@ -1,15 +1,20 @@
 from datetime import datetime
 import json
+from typing import List
 import pytz
 
 import snowflake.connector
 
 from amiadapters.base import GeneralMeter, GeneralMeterRead
 from amiadapters.config import AMIAdapterConfiguration
-from amiadapters.storage.base import BaseAMIStorageAdapter
+from amiadapters.storage.base import BaseAMIStorageSink
 
 
-class SnowflakeStorageAdapter(BaseAMIStorageAdapter):
+class SnowflakeStorageSink(BaseAMIStorageSink):
+    """
+    AMI Storage Sink for Snowflake database. Implementors must specify how to store
+    raw data in Snowflake.
+    """
 
     def __init__(self, transformed_meter_file: str, transformed_reads_file: str):
         super().__init__(transformed_meter_file, transformed_reads_file)
@@ -33,6 +38,11 @@ class SnowflakeStorageAdapter(BaseAMIStorageAdapter):
             role=config.snowflake_role,
             paramstyle='qmark',
         )
+
+        self._upsert_meters(meters, conn)
+        self._upsert_reads(reads, conn)
+    
+    def _upsert_meters(self, meters: List[GeneralMeter], conn):
 
         sql = "CREATE OR REPLACE TEMPORARY TABLE TEMP_METERS LIKE METERS;"
         conn.cursor().execute(sql)
@@ -73,7 +83,7 @@ class SnowflakeStorageAdapter(BaseAMIStorageAdapter):
             ) AS source
 
             ON CONCAT(target.org_id, '|', target.device_id) = source.merge_key
-            WHEN MATCHED 
+            WHEN MATCHED
                 AND target.row_active_until IS NULL
                 AND CONCAT(target.account_id, '|', target.location_id, '|', target.meter_id, '|', target.endpoint_id, '|', target.meter_install_date, '|', target.meter_size, '|', target.meter_manufacturer, '|', target.multiplier, '|', target.location_address, '|', target.location_city, '|', target.location_state, '|', target.location_zip, '|')
                     <>
@@ -91,7 +101,6 @@ class SnowflakeStorageAdapter(BaseAMIStorageAdapter):
                         source.multiplier, source.location_address, source.location_city, source.location_state, source.location_zip,
                         '{row_active_from.isoformat()}');
         """
-        # import pdb; pdb.set_trace()
         conn.cursor().execute(merge_sql)
     
     def _meter_tuple(self, meter: GeneralMeter, row_active_from: datetime):
@@ -111,6 +120,64 @@ class SnowflakeStorageAdapter(BaseAMIStorageAdapter):
             meter.location_state,
             meter.location_zip,
             row_active_from
+        ]
+        return tuple(result)
+
+    def _upsert_reads(self, reads: List[GeneralMeterRead], conn):
+
+        sql = "CREATE OR REPLACE TEMPORARY TABLE temp_readings LIKE readings;"
+        conn.cursor().execute(sql)
+
+        sql = """
+            INSERT INTO temp_readings (
+                org_id, device_id, account_id, location_id, flowtime, 
+                register_value, register_unit, interval_value, interval_unit
+            ) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        rows = [self._meter_read_tuple(m) for m in reads]
+        conn.cursor().executemany(sql, rows)
+
+        merge_sql = """
+            MERGE INTO readings AS target
+            USING (
+                -- Use GROUP BY to ensure there are no duplicate rows before merge
+                SELECT org_id, device_id, flowtime, max(account_id) as account_id, max(location_id) as location_id, 
+                    max(register_value) as register_value, max(register_unit) as register_unit,
+                    max(interval_value) as interval_value, max(interval_unit) as interval_unit
+                FROM temp_readings
+                GROUP BY org_id, device_id, flowtime
+            ) AS source
+            ON source.org_id = target.org_id 
+                AND source.device_id = target.device_id
+                AND source.flowtime = target.flowtime
+            WHEN MATCHED THEN
+                UPDATE SET
+                    target.account_id = source.account_id,
+                    target.location_id = source.location_id,
+                    target.register_value = source.register_value,
+                    target.register_unit = source.register_unit,
+                    target.interval_value = source.interval_value,
+                    target.interval_unit = source.interval_unit
+            WHEN NOT MATCHED THEN
+                INSERT (org_id, device_id, account_id, location_id, flowtime, 
+                        register_value, register_unit, interval_value, interval_unit) 
+                        VALUES (source.org_id, source.device_id, source.account_id, source.location_id, source.flowtime, 
+                    source.register_value, source.register_unit, source.interval_value, source.interval_unit)
+        """
+        conn.cursor().execute(merge_sql)
+    
+    def _meter_read_tuple(self, read: GeneralMeterRead):
+        result = [
+            "org_id",
+            read.device_id,
+            read.account_id,
+            read.location_id,
+            read.flowtime,
+            read.register_value,
+            read.register_unit,
+            read.interval_value,
+            read.interval_unit,
         ]
         return tuple(result)
         

@@ -20,7 +20,7 @@ from amiadapters.base import (
     GeneralModelJSONEncoder,
 )
 from amiadapters.config import AMIAdapterConfiguration
-from amiadapters.storage.snowflake import SnowflakeStorageAdapter
+from amiadapters.storage.snowflake import SnowflakeStorageSink
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +267,7 @@ class Beacon360Adapter(BaseAMIAdapter):
         # TODO expose this in settings, maybe make it default false?
         self.use_cache = True
         storage_adapters = [
-            BeaconSnowflakeStorageAdapter(
+            BeaconSnowflakeStorageSink(
                 self._transformed_meter_output_file(), 
                 self._transformed_reads_output_file(), 
                 self._raw_reads_output_file()
@@ -530,8 +530,11 @@ class Beacon360Adapter(BaseAMIAdapter):
         return os.path.join(self.output_folder, f"{self.name()}-transformed-reads.txt")
 
 
-
-class BeaconSnowflakeStorageAdapter(SnowflakeStorageAdapter):
+class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
+    """
+    Beacon 360 implementation of Snowflake AMI Storage Sink. In addition to parent class's storage of generalized
+    data, this stores raw meters and reads into a Snowflake table.
+    """
 
     def __init__(self, transformed_meter_file: str, transformed_reads_file: str, raw_meter_and_reads_file: str):
         super().__init__(transformed_meter_file, transformed_reads_file)
@@ -557,6 +560,7 @@ class BeaconSnowflakeStorageAdapter(SnowflakeStorageAdapter):
 
         columns = ", ".join(REQUESTED_COLUMNS)
         qmarks = "?, " * (len(REQUESTED_COLUMNS) - 1) + "?"
+        # TODO We don't want to append rows every time we run. Do we need Slowly Changing dimension pattern here? Or is it ok to just overwrite old data?
         sql = f"""
             INSERT INTO beacon_360_base (org_id, device_id, created_time, {columns}) 
                 VALUES (?, ?, ?, {qmarks})
