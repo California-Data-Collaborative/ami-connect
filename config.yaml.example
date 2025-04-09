@@ -1,0 +1,12 @@
+sources:
+- type: beacon_360
+  org_id: my_utility
+  # Must be one of https://gist.github.com/heyalexej/8bf688fd67d7199be4a1682b3eec7568
+  timezone: America/Los_Angeles
+  use_raw_data_cache: False
+  sinks:
+  - my_snowflake_instance
+
+sinks:
+- type: snowflake
+  id: my_snowflake_instance
