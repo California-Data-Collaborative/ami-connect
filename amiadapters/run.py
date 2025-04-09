@@ -11,7 +11,7 @@ def run_pipeline(config_yaml: str, secrets_yaml: str):
     """
     config = AMIAdapterConfiguration.from_yaml(config_yaml, secrets_yaml)
     adapters = config.adapters()
-    
+
     for adapter in adapters:
         logger.info(f"Extracting data for {adapter.name()}")
         adapter.extract()
@@ -33,7 +33,9 @@ def run_pipeline(config_yaml: str, secrets_yaml: str):
             f"Loading raw data for {adapter.name()} from {adapter.output_folder}"
         )
         adapter.load_raw()
-        logger.info(f"Loaded raw data for {adapter.name()} from {adapter.output_folder}")
+        logger.info(
+            f"Loaded raw data for {adapter.name()} from {adapter.output_folder}"
+        )
 
     logger.info(f"Loaded raw data for {len(adapters)} adapters")
 

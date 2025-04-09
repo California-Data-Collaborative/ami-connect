@@ -256,7 +256,14 @@ class Beacon360Adapter(BaseAMIAdapter):
     API Documentation: https://helpbeaconama.net/beacon-web-services/export-data-service-v2-api-preview/#POSTread
     """
 
-    def __init__(self, api_user: str, api_password: str, intermediate_output: str, use_cache: bool, configured_sinks):
+    def __init__(
+        self,
+        api_user: str,
+        api_password: str,
+        intermediate_output: str,
+        use_cache: bool,
+        configured_sinks,
+    ):
         self.user = api_user
         self.password = api_password
         self.output_folder = intermediate_output
@@ -269,7 +276,7 @@ class Beacon360Adapter(BaseAMIAdapter):
                         self._transformed_meter_output_file(),
                         self._transformed_reads_output_file(),
                         self._raw_reads_output_file(),
-                        sink
+                        sink,
                     )
                 )
         super().__init__(storage_sinks)
@@ -540,7 +547,7 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
         transformed_meter_file: str,
         transformed_reads_file: str,
         raw_meter_and_reads_file: str,
-        sink_config: ConfiguredStorageSink
+        sink_config: ConfiguredStorageSink,
     ):
         super().__init__(transformed_meter_file, transformed_reads_file, sink_config)
         self.raw_meter_and_reads_file = raw_meter_and_reads_file

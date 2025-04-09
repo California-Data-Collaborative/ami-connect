@@ -89,11 +89,11 @@ class AMIAdapterConfiguration:
             sources.append(configured_source)
 
         return AMIAdapterConfiguration(sources=sources)
-    
+
     def adapters(self):
         # Circular import, TODO fix
         from amiadapters.beacon import Beacon360Adapter
-        
+
         adapters = []
         for source in self.sources:
             if source.type == ConfiguredAMISourceType.BEACON_360:
@@ -103,11 +103,11 @@ class AMIAdapterConfiguration:
                         source.secrets.password,
                         source.intermediate_output,
                         source.use_raw_data_cache,
-                        source.storage_sinks
+                        source.storage_sinks,
                     )
                 )
         return adapters
-    
+
     def __repr__(self):
         return f"sources=[{", ".join(str(s) for s in self.sources)}]"
 
@@ -133,7 +133,7 @@ class ConfiguredStorageSink:
         self.type = self._type(type)
         self.id = self._id(id)
         self.secrets = self._secrets(secrets)
-    
+
     def connection(self):
         if self.type == ConfiguredStorageSinkType.SNOWFLAKE:
             return snowflake.connector.connect(
@@ -216,7 +216,7 @@ class ConfiguredAMISource:
         if this_timezone is None:
             return timezone(DEFAULT_TIMEZONE)
         return timezone(this_timezone)
-    
+
     def _intermediate_output(self, intermediate_output: str) -> str:
         if intermediate_output is None:
             raise ValueError("AMI Source must have intermediate_output")

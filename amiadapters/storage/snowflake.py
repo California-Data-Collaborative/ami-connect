@@ -16,7 +16,12 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
     raw data in Snowflake.
     """
 
-    def __init__(self, transformed_meter_file: str, transformed_reads_file: str, sink_config: ConfiguredStorageSink):
+    def __init__(
+        self,
+        transformed_meter_file: str,
+        transformed_reads_file: str,
+        sink_config: ConfiguredStorageSink,
+    ):
         super().__init__(transformed_meter_file, transformed_reads_file, sink_config)
 
     def store_transformed(self):
