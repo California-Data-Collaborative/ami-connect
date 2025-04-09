@@ -1,53 +1,16 @@
 from dataclasses import dataclass
-
-# import os
 from typing import List, Union
-
-# from dotenv import load_dotenv
 from pytz import timezone
 from pytz.tzinfo import DstTzInfo
 import yaml
 
+import snowflake.connector
+
 
 class AMIAdapterConfiguration:
 
-    # def __init__(self, **kwargs):
-    #     self.utility_name = kwargs.get("utility_name")
-    #     self.output_folder = kwargs.get("output_folder")
-    #     self.sentryx_api_key = kwargs.get("sentryx_api_key")
-    #     self.beacon_360_user = kwargs.get("beacon_360_user")
-    #     self.beacon_360_password = kwargs.get("beacon_360_password")
-    #     self.snowflake_user = kwargs.get("snowflake_user")
-    #     self.snowflake_password = kwargs.get("snowflake_password")
-    #     self.snowflake_account = kwargs.get("snowflake_account")
-    #     self.snowflake_warehouse = kwargs.get("snowflake_warehouse")
-    #     self.snowflake_database = kwargs.get("snowflake_database")
-    #     self.snowflake_schema = kwargs.get("snowflake_schema")
-    #     self.snowflake_role = kwargs.get("snowflake_role")
-
-    # @classmethod
-    # def from_env(cls):
-    #     # Assumes .env file in working directory
-    #     load_dotenv()
-    #     return AMIAdapterConfiguration(
-    #         utility_name=os.environ.get("UTILITY_NAME"),
-    #         output_folder=os.environ.get("AMI_DATA_OUTPUT_FOLDER"),
-    #         sentryx_api_key=os.environ.get("SENTRYX_API_KEY"),
-    #         beacon_360_user=os.environ.get("BEACON_AUTH_USER"),
-    #         beacon_360_password=os.environ.get("BEACON_AUTH_PASSWORD"),
-    #         snowflake_user=os.environ.get("SNOWFLAKE_USER"),
-    #         snowflake_password=os.environ.get("SNOWFLAKE_PASSWORD"),
-    #         snowflake_account=os.environ.get("SNOWFLAKE_ACCOUNT"),
-    #         snowflake_warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE"),
-    #         snowflake_database=os.environ.get("SNOWFLAKE_DATABASE"),
-    #         snowflake_schema=os.environ.get("SNOWFLAKE_SCHEMA"),
-    #         snowflake_role=os.environ.get("SNOWFLAKE_ROLE"),
-    #     )
     def __init__(self, sources):
         self.sources = sources
-
-    def __repr__(self):
-        return f"sources=[{", ".join(str(s) for s in self.sources)}]"
 
     @classmethod
     def from_yaml(cls, config_file: str, secrets_file: str):
@@ -118,6 +81,7 @@ class AMIAdapterConfiguration:
                 org_id,
                 source.get("timezone"),
                 source.get("use_raw_data_cache"),
+                source.get("intermediate_output"),
                 secrets,
                 sinks,
             )
@@ -125,6 +89,27 @@ class AMIAdapterConfiguration:
             sources.append(configured_source)
 
         return AMIAdapterConfiguration(sources=sources)
+    
+    def adapters(self):
+        # Circular import, TODO fix
+        from amiadapters.beacon import Beacon360Adapter
+        
+        adapters = []
+        for source in self.sources:
+            if source.type == ConfiguredAMISourceType.BEACON_360:
+                adapters.append(
+                    Beacon360Adapter(
+                        source.secrets.user,
+                        source.secrets.password,
+                        source.intermediate_output,
+                        source.use_raw_data_cache,
+                        source.storage_sinks
+                    )
+                )
+        return adapters
+    
+    def __repr__(self):
+        return f"sources=[{", ".join(str(s) for s in self.sources)}]"
 
 
 @dataclass
@@ -148,6 +133,20 @@ class ConfiguredStorageSink:
         self.type = self._type(type)
         self.id = self._id(id)
         self.secrets = self._secrets(secrets)
+    
+    def connection(self):
+        if self.type == ConfiguredStorageSinkType.SNOWFLAKE:
+            return snowflake.connector.connect(
+                account=self.secrets.account,
+                user=self.secrets.user,
+                password=self.secrets.password,
+                warehouse=self.secrets.warehouse,
+                database=self.secrets.database,
+                schema=self.secrets.schema,
+                role=self.secrets.role,
+                paramstyle="qmark",
+            )
+        raise ValueError(f"Unrecognized type {self.type}")
 
     def _type(self, type: str) -> str:
         if type == ConfiguredStorageSinkType.SNOWFLAKE:
@@ -191,6 +190,7 @@ class ConfiguredAMISource:
         org_id: str,
         timezone: str,
         use_raw_data_cache: bool,
+        intermediate_output: str,
         secrets: Union[Beacon360Secrets],
         sinks: List[ConfiguredStorageSink],
     ):
@@ -198,6 +198,7 @@ class ConfiguredAMISource:
         self.org_id = self._org_id(org_id)
         self.timezone = self._timezone(timezone)
         self.use_raw_data_cache = bool(use_raw_data_cache)
+        self.intermediate_output = self._intermediate_output(intermediate_output)
         self.secrets = self._secrets(secrets)
         self.storage_sinks = self._sinks(sinks)
 
@@ -215,6 +216,11 @@ class ConfiguredAMISource:
         if this_timezone is None:
             return timezone(DEFAULT_TIMEZONE)
         return timezone(this_timezone)
+    
+    def _intermediate_output(self, intermediate_output: str) -> str:
+        if intermediate_output is None:
+            raise ValueError("AMI Source must have intermediate_output")
+        return intermediate_output
 
     def _secrets(self, secrets: str) -> Union[Beacon360Secrets]:
         if self.type == ConfiguredAMISourceType.BEACON_360 and isinstance(
@@ -233,7 +239,7 @@ class ConfiguredAMISource:
         raise ValueError(f"Invalid sink type(s) for source type {self.type}")
 
     def __repr__(self):
-        return f"ConfiguredAMISource[type={self.type}, org_id={self.org_id}, timezone={self.timezone}, use_cache={self.use_raw_data_cache}, storage_sinks=[{", ".join(s.id for s in self.storage_sinks)}]]"
+        return f"ConfiguredAMISource[type={self.type}, org_id={self.org_id}, timezone={self.timezone}, use_cache={self.use_raw_data_cache}, intermediate_output={self.intermediate_output} storage_sinks=[{", ".join(s.id for s in self.storage_sinks)}]]"
 
 
 if __name__ == "__main__":

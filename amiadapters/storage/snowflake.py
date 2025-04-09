@@ -6,7 +6,7 @@ import pytz
 import snowflake.connector
 
 from amiadapters.base import GeneralMeter, GeneralMeterRead
-from amiadapters.config import AMIAdapterConfiguration
+from amiadapters.config import AMIAdapterConfiguration, ConfiguredStorageSink
 from amiadapters.storage.base import BaseAMIStorageSink
 
 
@@ -16,10 +16,10 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
     raw data in Snowflake.
     """
 
-    def __init__(self, transformed_meter_file: str, transformed_reads_file: str):
-        super().__init__(transformed_meter_file, transformed_reads_file)
+    def __init__(self, transformed_meter_file: str, transformed_reads_file: str, sink_config: ConfiguredStorageSink):
+        super().__init__(transformed_meter_file, transformed_reads_file, sink_config)
 
-    def store_transformed(self, config: AMIAdapterConfiguration):
+    def store_transformed(self):
         with open(self.transformed_meter_file, "r") as f:
             text = f.read()
             meters = [GeneralMeter(**json.loads(d)) for d in text.strip().split("\n")]
@@ -30,16 +30,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 GeneralMeterRead(**json.loads(d)) for d in text.strip().split("\n")
             ]
 
-        conn = snowflake.connector.connect(
-            account=config.snowflake_account,
-            user=config.snowflake_user,
-            password=config.snowflake_password,
-            warehouse=config.snowflake_warehouse,
-            database=config.snowflake_database,
-            schema=config.snowflake_schema,
-            role=config.snowflake_role,
-            paramstyle="qmark",
-        )
+        conn = self.sink_config.connection()
 
         self._upsert_meters(meters, conn)
         self._upsert_reads(reads, conn)
