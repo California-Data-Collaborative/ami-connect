@@ -2,6 +2,10 @@ from abc import ABC, abstractmethod
 import dataclasses
 from datetime import datetime
 import json
+from typing import List
+
+from amiadapters.config import AMIAdapterConfiguration
+from amiadapters.storage.base import BaseAMIStorageSink
 
 
 class BaseAMIAdapter(ABC):
@@ -10,6 +14,9 @@ class BaseAMIAdapter(ABC):
     you'll inherit from this class and implement its abstract methods. That should
     set you up to include it in our data pipeline.
     """
+
+    def __init__(self, storage_sinks: List[BaseAMIStorageSink] = None):
+        self.storage_sinks = storage_sinks if storage_sinks is not None else []
 
     @abstractmethod
     def name(self) -> str:
@@ -22,6 +29,14 @@ class BaseAMIAdapter(ABC):
     @abstractmethod
     def transform(self):
         pass
+
+    def load_raw(self, config: AMIAdapterConfiguration):
+        for sink in self.storage_sinks:
+            sink.store_raw(config)
+
+    def load_transformed(self, config: AMIAdapterConfiguration):
+        for sink in self.storage_sinks:
+            sink.store_transformed(config)
 
     def datetime_from_iso_str(self, datetime_str: str, org_timezone: str) -> datetime:
         # TODO timezones

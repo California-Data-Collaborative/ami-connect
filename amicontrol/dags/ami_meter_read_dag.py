@@ -18,7 +18,7 @@ def ami_control_dag():
 
     config = AMIAdapterConfiguration.from_env()
     adapters = [
-        SentryxAdapter(config),
+        # SentryxAdapter(config),
         Beacon360Adapter(config),
     ]
 
@@ -30,11 +30,27 @@ def ami_control_dag():
     def transform(adapter: BaseAMIAdapter):
         adapter.transform()
 
+    @task()
+    def load_raw(adapter: BaseAMIAdapter, config: AMIAdapterConfiguration):
+        adapter.load_raw(config)
+
+    @task()
+    def load_transformed(adapter: BaseAMIAdapter, config: AMIAdapterConfiguration):
+        adapter.load_transformed(config)
+
     for adapter in adapters:
         extract.override(task_id=f"extract-{adapter.name()}")(adapter)
 
     for adapter in adapters:
         transform.override(task_id=f"transform-{adapter.name()}")(adapter)
+
+    for adapter in adapters:
+        load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter, config)
+
+    for adapter in adapters:
+        load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(
+            adapter, config
+        )
 
 
 ami_control_dag()

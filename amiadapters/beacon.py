@@ -5,9 +5,12 @@ from io import StringIO
 import json
 import logging
 import os
+import pytz
 import requests
 import time
 from typing import List, Tuple
+
+import snowflake.connector
 
 from amiadapters.base import (
     BaseAMIAdapter,
@@ -17,6 +20,7 @@ from amiadapters.base import (
     GeneralModelJSONEncoder,
 )
 from amiadapters.config import AMIAdapterConfiguration
+from amiadapters.storage.snowflake import SnowflakeStorageSink
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +43,7 @@ REQUESTED_COLUMNS = [
     "Billing_City",
     "Billing_Country",
     "Billing_State",
-    "Billing_Zip",
+    "Billing_ZIP",
     "Connector_Type",
     "Current_Leak_Rate",
     "Current_Leak_Start_Date",
@@ -83,7 +87,7 @@ REQUESTED_COLUMNS = [
     "Location_State",
     "Location_Water_Type",
     "Location_Year_Built",
-    "Location_Zip",
+    "Location_ZIP",
     "Low_Read_Limit",
     "Meter_Continuous_Flow",
     "Meter_ID",
@@ -262,6 +266,14 @@ class Beacon360Adapter(BaseAMIAdapter):
         # Probably don't want to use this in production
         # TODO expose this in settings, maybe make it default false?
         self.use_cache = True
+        storage_sinks = [
+            BeaconSnowflakeStorageSink(
+                self._transformed_meter_output_file(),
+                self._transformed_reads_output_file(),
+                self._raw_reads_output_file(),
+            )
+        ]
+        super().__init__(storage_sinks)
 
     def name(self) -> str:
         return f"beacon-360-api"
@@ -516,3 +528,81 @@ class Beacon360Adapter(BaseAMIAdapter):
 
     def _transformed_reads_output_file(self) -> str:
         return os.path.join(self.output_folder, f"{self.name()}-transformed-reads.txt")
+
+
+class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
+    """
+    Beacon 360 implementation of Snowflake AMI Storage Sink. In addition to parent class's storage of generalized
+    data, this stores raw meters and reads into a Snowflake table.
+    """
+
+    def __init__(
+        self,
+        transformed_meter_file: str,
+        transformed_reads_file: str,
+        raw_meter_and_reads_file: str,
+    ):
+        super().__init__(transformed_meter_file, transformed_reads_file)
+        self.raw_meter_and_reads_file = raw_meter_and_reads_file
+
+    def store_raw(self, config: AMIAdapterConfiguration):
+        with open(self.raw_meter_and_reads_file, "r") as f:
+            text = f.read()
+            raw_meters_with_reads = [
+                Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
+            ]
+
+        conn = snowflake.connector.connect(
+            account=config.snowflake_account,
+            user=config.snowflake_user,
+            password=config.snowflake_password,
+            warehouse=config.snowflake_warehouse,
+            database=config.snowflake_database,
+            schema=config.snowflake_schema,
+            role=config.snowflake_role,
+            paramstyle="qmark",
+        )
+
+        create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_beacon_360_base LIKE beacon_360_base;"
+        conn.cursor().execute(create_temp_table_sql)
+
+        columns = ", ".join(REQUESTED_COLUMNS)
+        qmarks = "?, " * (len(REQUESTED_COLUMNS) - 1) + "?"
+        insert_temp_data_sql = f"""
+            INSERT INTO temp_beacon_360_base (org_id, device_id, created_time, {columns}) 
+                VALUES (?, ?, ?, {qmarks})
+        """
+        created_time = datetime.now(tz=pytz.UTC)
+        rows = [
+            tuple(
+                ["my-org", i.Meter_ID, created_time]
+                + [i.__getattribute__(name) for name in REQUESTED_COLUMNS]
+            )
+            for i in raw_meters_with_reads
+        ]
+        conn.cursor().executemany(insert_temp_data_sql, rows)
+
+        merge_sql = f"""
+            MERGE INTO beacon_360_base AS target
+            USING (
+                -- Use GROUP BY to ensure there are no duplicate rows before merge
+                SELECT 
+                    org_id,
+                    device_id, 
+                    Read_Time, 
+                    {", ".join([f"max({name}) as {name}" for name in REQUESTED_COLUMNS if name not in {"Read_Time",}])}, 
+                    max(created_time) as created_time
+                FROM temp_beacon_360_base
+                GROUP BY org_id, device_id, Read_Time
+            ) AS source
+            ON source.org_id = target.org_id 
+                AND source.device_id = target.device_id
+                AND source.Read_Time = target.Read_Time
+            WHEN MATCHED THEN
+                UPDATE SET
+                    {",".join([f"target.{name} = source.{name}" for name in REQUESTED_COLUMNS])}
+            WHEN NOT MATCHED THEN
+                INSERT (org_id, device_id, {", ".join(name for name in REQUESTED_COLUMNS)}, created_time) 
+                        VALUES (source.org_id, source.device_id, {", ".join(f"source.{name}" for name in REQUESTED_COLUMNS)}, source.created_time)
+        """
+        conn.cursor().execute(merge_sql)

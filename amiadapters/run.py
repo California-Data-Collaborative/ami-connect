@@ -1,5 +1,7 @@
 import logging
 
+import snowflake.connector
+
 from amiadapters.beacon import Beacon360Adapter
 from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.sentryx import SentryxAdapter
@@ -13,9 +15,10 @@ def run_extract_transform():
     """
     config = AMIAdapterConfiguration.from_env()
     adapters = [
-        SentryxAdapter(config),
+        # SentryxAdapter(config),
         Beacon360Adapter(config),
     ]
+
     for adapter in adapters:
         logger.info(f"Extracting data for {adapter.name()}")
         adapter.extract()
@@ -31,3 +34,23 @@ def run_extract_transform():
         logger.info(f"Transformed data for {adapter.name()} to {config.output_folder}")
 
     logger.info(f"Transformed data for {len(adapters)} adapters")
+
+    for adapter in adapters:
+        logger.info(
+            f"Loading raw data for {adapter.name()} from {config.output_folder}"
+        )
+        adapter.load_raw(config)
+        logger.info(f"Loaded raw data for {adapter.name()} to {config.output_folder}")
+
+    logger.info(f"Loaded raw data for {len(adapters)} adapters")
+
+    for adapter in adapters:
+        logger.info(
+            f"Loading transformed data for {adapter.name()} from {config.output_folder}"
+        )
+        adapter.load_transformed(config)
+        logger.info(
+            f"Loaded transformed data for {adapter.name()} to {config.output_folder}"
+        )
+
+    logger.info(f"Loaded transformed data for {len(adapters)} adapters")
