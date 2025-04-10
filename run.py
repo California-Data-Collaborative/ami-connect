@@ -1,7 +1,7 @@
 import logging
 import sys
 
-from amiadapters.run import run_extract_transform
+from amiadapters.run import run_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +11,7 @@ def run():
     CLI for AMI Connect system.
     """
     logging.basicConfig(level=logging.INFO)
-    run_extract_transform()
+    run_pipeline("./config.yaml", "./secrets.yaml")
     return 0
 
 

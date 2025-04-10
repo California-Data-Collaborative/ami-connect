@@ -4,7 +4,6 @@ from datetime import datetime
 import json
 from typing import List
 
-from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.storage.base import BaseAMIStorageSink
 
 
@@ -30,13 +29,13 @@ class BaseAMIAdapter(ABC):
     def transform(self):
         pass
 
-    def load_raw(self, config: AMIAdapterConfiguration):
+    def load_raw(self):
         for sink in self.storage_sinks:
-            sink.store_raw(config)
+            sink.store_raw()
 
-    def load_transformed(self, config: AMIAdapterConfiguration):
+    def load_transformed(self):
         for sink in self.storage_sinks:
-            sink.store_transformed(config)
+            sink.store_transformed()
 
     def datetime_from_iso_str(self, datetime_str: str, org_timezone: str) -> datetime:
         # TODO timezones

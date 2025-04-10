@@ -143,10 +143,10 @@ class SentryxMeterWithReads:
 
 class SentryxAdapter(BaseAMIAdapter):
 
-    def __init__(self, config: AMIAdapterConfiguration):
-        self.output_folder = config.output_folder
-        self.api_key = config.sentryx_api_key
-        self.utility = config.utility_name
+    def __init__(self, intermediate_output: str, api_key: str, org_id: str):
+        self.output_folder = intermediate_output
+        self.api_key = api_key
+        self.utility = org_id
 
     def name(self) -> str:
         return f"sentryx-api-{self.utility}"

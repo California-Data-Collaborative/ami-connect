@@ -173,3 +173,5 @@ ami-connect/secrets.py
 
 airflow
 output
+config.yaml
+secrets.yaml

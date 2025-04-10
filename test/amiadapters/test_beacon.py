@@ -1,13 +1,14 @@
 import datetime
-from unittest import mock, TestCase
+from unittest import mock
 
 from amiadapters.base import GeneralMeter, GeneralMeterRead
-from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.beacon import (
     Beacon360Adapter,
     Beacon360MeterAndRead,
     REQUESTED_COLUMNS,
 )
+
+from test.base_test_case import BaseTestCase
 
 
 class MockResponse:
@@ -78,16 +79,16 @@ def mocked_get_consumption_response_last_page(*args, **kwargs):
     return MockResponse(data, 200)
 
 
-class TestBeacon360Adapter(TestCase):
+class TestBeacon360Adapter(BaseTestCase):
 
     def setUp(self):
-        config = AMIAdapterConfiguration(
-            output_folder="output",
-            beacon_360_user="user",
-            beacon_360_password="pass",
+        self.adapter = Beacon360Adapter(
+            api_user="user",
+            api_password="pass",
+            intermediate_output="output",
+            use_cache=False,
+            configured_sinks=[],
         )
-        self.adapter = Beacon360Adapter(config)
-        self.adapter.use_cache = False
 
     def test_init(self):
         self.assertEqual("output", self.adapter.output_folder)

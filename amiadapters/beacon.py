@@ -10,8 +10,6 @@ import requests
 import time
 from typing import List, Tuple
 
-import snowflake.connector
-
 from amiadapters.base import (
     BaseAMIAdapter,
     DataclassJSONEncoder,
@@ -19,7 +17,7 @@ from amiadapters.base import (
     GeneralMeterRead,
     GeneralModelJSONEncoder,
 )
-from amiadapters.config import AMIAdapterConfiguration
+from amiadapters.config import ConfiguredStorageSink, ConfiguredStorageSinkType
 from amiadapters.storage.snowflake import SnowflakeStorageSink
 
 logger = logging.getLogger(__name__)
@@ -258,21 +256,29 @@ class Beacon360Adapter(BaseAMIAdapter):
     API Documentation: https://helpbeaconama.net/beacon-web-services/export-data-service-v2-api-preview/#POSTread
     """
 
-    def __init__(self, config: AMIAdapterConfiguration):
-        self.output_folder = config.output_folder
-        self.user = config.beacon_360_user
-        self.password = config.beacon_360_password
-        # Use locally cached report instead of fetching from API
-        # Probably don't want to use this in production
-        # TODO expose this in settings, maybe make it default false?
-        self.use_cache = True
-        storage_sinks = [
-            BeaconSnowflakeStorageSink(
-                self._transformed_meter_output_file(),
-                self._transformed_reads_output_file(),
-                self._raw_reads_output_file(),
-            )
-        ]
+    def __init__(
+        self,
+        api_user: str,
+        api_password: str,
+        intermediate_output: str,
+        use_cache: bool,
+        configured_sinks,
+    ):
+        self.user = api_user
+        self.password = api_password
+        self.output_folder = intermediate_output
+        self.use_cache = use_cache
+        storage_sinks = []
+        for sink in configured_sinks:
+            if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
+                storage_sinks.append(
+                    BeaconSnowflakeStorageSink(
+                        self._transformed_meter_output_file(),
+                        self._transformed_reads_output_file(),
+                        self._raw_reads_output_file(),
+                        sink,
+                    )
+                )
         super().__init__(storage_sinks)
 
     def name(self) -> str:
@@ -541,27 +547,19 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
         transformed_meter_file: str,
         transformed_reads_file: str,
         raw_meter_and_reads_file: str,
+        sink_config: ConfiguredStorageSink,
     ):
-        super().__init__(transformed_meter_file, transformed_reads_file)
+        super().__init__(transformed_meter_file, transformed_reads_file, sink_config)
         self.raw_meter_and_reads_file = raw_meter_and_reads_file
 
-    def store_raw(self, config: AMIAdapterConfiguration):
+    def store_raw(self):
         with open(self.raw_meter_and_reads_file, "r") as f:
             text = f.read()
             raw_meters_with_reads = [
                 Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
             ]
 
-        conn = snowflake.connector.connect(
-            account=config.snowflake_account,
-            user=config.snowflake_user,
-            password=config.snowflake_password,
-            warehouse=config.snowflake_warehouse,
-            database=config.snowflake_database,
-            schema=config.snowflake_schema,
-            role=config.snowflake_role,
-            paramstyle="qmark",
-        )
+        conn = self.sink_config.connection()
 
         create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_beacon_360_base LIKE beacon_360_base;"
         conn.cursor().execute(create_temp_table_sql)
@@ -600,6 +598,7 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
                 AND source.Read_Time = target.Read_Time
             WHEN MATCHED THEN
                 UPDATE SET
+                    target.created_time = source.created_time,
                     {",".join([f"target.{name} = source.{name}" for name in REQUESTED_COLUMNS])}
             WHEN NOT MATCHED THEN
                 INSERT (org_id, device_id, {", ".join(name for name in REQUESTED_COLUMNS)}, created_time) 
