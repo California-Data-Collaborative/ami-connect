@@ -37,6 +37,18 @@ Run unit tests from the project's root directory with
 python -m unittest
 ```
 
+### Configuration
+
+We use two YAML files to configure the pipeline:
+- `config.yaml`, which tells the pipeline which AMI data sources should be queried during a run and which storage sinks should receive the data.
+- `secrets.yaml`, which houses all secrets.
+
+Copy our example files to get started:
+```
+cp ./config.yaml.example ./config.yaml
+cp ./secrets.yaml.example ./secrets.yaml
+```
+
 ### Run Airflow application
 
 We use Apache Airflow to orchestrate our data pipeline. The Airflow code is in the `amicontrol` package.
