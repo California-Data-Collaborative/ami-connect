@@ -24,34 +24,35 @@ class AMIAdapterConfiguration:
         with open(secrets_file, "r") as f:
             secrets_yaml = yaml.safe_load(f)
 
-        # Parse all configured sinks
+        # Parse all configured storage sinks
         all_sinks = []
         for sink in config_yaml.get("sinks", []):
             sink_id = sink.get("id")
             sink_type = sink.get("type")
-            if sink_type == ConfiguredStorageSinkType.SNOWFLAKE:
-                sink_secrets_yaml = secrets_yaml.get("sinks", {}).get(sink_id, {})
-                if not sink_secrets_yaml:
-                    raise ValueError(f"Found no secrets for sink {sink_id}")
-                sink_secrets = SnowflakeSecrets(
-                    account=sink_secrets_yaml.get("account"),
-                    user=sink_secrets_yaml.get("user"),
-                    password=sink_secrets_yaml.get("password"),
-                    role=sink_secrets_yaml.get("role"),
-                    warehouse=sink_secrets_yaml.get("warehouse"),
-                    database=sink_secrets_yaml.get("database"),
-                    schema=sink_secrets_yaml.get("schema"),
-                )
-                sink = ConfiguredStorageSink(
-                    ConfiguredStorageSinkType.SNOWFLAKE, sink_id, sink_secrets
-                )
-            else:
-                raise ValueError(f"Unrecognized sink type {sink_type}")
+            match sink_type:
+                case ConfiguredStorageSinkType.SNOWFLAKE:
+                    sink_secrets_yaml = secrets_yaml.get("sinks", {}).get(sink_id, {})
+                    if not sink_secrets_yaml:
+                        raise ValueError(f"Found no secrets for sink {sink_id}")
+                    sink_secrets = SnowflakeSecrets(
+                        account=sink_secrets_yaml.get("account"),
+                        user=sink_secrets_yaml.get("user"),
+                        password=sink_secrets_yaml.get("password"),
+                        role=sink_secrets_yaml.get("role"),
+                        warehouse=sink_secrets_yaml.get("warehouse"),
+                        database=sink_secrets_yaml.get("database"),
+                        schema=sink_secrets_yaml.get("schema"),
+                    )
+                    sink = ConfiguredStorageSink(
+                        ConfiguredStorageSinkType.SNOWFLAKE, sink_id, sink_secrets
+                    )
+                case _:
+                    raise ValueError(f"Unrecognized sink type {sink_type}")
             all_sinks.append(sink)
 
         all_sinks_by_id = {s.id: sink for s in all_sinks}
 
-        # Parse all configured sources, join their sinks
+        # Parse all configured sources
         sources = []
         for source in config_yaml.get("sources", []):
             org_id = source.get("org_id")
@@ -72,7 +73,7 @@ class AMIAdapterConfiguration:
                 case _:
                     secrets = None
 
-            # Parse sinks
+            # Join any sinks tied to this source
             sink_ids = source.get("sinks", [])
             sinks = []
             for sink_id in sink_ids:
@@ -143,6 +144,10 @@ class ConfiguredStorageSinkType:
 
 
 class ConfiguredStorageSink:
+    """
+    Configuration for a storage sink. We include convenience methods for
+    creating connections off of the configuration.
+    """
 
     def __init__(self, type: str, id: str, secrets: Union[SnowflakeSecrets]):
         self.type = self._type(type)
@@ -150,22 +155,26 @@ class ConfiguredStorageSink:
         self.secrets = self._secrets(secrets)
 
     def connection(self):
-        if self.type == ConfiguredStorageSinkType.SNOWFLAKE:
-            return snowflake.connector.connect(
-                account=self.secrets.account,
-                user=self.secrets.user,
-                password=self.secrets.password,
-                warehouse=self.secrets.warehouse,
-                database=self.secrets.database,
-                schema=self.secrets.schema,
-                role=self.secrets.role,
-                paramstyle="qmark",
-            )
-        raise ValueError(f"Unrecognized type {self.type}")
+        match self.type:
+            case ConfiguredStorageSinkType.SNOWFLAKE:
+                return snowflake.connector.connect(
+                    account=self.secrets.account,
+                    user=self.secrets.user,
+                    password=self.secrets.password,
+                    warehouse=self.secrets.warehouse,
+                    database=self.secrets.database,
+                    schema=self.secrets.schema,
+                    role=self.secrets.role,
+                    paramstyle="qmark",
+                )
+            case _:
+                ValueError(f"Unrecognized type {self.type}")
 
     def _type(self, type: str) -> str:
-        if type == ConfiguredStorageSinkType.SNOWFLAKE:
-            return ConfiguredStorageSinkType.SNOWFLAKE
+        if type in {
+            ConfiguredStorageSinkType.SNOWFLAKE,
+        }:
+            return type
         raise ValueError(f"Unrecognized storage sink type: {type}")
 
     def _id(self, id: str) -> str:
@@ -199,8 +208,7 @@ class ConfiguredAMISourceType:
 
 class ConfiguredAMISource:
     """
-    A single utility's AMI data source and where we'll store that data
-    when we run our pipeline.
+    Configures a single utility's AMI data source and its storage sinks.
     """
 
     DEFAULT_TIMEZONE = "America/LosAngeles"
