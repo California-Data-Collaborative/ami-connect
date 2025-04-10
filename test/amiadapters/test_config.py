@@ -62,7 +62,8 @@ class TestConfig(BaseTestCase):
 
     def test_can_create_adapters(self):
         config = AMIAdapterConfiguration.from_yaml(
-            self.get_fixture_path("all-config.yaml"), self.get_fixture_path("all-secrets.yaml")
+            self.get_fixture_path("all-config.yaml"),
+            self.get_fixture_path("all-secrets.yaml"),
         )
         adapters = config.adapters()
 
