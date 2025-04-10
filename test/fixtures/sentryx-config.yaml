@@ -1,0 +1,11 @@
+sources:
+- type: sentryx
+  org_id: my_utility
+  timezone: America/Los_Angeles
+  intermediate_output: ./output
+  sinks:
+  - my_snowflake_instance
+
+sinks:
+- type: snowflake
+  id: my_snowflake_instance 

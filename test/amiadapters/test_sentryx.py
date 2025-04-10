@@ -1,14 +1,15 @@
 import datetime
-from unittest import mock, TestCase
+from unittest import mock
 
 from amiadapters.base import GeneralMeter, GeneralMeterRead
-from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.sentryx import (
     SentryxAdapter,
     SentryxMeter,
     SentryxMeterRead,
     SentryxMeterWithReads,
 )
+
+from test.base_test_case import BaseTestCase
 
 
 class MockResponse:
@@ -141,27 +142,18 @@ def mocked_get_consumption_response_last_page(*args, **kwargs):
     return MockResponse(data, 200)
 
 
-class TestSentryxAdapter(TestCase):
+class TestSentryxAdapter(BaseTestCase):
 
     def setUp(self):
-        config = AMIAdapterConfiguration(
-            utility_name="my-utility",
-            output_folder="output",
-            sentryx_api_key="key",
+        self.adapter = SentryxAdapter(
+            intermediate_output="output", api_key="key", org_id="my-utility"
         )
-        self.adapter = SentryxAdapter(config)
 
     def test_init(self):
-        config = AMIAdapterConfiguration(
-            utility_name="my-utility",
-            output_folder="output",
-            sentryx_api_key="key",
-        )
-        adapter = SentryxAdapter(config)
-        self.assertEqual("output", adapter.output_folder)
-        self.assertEqual("key", adapter.api_key)
-        self.assertEqual("my-utility", adapter.utility)
-        self.assertEqual("sentryx-api-my-utility", adapter.name())
+        self.assertEqual("output", self.adapter.output_folder)
+        self.assertEqual("key", self.adapter.api_key)
+        self.assertEqual("my-utility", self.adapter.utility)
+        self.assertEqual("sentryx-api-my-utility", self.adapter.name())
 
     @mock.patch(
         "requests.get",
@@ -363,7 +355,7 @@ class TestSentryxAdapter(TestCase):
         self.assertListEqual(expected_reads, transformed_reads)
 
 
-class TestSentryxMeterWithReads(TestCase):
+class TestSentryxMeterWithReads(BaseTestCase):
 
     def test_from_json(self):
         json_str = """

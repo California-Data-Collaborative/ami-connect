@@ -1,11 +1,11 @@
 from datetime import datetime
+import os
+import pathlib
 
 from airflow.decorators import dag, task
 
 from amiadapters.base import BaseAMIAdapter
-from amiadapters.beacon import Beacon360Adapter
 from amiadapters.config import AMIAdapterConfiguration
-from amiadapters.sentryx import SentryxAdapter
 
 
 @dag(
@@ -16,12 +16,6 @@ from amiadapters.sentryx import SentryxAdapter
 )
 def ami_control_dag():
 
-    config = AMIAdapterConfiguration.from_env()
-    adapters = [
-        # SentryxAdapter(config),
-        Beacon360Adapter(config),
-    ]
-
     @task()
     def extract(adapter: BaseAMIAdapter):
         adapter.extract()
@@ -31,12 +25,25 @@ def ami_control_dag():
         adapter.transform()
 
     @task()
-    def load_raw(adapter: BaseAMIAdapter, config: AMIAdapterConfiguration):
-        adapter.load_raw(config)
+    def load_raw(adapter: BaseAMIAdapter):
+        adapter.load_raw()
 
     @task()
-    def load_transformed(adapter: BaseAMIAdapter, config: AMIAdapterConfiguration):
-        adapter.load_transformed(config)
+    def load_transformed(adapter: BaseAMIAdapter):
+        adapter.load_transformed()
+
+    config = AMIAdapterConfiguration.from_yaml(
+        os.environ.get(
+            "AMI_CONFIG_YAML",
+            pathlib.Path(__file__).joinpath("..", "..", "..", "config.yaml").resolve(),
+        ),
+        os.environ.get(
+            "AMI_SECRET_YAML",
+            pathlib.Path(__file__).joinpath("..", "..", "..", "secrets.yaml").resolve(),
+        ),
+    )
+
+    adapters = config.adapters()
 
     for adapter in adapters:
         extract.override(task_id=f"extract-{adapter.name()}")(adapter)
@@ -45,12 +52,10 @@ def ami_control_dag():
         transform.override(task_id=f"transform-{adapter.name()}")(adapter)
 
     for adapter in adapters:
-        load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter, config)
+        load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter)
 
     for adapter in adapters:
-        load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(
-            adapter, config
-        )
+        load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(adapter)
 
 
 ami_control_dag()

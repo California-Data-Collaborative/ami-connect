@@ -59,13 +59,18 @@ class AMIAdapterConfiguration:
 
             # Parse secrets for data source
             this_source_secrets = secrets_yaml.get("sources", {}).get(org_id)
-            if type == ConfiguredAMISourceType.BEACON_360:
-                secrets = Beacon360Secrets(
-                    this_source_secrets.get("beacon_360_user"),
-                    this_source_secrets.get("beacon_360_password"),
-                )
-            else:
-                secrets = None
+            match type:
+                case ConfiguredAMISourceType.BEACON_360:
+                    secrets = Beacon360Secrets(
+                        this_source_secrets.get("beacon_360_user"),
+                        this_source_secrets.get("beacon_360_password"),
+                    )
+                case ConfiguredAMISourceType.SENTRYX:
+                    secrets = SentryxSecrets(
+                        this_source_secrets.get("sentryx_api_key"),
+                    )
+                case _:
+                    secrets = None
 
             # Parse sinks
             sink_ids = source.get("sinks", [])
@@ -93,19 +98,29 @@ class AMIAdapterConfiguration:
     def adapters(self):
         # Circular import, TODO fix
         from amiadapters.beacon import Beacon360Adapter
+        from amiadapters.sentryx import SentryxAdapter
 
         adapters = []
         for source in self.sources:
-            if source.type == ConfiguredAMISourceType.BEACON_360:
-                adapters.append(
-                    Beacon360Adapter(
-                        source.secrets.user,
-                        source.secrets.password,
-                        source.intermediate_output,
-                        source.use_raw_data_cache,
-                        source.storage_sinks,
+            match source.type:
+                case ConfiguredAMISourceType.BEACON_360:
+                    adapters.append(
+                        Beacon360Adapter(
+                            source.secrets.user,
+                            source.secrets.password,
+                            source.intermediate_output,
+                            source.use_raw_data_cache,
+                            source.storage_sinks,
+                        )
                     )
-                )
+                case ConfiguredAMISourceType.SENTRYX:
+                    adapters.append(
+                        SentryxAdapter(
+                            source.intermediate_output,
+                            source.secrets.api_key,
+                            source.org_id,
+                        )
+                    )
         return adapters
 
     def __repr__(self):
@@ -172,8 +187,14 @@ class Beacon360Secrets:
     password: str
 
 
+@dataclass
+class SentryxSecrets:
+    api_key: str
+
+
 class ConfiguredAMISourceType:
     BEACON_360 = "beacon_360"
+    SENTRYX = "sentryx"
 
 
 class ConfiguredAMISource:
@@ -203,8 +224,11 @@ class ConfiguredAMISource:
         self.storage_sinks = self._sinks(sinks)
 
     def _type(self, type: str) -> str:
-        if type == ConfiguredAMISourceType.BEACON_360:
-            return ConfiguredAMISourceType.BEACON_360
+        if type in {
+            ConfiguredAMISourceType.BEACON_360,
+            ConfiguredAMISourceType.SENTRYX,
+        }:
+            return type
         raise ValueError(f"Unrecognized AMI source type: {type}")
 
     def _org_id(self, org_id: str) -> str:
@@ -227,6 +251,10 @@ class ConfiguredAMISource:
             secrets, Beacon360Secrets
         ):
             return secrets
+        elif self.type == ConfiguredAMISourceType.SENTRYX and isinstance(
+            secrets, SentryxSecrets
+        ):
+            return secrets
         raise ValueError(f"Invalid secrets type for source type {self.type}")
 
     def _sinks(self, sinks: List[ConfiguredStorageSink]) -> List[ConfiguredStorageSink]:
@@ -234,6 +262,9 @@ class ConfiguredAMISource:
         Validate that this type of sink is compatible with this data source type.
         """
         if self.type == ConfiguredAMISourceType.BEACON_360:
+            if all(s.type == ConfiguredStorageSinkType.SNOWFLAKE for s in sinks):
+                return sinks
+        elif self.type == ConfiguredAMISourceType.SENTRYX:
             if all(s.type == ConfiguredStorageSinkType.SNOWFLAKE for s in sinks):
                 return sinks
         raise ValueError(f"Invalid sink type(s) for source type {self.type}")
