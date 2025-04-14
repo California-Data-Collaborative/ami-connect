@@ -9,6 +9,7 @@ boto3==1.38.5
 paramiko==3.5.1
 oracledb==3.1.1
 sshtunnel==0.4.0
+typer==0.15.2
 # Installs with constraints for Python 3.12
 apache-airflow==2.10.5 --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.12.txt
 apache-airflow-providers-snowflake==6.4.0
