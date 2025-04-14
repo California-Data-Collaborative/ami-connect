@@ -88,6 +88,7 @@ class AMIAdapterConfiguration:
                 source.get("timezone"),
                 source.get("use_raw_data_cache"),
                 source.get("intermediate_output"),
+                source.get("utility_name"),
                 secrets,
                 sinks,
             )
@@ -97,6 +98,10 @@ class AMIAdapterConfiguration:
         return AMIAdapterConfiguration(sources=sources)
 
     def adapters(self):
+        """
+        Preferred method for instantiating AMI Adapters off of a user's configuration.
+        Reads configuration to see which adapters to run and where to store the data.
+        """
         # Circular import, TODO fix
         from amiadapters.beacon import Beacon360Adapter
         from amiadapters.sentryx import SentryxAdapter
@@ -111,6 +116,8 @@ class AMIAdapterConfiguration:
                             source.secrets.password,
                             source.intermediate_output,
                             source.use_raw_data_cache,
+                            source.org_id,
+                            source.timezone,
                             source.storage_sinks,
                         )
                     )
@@ -120,6 +127,8 @@ class AMIAdapterConfiguration:
                             source.intermediate_output,
                             source.secrets.api_key,
                             source.org_id,
+                            source.timezone,
+                            source.utility_name,
                         )
                     )
         return adapters
@@ -220,6 +229,7 @@ class ConfiguredAMISource:
         timezone: str,
         use_raw_data_cache: bool,
         intermediate_output: str,
+        utility_name: str,
         secrets: Union[Beacon360Secrets],
         sinks: List[ConfiguredStorageSink],
     ):
@@ -228,6 +238,7 @@ class ConfiguredAMISource:
         self.timezone = self._timezone(timezone)
         self.use_raw_data_cache = bool(use_raw_data_cache)
         self.intermediate_output = self._intermediate_output(intermediate_output)
+        self.utility_name = utility_name
         self.secrets = self._secrets(secrets)
         self.storage_sinks = self._sinks(sinks)
 

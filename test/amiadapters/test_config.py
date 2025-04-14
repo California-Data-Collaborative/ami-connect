@@ -16,6 +16,7 @@ class TestConfig(BaseTestCase):
         source = config.sources[0]
         self.assertEqual("sentryx", source.type)
         self.assertEqual("my_utility", source.org_id)
+        self.assertEqual("u_name", source.utility_name)
         self.assertEqual("America/Los_Angeles", str(source.timezone))
         self.assertEqual(False, source.use_raw_data_cache)
         self.assertEqual("./output", source.intermediate_output)

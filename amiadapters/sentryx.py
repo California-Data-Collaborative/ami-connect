@@ -131,6 +131,7 @@ class SentryxMeterWithReads:
     @classmethod
     def from_json(cls, d: str):
         """
+        Parses SentryxMeterWithReads from JSON, including nested reads.
         Dataclass doesn't handle nested JSON well, so we roll our own.
         """
         meter = SentryxMeterWithReads(**json.loads(d))
@@ -142,14 +143,28 @@ class SentryxMeterWithReads:
 
 
 class SentryxAdapter(BaseAMIAdapter):
+    """
+    AMI Adapter for Sentryx API.
+    """
 
-    def __init__(self, intermediate_output: str, api_key: str, org_id: str):
+    def __init__(
+        self,
+        intermediate_output: str,
+        api_key: str,
+        org_id: str,
+        org_timezone: str,
+        utility_name: str = None,
+    ):
         self.output_folder = intermediate_output
         self.api_key = api_key
-        self.utility = org_id
+        self.org_id = org_id
+        self.org_timezone = org_timezone
+        # This is used to create URLs for the Sentryx API. It must match the name used to generate API credentials.
+        # It defaults to the org_id.
+        self.utility_name = utility_name if utility_name is not None else org_id
 
     def name(self) -> str:
-        return f"sentryx-api-{self.utility}"
+        return f"sentryx-api-{self.org_id}"
 
     def extract(self):
         meters = self._extract_all_meters()
@@ -165,7 +180,7 @@ class SentryxAdapter(BaseAMIAdapter):
             f.write(content)
 
     def _extract_all_meters(self) -> List[SentryxMeter]:
-        url = f"{BASE_URL}/{self.utility}/devices"
+        url = f"{BASE_URL}/{self.utility_name}/devices"
 
         headers = {
             "Authorization": self.api_key,
@@ -178,7 +193,7 @@ class SentryxAdapter(BaseAMIAdapter):
         while last_page is False:
             params = {"pager.skip": num_meters, "pager.take": 25}
             logger.info(
-                f"Extracting meters for {self.utility}, skip={params["pager.skip"]}"
+                f"Extracting meters for {self.org_id}, skip={params["pager.skip"]}"
             )
             response = requests.get(url, headers=headers, params=params)
             if not response.status_code == 200:
@@ -210,12 +225,12 @@ class SentryxAdapter(BaseAMIAdapter):
 
             last_page = not raw_meters
 
-        logger.info(f"Extracted {len(meters)} meters for {self.utility}")
+        logger.info(f"Extracted {len(meters)} meters for {self.org_id}")
 
         return meters
 
     def _extract_consumption_for_all_meters(self) -> List[SentryxMeterWithReads]:
-        url = f"{BASE_URL}/{self.utility}/devices/consumption"
+        url = f"{BASE_URL}/{self.utility_name}/devices/consumption"
 
         headers = {
             "Authorization": self.api_key,
@@ -236,7 +251,7 @@ class SentryxAdapter(BaseAMIAdapter):
                 "EndDate": end_date.isoformat(),
             }
             logger.info(
-                f"Extracting meter reads for {self.utility}, skip={params["skip"]}"
+                f"Extracting meter reads for {self.org_id}, skip={params["skip"]}"
             )
             response = requests.get(url, headers=headers, params=params)
             if not response.status_code == 200:
@@ -305,14 +320,14 @@ class SentryxAdapter(BaseAMIAdapter):
         for raw_meter in raw_meters:
             device_id = str(raw_meter.device_id)
             meter = GeneralMeter(
-                org_id="my org",
+                org_id=self.org_id,
                 device_id=device_id,
                 account_id=raw_meter.account_id,
                 location_id=None,
                 meter_id=device_id,
                 endpoint_id=None,
                 meter_install_date=self.datetime_from_iso_str(
-                    raw_meter.install_date, None
+                    raw_meter.install_date, self.org_timezone
                 ),
                 meter_size=self.map_meter_size(raw_meter.meter_size),
                 meter_manufacturer=raw_meter.manufacturer,
@@ -333,11 +348,13 @@ class SentryxAdapter(BaseAMIAdapter):
             for raw_read in raw_meter.data:
                 value = raw_read.reading
                 read = GeneralMeterRead(
-                    org_id="my org",
+                    org_id=self.org_id,
                     device_id=device_id,
                     account_id=account_id,
                     location_id=None,
-                    flowtime=self.datetime_from_iso_str(raw_read.time_stamp, None),
+                    flowtime=self.datetime_from_iso_str(
+                        raw_read.time_stamp, self.org_timezone
+                    ),
                     register_value=value,
                     register_unit=self.map_unit_of_measure(raw_meter.units),
                     interval_value=None,
