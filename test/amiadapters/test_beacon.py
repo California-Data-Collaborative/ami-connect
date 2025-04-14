@@ -1,4 +1,5 @@
 import datetime
+import pytz
 from unittest import mock
 
 from amiadapters.base import GeneralMeter, GeneralMeterRead
@@ -87,6 +88,8 @@ class TestBeacon360Adapter(BaseTestCase):
             api_password="pass",
             intermediate_output="output",
             use_cache=False,
+            org_id="this-org",
+            org_timezone=pytz.timezone("Europe/Rome"),
             configured_sinks=[],
         )
 
@@ -136,11 +139,11 @@ class TestBeacon360Adapter(BaseTestCase):
             generater_report_request.kwargs["params"]["Header_Columns"],
         )
         self.assertEqual(
-            datetime.datetime(2024, 8, 1, 0, 0),
+            datetime.datetime(2024, 8, 1, 0, 0, tzinfo=pytz.timezone('Europe/Rome')),
             generater_report_request.kwargs["params"]["Start_Date"],
         )
         self.assertEqual(
-            datetime.datetime(2024, 8, 2, 0, 0),
+            datetime.datetime(2024, 8, 2, 0, 0, tzinfo=pytz.timezone('Europe/Rome')),
             generater_report_request.kwargs["params"]["End_Date"],
         )
         self.assertTrue(generater_report_request.kwargs["params"]["Has_Endpoint"])
@@ -219,9 +222,9 @@ class TestBeacon360Adapter(BaseTestCase):
 
         self.assertTrue("Exception found in report status" in str(context.exception))
 
-    # Mock the status call response as "not finished" twenty times
+    # Mock the status call response as "not finished" 50 times
     @mock.patch(
-        "requests.get", side_effect=[mocked_get_range_report_status_not_finished()] * 20
+        "requests.get", side_effect=[mocked_get_range_report_status_not_finished()] * 50
     )
     @mock.patch("requests.post", side_effect=[mocked_create_range_report()])
     @mock.patch("time.sleep")
@@ -711,7 +714,7 @@ class TestBeacon360Adapter(BaseTestCase):
 
         expected_meters = [
             GeneralMeter(
-                org_id="my org",
+                org_id="this-org",
                 device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
@@ -730,7 +733,7 @@ class TestBeacon360Adapter(BaseTestCase):
 
         expected_reads = [
             GeneralMeterRead(
-                org_id="my org",
+                org_id="this-org",
                 device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
@@ -741,7 +744,7 @@ class TestBeacon360Adapter(BaseTestCase):
                 interval_unit=None,
             ),
             GeneralMeterRead(
-                org_id="my org",
+                org_id="this-org",
                 device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
@@ -979,7 +982,7 @@ class TestBeacon360Adapter(BaseTestCase):
 
         expected_meters = [
             GeneralMeter(
-                org_id="my org",
+                org_id="this-org",
                 device_id="10101",
                 account_id="1",
                 location_id="303022",
@@ -994,7 +997,7 @@ class TestBeacon360Adapter(BaseTestCase):
                 location_zip="93727",
             ),
             GeneralMeter(
-                org_id="my org",
+                org_id="this-org",
                 device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
@@ -1013,7 +1016,7 @@ class TestBeacon360Adapter(BaseTestCase):
 
         expected_reads = [
             GeneralMeterRead(
-                org_id="my org",
+                org_id="this-org",
                 device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
@@ -1024,7 +1027,7 @@ class TestBeacon360Adapter(BaseTestCase):
                 interval_unit=None,
             ),
             GeneralMeterRead(
-                org_id="my org",
+                org_id="this-org",
                 device_id="10101",
                 account_id="1",
                 location_id="303022",
@@ -1155,7 +1158,7 @@ class TestBeacon360Adapter(BaseTestCase):
 
         expected_meters = [
             GeneralMeter(
-                org_id="my org",
+                org_id="this-org",
                 device_id="1470158170",
                 account_id="303022",
                 location_id="303022",

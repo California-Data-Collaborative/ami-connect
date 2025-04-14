@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import pytz
+from pytz.tzinfo import DstTzInfo
 import requests
 import time
 from typing import List, Tuple
@@ -262,12 +263,16 @@ class Beacon360Adapter(BaseAMIAdapter):
         api_password: str,
         intermediate_output: str,
         use_cache: bool,
+        org_id: str,
+        org_timezone: DstTzInfo,
         configured_sinks,
     ):
         self.user = api_user
         self.password = api_password
         self.output_folder = intermediate_output
         self.use_cache = use_cache
+        self.org_id = org_id
+        self.org_timezone = org_timezone
         storage_sinks = []
         for sink in configured_sinks:
             if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
@@ -276,6 +281,8 @@ class Beacon360Adapter(BaseAMIAdapter):
                         self._transformed_meter_output_file(),
                         self._transformed_reads_output_file(),
                         self._raw_reads_output_file(),
+                        self.org_id,
+                        self.org_timezone,
                         sink,
                     )
                 )
@@ -307,8 +314,8 @@ class Beacon360Adapter(BaseAMIAdapter):
         auth = requests.auth.HTTPBasicAuth(self.user, self.password)
 
         params = {
-            "Start_Date": datetime(2024, 8, 1),
-            "End_Date": datetime(2024, 8, 2),
+            "Start_Date": datetime(2024, 8, 1, tzinfo=self.org_timezone),
+            "End_Date": datetime(2024, 8, 2, tzinfo=self.org_timezone),
             "Resolution": "hourly",
             "Header_Columns": ",".join(REQUESTED_COLUMNS),
             "Has_Endpoint": True,
@@ -346,7 +353,7 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         # Poll for report status
         i = 0
-        max_attempts = 15  # 15 minutes
+        max_attempts = 45  # 45 minutes
         while True:
             i += 1
             if i >= max_attempts:
@@ -427,7 +434,7 @@ class Beacon360Adapter(BaseAMIAdapter):
         Convert the CSV string of a range report into our
         raw model in prep for output.
 
-        Assumes Beacon360MeterAndRead attributes are identical to CSV column names.
+        Assumes Beacon360MeterAndRead attribute names are identical to CSV column names.
         """
         report_csv_rows = report.strip().split("\n")
         if not report_csv_rows:
@@ -479,15 +486,14 @@ class Beacon360Adapter(BaseAMIAdapter):
             meter_id = meter_and_read.Meter_ID
 
             meter = GeneralMeter(
-                # TODO org ID should be configured
-                org_id="my org",
+                org_id=self.org_id,
                 device_id=meter_id,
                 account_id=account_id,
                 location_id=location_id,
                 meter_id=meter_id,
                 endpoint_id=meter_and_read.Endpoint_SN,
                 meter_install_date=self.datetime_from_iso_str(
-                    meter_and_read.Meter_Install_Date, None
+                    meter_and_read.Meter_Install_Date, self.org_timezone
                 ),
                 meter_size=meter_and_read.Meter_Size,
                 meter_manufacturer=meter_and_read.Meter_Manufacturer,
@@ -498,7 +504,7 @@ class Beacon360Adapter(BaseAMIAdapter):
             )
             transformed_meters.add(meter)
 
-            flowtime = self.datetime_from_iso_str(meter_and_read.Read_Time, None)
+            flowtime = self.datetime_from_iso_str(meter_and_read.Read_Time, self.org_timezone)
             if flowtime is None:
                 logger.info(
                     f"Skipping read with no flowtime for account={account_id} location={location_id} meter={meter_id}"
@@ -506,7 +512,7 @@ class Beacon360Adapter(BaseAMIAdapter):
                 continue
 
             read = GeneralMeterRead(
-                org_id="my org",
+                org_id=self.org_id,
                 device_id=meter_id,
                 account_id=account_id,
                 location_id=location_id,
@@ -547,10 +553,14 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
         transformed_meter_file: str,
         transformed_reads_file: str,
         raw_meter_and_reads_file: str,
+        org_id: str,
+        org_timezone: str,
         sink_config: ConfiguredStorageSink,
     ):
         super().__init__(transformed_meter_file, transformed_reads_file, sink_config)
         self.raw_meter_and_reads_file = raw_meter_and_reads_file
+        self.org_id = org_id
+        self.org_timezone = org_timezone
 
     def store_raw(self):
         with open(self.raw_meter_and_reads_file, "r") as f:
@@ -570,10 +580,10 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
             INSERT INTO temp_beacon_360_base (org_id, device_id, created_time, {columns}) 
                 VALUES (?, ?, ?, {qmarks})
         """
-        created_time = datetime.now(tz=pytz.UTC)
+        created_time = datetime.now(tz=self.org_timezone)
         rows = [
             tuple(
-                ["my-org", i.Meter_ID, created_time]
+                [self.org_id, i.Meter_ID, created_time]
                 + [i.__getattribute__(name) for name in REQUESTED_COLUMNS]
             )
             for i in raw_meters_with_reads

@@ -97,6 +97,10 @@ class AMIAdapterConfiguration:
         return AMIAdapterConfiguration(sources=sources)
 
     def adapters(self):
+        """
+        Preferred method for instantiating AMI Adapters off of a user's configuration.
+        Reads configuration to see which adapters to run and where to store the data.
+        """
         # Circular import, TODO fix
         from amiadapters.beacon import Beacon360Adapter
         from amiadapters.sentryx import SentryxAdapter
@@ -111,6 +115,8 @@ class AMIAdapterConfiguration:
                             source.secrets.password,
                             source.intermediate_output,
                             source.use_raw_data_cache,
+                            source.org_id,
+                            source.timezone,
                             source.storage_sinks,
                         )
                     )
