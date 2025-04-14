@@ -312,7 +312,9 @@ class Beacon360Adapter(BaseAMIAdapter):
                 logger.info("Loaded report from cache")
                 return cached_report
             else:
-                logger.info("Could not load report from cache, continuing with calls to API")
+                logger.info(
+                    "Could not load report from cache, continuing with calls to API"
+                )
 
         auth = requests.auth.HTTPBasicAuth(self.user, self.password)
 
