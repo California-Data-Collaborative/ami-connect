@@ -306,10 +306,13 @@ class Beacon360Adapter(BaseAMIAdapter):
         Retrieve from cache if configured to do so.
         """
         if self.use_cache:
+            logger.info("Attempting to load report from cache")
             cached_report = self._get_cached_report()
             if cached_report is not None:
-                logger.info("Loading report from cache")
+                logger.info("Loaded report from cache")
                 return cached_report
+            else:
+                logger.info("Could not load report from cache, continuing with calls to API")
 
         auth = requests.auth.HTTPBasicAuth(self.user, self.password)
 
