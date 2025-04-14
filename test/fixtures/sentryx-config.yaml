@@ -3,6 +3,7 @@ sources:
   org_id: my_utility
   timezone: America/Los_Angeles
   intermediate_output: ./output
+  utility_name: u_name
   sinks:
   - my_snowflake_instance
 

@@ -97,7 +97,7 @@ class TestBeacon360Adapter(BaseTestCase):
         self.assertEqual("output", self.adapter.output_folder)
         self.assertEqual("user", self.adapter.user)
         self.assertEqual("pass", self.adapter.password)
-        self.assertEqual("beacon-360-api", self.adapter.name())
+        self.assertEqual("beacon-360-this-org", self.adapter.name())
 
     @mock.patch("requests.get")
     @mock.patch("requests.post")
@@ -139,11 +139,11 @@ class TestBeacon360Adapter(BaseTestCase):
             generater_report_request.kwargs["params"]["Header_Columns"],
         )
         self.assertEqual(
-            datetime.datetime(2024, 8, 1, 0, 0, tzinfo=pytz.timezone('Europe/Rome')),
+            datetime.datetime(2024, 8, 1, 0, 0, tzinfo=pytz.timezone("Europe/Rome")),
             generater_report_request.kwargs["params"]["Start_Date"],
         )
         self.assertEqual(
-            datetime.datetime(2024, 8, 2, 0, 0, tzinfo=pytz.timezone('Europe/Rome')),
+            datetime.datetime(2024, 8, 2, 0, 0, tzinfo=pytz.timezone("Europe/Rome")),
             generater_report_request.kwargs["params"]["End_Date"],
         )
         self.assertTrue(generater_report_request.kwargs["params"]["Has_Endpoint"])

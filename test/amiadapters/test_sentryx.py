@@ -1,4 +1,5 @@
 import datetime
+import pytz
 from unittest import mock
 
 from amiadapters.base import GeneralMeter, GeneralMeterRead
@@ -146,14 +147,20 @@ class TestSentryxAdapter(BaseTestCase):
 
     def setUp(self):
         self.adapter = SentryxAdapter(
-            intermediate_output="output", api_key="key", org_id="my-utility"
+            intermediate_output="output",
+            api_key="key",
+            org_id="this-utility",
+            org_timezone=pytz.timezone("Africa/Algiers"),
+            utility_name="my-utility-name",
         )
 
     def test_init(self):
         self.assertEqual("output", self.adapter.output_folder)
         self.assertEqual("key", self.adapter.api_key)
-        self.assertEqual("my-utility", self.adapter.utility)
-        self.assertEqual("sentryx-api-my-utility", self.adapter.name())
+        self.assertEqual("this-utility", self.adapter.org_id)
+        self.assertEqual(pytz.timezone("Africa/Algiers"), self.adapter.org_timezone)
+        self.assertEqual("my-utility-name", self.adapter.utility_name)
+        self.assertEqual("sentryx-api-this-utility", self.adapter.name())
 
     @mock.patch(
         "requests.get",
@@ -185,12 +192,12 @@ class TestSentryxAdapter(BaseTestCase):
 
         calls = [
             mock.call(
-                "https://api.sentryx.io/v1-wm/sites/my-utility/devices",
+                "https://api.sentryx.io/v1-wm/sites/my-utility-name/devices",
                 headers={"Authorization": "key"},
                 params={"pager.skip": 0, "pager.take": 25},
             ),
             mock.call(
-                "https://api.sentryx.io/v1-wm/sites/my-utility/devices",
+                "https://api.sentryx.io/v1-wm/sites/my-utility-name/devices",
                 headers={"Authorization": "key"},
                 params={"pager.skip": 1, "pager.take": 25},
             ),
@@ -236,7 +243,7 @@ class TestSentryxAdapter(BaseTestCase):
 
         calls = [
             mock.call(
-                "https://api.sentryx.io/v1-wm/sites/my-utility/devices/consumption",
+                "https://api.sentryx.io/v1-wm/sites/my-utility-name/devices/consumption",
                 headers={"Authorization": "key"},
                 params={
                     "skip": 0,
@@ -246,7 +253,7 @@ class TestSentryxAdapter(BaseTestCase):
                 },
             ),
             mock.call(
-                "https://api.sentryx.io/v1-wm/sites/my-utility/devices/consumption",
+                "https://api.sentryx.io/v1-wm/sites/my-utility-name/devices/consumption",
                 headers={"Authorization": "key"},
                 params={
                     "skip": 2,
@@ -310,7 +317,7 @@ class TestSentryxAdapter(BaseTestCase):
 
         expected_meters = [
             GeneralMeter(
-                org_id="my org",
+                org_id="this-utility",
                 device_id="1",
                 account_id="101",
                 location_id=None,
@@ -328,7 +335,7 @@ class TestSentryxAdapter(BaseTestCase):
 
         expected_reads = [
             GeneralMeterRead(
-                org_id="my org",
+                org_id="this-utility",
                 device_id="1",
                 account_id="101",
                 location_id=None,
@@ -339,7 +346,7 @@ class TestSentryxAdapter(BaseTestCase):
                 interval_unit=None,
             ),
             GeneralMeterRead(
-                org_id="my org",
+                org_id="this-utility",
                 device_id="2",
                 account_id=None,
                 location_id=None,

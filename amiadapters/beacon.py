@@ -289,7 +289,7 @@ class Beacon360Adapter(BaseAMIAdapter):
         super().__init__(storage_sinks)
 
     def name(self) -> str:
-        return f"beacon-360-api"
+        return f"beacon-360-{self.org_id}"
 
     def extract(self):
         report = self._fetch_range_report()
@@ -504,7 +504,9 @@ class Beacon360Adapter(BaseAMIAdapter):
             )
             transformed_meters.add(meter)
 
-            flowtime = self.datetime_from_iso_str(meter_and_read.Read_Time, self.org_timezone)
+            flowtime = self.datetime_from_iso_str(
+                meter_and_read.Read_Time, self.org_timezone
+            )
             if flowtime is None:
                 logger.info(
                     f"Skipping read with no flowtime for account={account_id} location={location_id} meter={meter_id}"
