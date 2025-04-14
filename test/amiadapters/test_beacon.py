@@ -725,7 +725,8 @@ class TestBeacon360Adapter(BaseTestCase):
                 meter_manufacturer="Sensus",
                 multiplier=None,
                 location_address="5391 E. MYSTREET",
-                location_state="Apple",
+                location_city="Apple",
+                location_state="CA",
                 location_zip="93727",
             )
         ]
@@ -993,7 +994,8 @@ class TestBeacon360Adapter(BaseTestCase):
                 meter_manufacturer="Sensus",
                 multiplier=None,
                 location_address="5391 E. MYSTREET",
-                location_state="Apple",
+                location_city="Apple",
+                location_state="CA",
                 location_zip="93727",
             ),
             GeneralMeter(
@@ -1008,7 +1010,8 @@ class TestBeacon360Adapter(BaseTestCase):
                 meter_manufacturer="Sensus",
                 multiplier=None,
                 location_address="5391 E. MYSTREET",
-                location_state="Apple",
+                location_city="Apple",
+                location_state="CA",
                 location_zip="93727",
             ),
         ]
@@ -1169,7 +1172,8 @@ class TestBeacon360Adapter(BaseTestCase):
                 meter_manufacturer="Sensus",
                 multiplier=None,
                 location_address="5391 E. MYSTREET",
-                location_state="Apple",
+                location_city="Apple",
+                location_state="CA",
                 location_zip="93727",
             ),
         ]

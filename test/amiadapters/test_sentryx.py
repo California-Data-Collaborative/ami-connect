@@ -328,6 +328,7 @@ class TestSentryxAdapter(BaseTestCase):
                 meter_manufacturer="manufacturer",
                 multiplier=None,
                 location_address="my street",
+                location_city="my town",
                 location_state="CA",
                 location_zip="12312",
             ),
