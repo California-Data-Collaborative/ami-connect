@@ -504,7 +504,8 @@ class Beacon360Adapter(BaseAMIAdapter):
                 meter_manufacturer=meter_and_read.Meter_Manufacturer,
                 multiplier=None,
                 location_address=meter_and_read.Location_Address_Line1,
-                location_state=meter_and_read.Location_City,
+                location_city=meter_and_read.Location_City,
+                location_state=meter_and_read.Location_State,
                 location_zip=meter_and_read.Location_ZIP,
             )
             transformed_meters.add(meter)

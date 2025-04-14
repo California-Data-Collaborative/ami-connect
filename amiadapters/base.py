@@ -99,6 +99,7 @@ class GeneralMeter:
         meter_manufacturer: Who made the meter?
         multiplier:
         location_address: street address of location
+        location_city: city of location
         location_state: state of location
         location_zip: zip code of location
     """
@@ -114,6 +115,7 @@ class GeneralMeter:
     meter_manufacturer: str
     multiplier: float
     location_address: str
+    location_city: str
     location_state: str
     location_zip: str
 

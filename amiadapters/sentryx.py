@@ -333,6 +333,7 @@ class SentryxAdapter(BaseAMIAdapter):
                 meter_manufacturer=raw_meter.manufacturer,
                 multiplier=None,
                 location_address=raw_meter.street,
+                location_city=raw_meter.city,
                 location_state=raw_meter.state,
                 location_zip=raw_meter.zip,
             )
