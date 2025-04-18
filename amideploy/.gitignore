@@ -1,0 +1,15 @@
+outputs.json
+*.tfvars
+*.pem
+
+.terraform/
+*.tfstate
+*.tfstate.*
+*.pkg
+crash.log
+terraform.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
