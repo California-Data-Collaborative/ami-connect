@@ -6,6 +6,7 @@ Seamless pipelines for AMI water data, now as easy to access as turning on a tap
 
 - [amiadapters](./amiadapters/) - Standalone Python library that adapts AMI data sources into our standard data format
 - [amicontrol](./amicontrol/) - The control plane for our AMI data pipeline. This houses Airflow DAGs and other code to operate the pipline.
+- [amideploy](./amideploy/) - IaC code to stand up an AMI Connect pipeline in the cloud. See [README](./amideploy/README.md) for instructions.
 - [test](./test/) - Unittests for all python code in the project.
 
 ## Development
@@ -49,7 +50,24 @@ cp ./config.yaml.example ./config.yaml
 cp ./secrets.yaml.example ./secrets.yaml
 ```
 
-### Run Airflow application
+### Deploy
+
+Use the `deploy.sh` script to deploy new code to your AMI Connect pipeline. As of this writing, the script
+simply copies new code to the Airflow server and updates python dependencies.
+
+You'll need to tell the script the hostname of your Airflow server. You can set the `AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME` environment variable to your hostname.
+
+The script assumes you've stored a key pair at `./amideploy/configuration/airflow-key.pem`.
+
+For configuration, it expects a `config.prod.yaml` and `secrets.prod.yaml` file. These will be used to configure
+your production pipeline.
+
+Example deploy:
+```
+export AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME=<my EC2 hostname> && sh deploy.sh
+```
+
+### Run Airflow application locally
 
 We use Apache Airflow to orchestrate our data pipeline. The Airflow code is in the `amicontrol` package.
 
