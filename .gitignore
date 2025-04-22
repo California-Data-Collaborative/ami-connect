@@ -169,9 +169,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-ami-connect/secrets.py
 
 airflow
 output
 config.yaml
+config.prod.yaml
 secrets.yaml
+secrets.prod.yaml
