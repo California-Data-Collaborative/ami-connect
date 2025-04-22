@@ -25,7 +25,13 @@ class BaseAMIAdapter(ABC):
         pass
 
     @abstractmethod
-    def extract(self):
+    def extract(self, extract_range_start: datetime, extract_range_end: datetime):
+        """
+        Extract data from an AMI data source.
+        
+        :extract_range_start datetime: start of meter read datetime range for which we'll extract data
+        :extract_range_end datetime:   end of meter read datetime range for which we'll extract data
+        """
         pass
 
     @abstractmethod

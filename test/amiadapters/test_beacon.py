@@ -78,6 +78,8 @@ class TestBeacon360Adapter(BaseTestCase):
             org_timezone=pytz.timezone("Europe/Rome"),
             configured_sinks=[],
         )
+        self.range_start = datetime.datetime(2024, 1, 2, 0, 0)
+        self.range_end = datetime.datetime(2024, 1, 3, 0, 0)
 
     def test_init(self):
         self.assertEqual("output", self.adapter.output_folder)
@@ -93,10 +95,22 @@ class TestBeacon360Adapter(BaseTestCase):
             return_value=REPORT_CONTENTS_CSV
         )
 
-        result = self.adapter._fetch_range_report()
+        result = self.adapter._fetch_range_report(self.range_start, self.range_end)
         self.assertEqual(REPORT_CONTENTS_CSV, result)
         self.assertEqual(0, mock_get.call_count)
         self.assertEqual(0, mock_post.call_count)
+
+    def test_fetch_range_report__throws_exception_when_range_not_valid(self, ):
+        with self.assertRaises(Exception) as context:
+            self.adapter._fetch_range_report(None, self.range_end)
+        
+        with self.assertRaises(Exception) as context:
+            self.adapter._fetch_range_report(self.range_start, None)
+        
+        with self.assertRaises(Exception) as context:
+            # End after start
+            self.adapter._fetch_range_report(self.range_end, self.range_start)
+
 
     @mock.patch(
         "requests.get",
@@ -111,7 +125,7 @@ class TestBeacon360Adapter(BaseTestCase):
     def test_fetch_range_report__can_fetch_report_from_api(
         self, mock_sleep, mock_post, mock_get
     ):
-        result = self.adapter._fetch_range_report()
+        result = self.adapter._fetch_range_report(self.range_start, self.range_end)
         self.assertEqual(REPORT_CONTENTS_CSV, result)
 
         self.assertEqual(1, len(mock_post.call_args_list))
@@ -125,11 +139,11 @@ class TestBeacon360Adapter(BaseTestCase):
             generater_report_request.kwargs["params"]["Header_Columns"],
         )
         self.assertEqual(
-            datetime.datetime(2025, 2, 1, 0, 0, tzinfo=pytz.timezone("Europe/Rome")),
+            self.range_start,
             generater_report_request.kwargs["params"]["Start_Date"],
         )
         self.assertEqual(
-            datetime.datetime(2025, 2, 1, 1, 0, tzinfo=pytz.timezone("Europe/Rome")),
+            self.range_end,
             generater_report_request.kwargs["params"]["End_Date"],
         )
         self.assertTrue(generater_report_request.kwargs["params"]["Has_Endpoint"])
@@ -171,7 +185,7 @@ class TestBeacon360Adapter(BaseTestCase):
         self, mock_sleep, mock_post, mock_get
     ):
         with self.assertRaises(Exception) as context:
-            self.adapter._fetch_range_report()
+            self.adapter._fetch_range_report(self.range_start, self.range_end)
 
         self.assertTrue("Rate limit exceeded" in str(context.exception))
 
@@ -182,7 +196,7 @@ class TestBeacon360Adapter(BaseTestCase):
         self, mock_sleep, mock_post, mock_get
     ):
         with self.assertRaises(Exception) as context:
-            self.adapter._fetch_range_report()
+            self.adapter._fetch_range_report(self.range_start, self.range_end)
 
         self.assertTrue("Failed request to generate report" in str(context.exception))
 
@@ -193,7 +207,7 @@ class TestBeacon360Adapter(BaseTestCase):
         self, mock_sleep, mock_post, mock_get
     ):
         with self.assertRaises(Exception) as context:
-            self.adapter._fetch_range_report()
+            self.adapter._fetch_range_report(self.range_start, self.range_end)
 
         self.assertTrue("Failed request to get report status" in str(context.exception))
 
@@ -204,7 +218,7 @@ class TestBeacon360Adapter(BaseTestCase):
         self, mock_sleep, mock_post, mock_get
     ):
         with self.assertRaises(Exception) as context:
-            self.adapter._fetch_range_report()
+            self.adapter._fetch_range_report(self.range_start, self.range_end)
 
         self.assertTrue("Exception found in report status" in str(context.exception))
 
@@ -219,7 +233,7 @@ class TestBeacon360Adapter(BaseTestCase):
         self, mock_sleep, mock_post, mock_get
     ):
         with self.assertRaises(Exception) as context:
-            self.adapter._fetch_range_report()
+            self.adapter._fetch_range_report(self.range_start, self.range_end)
 
         self.assertTrue("Reached max attempts" in str(context.exception))
 
@@ -236,7 +250,7 @@ class TestBeacon360Adapter(BaseTestCase):
     def test_fetch_range_report__retries_once_when_fetch_report_throws_exception(
         self, mock_sleep, mock_post, mock_get
     ):
-        result = self.adapter._fetch_range_report()
+        result = self.adapter._fetch_range_report(self.range_start, self.range_end)
         self.assertEqual(REPORT_CONTENTS_CSV, result)
         self.assertEqual(1, mock_sleep.call_count)
 
@@ -250,7 +264,7 @@ class TestBeacon360Adapter(BaseTestCase):
         self, mock_sleep, mock_post, mock_get
     ):
         with self.assertRaises(Exception) as context:
-            self.adapter._fetch_range_report()
+            self.adapter._fetch_range_report(self.range_start, self.range_end)
 
         self.assertTrue("Failed request to download report" in str(context.exception))
 

@@ -5,7 +5,7 @@ from amiadapters.config import AMIAdapterConfiguration
 logger = logging.getLogger(__name__)
 
 
-def run_pipeline(config_yaml: str, secrets_yaml: str):
+def run_pipeline(config_yaml: str, secrets_yaml: str, extract_range_start=None, extract_range_end=None):
     """
     Run AMI API adapters to fetch AMI data, then shape it into generalized format, then store it.
     """
@@ -14,7 +14,7 @@ def run_pipeline(config_yaml: str, secrets_yaml: str):
 
     for adapter in adapters:
         logger.info(f"Extracting data for {adapter.name()}")
-        adapter.extract()
+        adapter.extract(extract_range_start, extract_range_end)
         logger.info(f"Extracted data for {adapter.name()} to {adapter.output_folder}")
 
     logger.info(f"Extracted data for {len(adapters)} adapters")

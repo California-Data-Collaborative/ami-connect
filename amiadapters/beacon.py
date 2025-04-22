@@ -290,8 +290,8 @@ class Beacon360Adapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"beacon-360-{self.org_id}"
 
-    def extract(self):
-        report = self._fetch_range_report()
+    def extract(self, extract_range_start: datetime, extract_range_end: datetime):
+        report = self._fetch_range_report(extract_range_start, extract_range_end)
         meter_with_reads = self._parse_raw_range_report(report)
         with open(self._raw_reads_output_file(), "w") as f:
             content = "\n".join(
@@ -299,14 +299,19 @@ class Beacon360Adapter(BaseAMIAdapter):
             )
             f.write(content)
 
-    def _fetch_range_report(self) -> str:
+    def _fetch_range_report(self, extract_range_start: datetime, extract_range_end: datetime) -> str:
         """
         Return range report as CSV string, first line with headers.
         Retrieve from cache if configured to do so.
         """
+        if extract_range_start is None or extract_range_end is None:
+            raise Exception(f"Expected range start and end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}")
+        if extract_range_end < extract_range_start:
+            raise Exception(f"Range start must be before end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}")
+        
         if self.use_cache:
             logger.info("Attempting to load report from cache")
-            cached_report = self._get_cached_report()
+            cached_report = self._get_cached_report(extract_range_start, extract_range_end)
             if cached_report is not None:
                 logger.info("Loaded report from cache")
                 return cached_report
@@ -318,8 +323,8 @@ class Beacon360Adapter(BaseAMIAdapter):
         auth = requests.auth.HTTPBasicAuth(self.user, self.password)
 
         params = {
-            "Start_Date": datetime(2025, 2, 1, 0, 0, tzinfo=self.org_timezone),
-            "End_Date": datetime(2025, 2, 1, 1, 0, tzinfo=self.org_timezone),
+            "Start_Date": extract_range_start,
+            "End_Date": extract_range_end,
             "Resolution": "hourly",
             "Header_Columns": ",".join(REQUESTED_COLUMNS),
             "Has_Endpoint": True,
@@ -414,7 +419,7 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         report = report_response.text
 
-        self._write_cached_report(report)
+        self._write_cached_report(report, extract_range_start, extract_range_end)
 
         return report
 
@@ -424,14 +429,15 @@ class Beacon360Adapter(BaseAMIAdapter):
             url="https://api.beaconama.net" + report_url, headers=headers, auth=auth
         )
 
-    def _get_cached_report(self) -> str:
-        if os.path.exists(self._cached_report_file()):
-            with open(self._cached_report_file(), "r") as f:
+    def _get_cached_report(self, extract_range_start: datetime, extract_range_end: datetime) -> str:
+        cache_file = self._cached_report_file(extract_range_start, extract_range_end)
+        if os.path.exists(cache_file):
+            with open(cache_file, "r") as f:
                 return f.read()
         return None
 
-    def _write_cached_report(self, report: str):
-        cache_file = self._cached_report_file()
+    def _write_cached_report(self, report: str, extract_range_start: datetime, extract_range_end: datetime):
+        cache_file = self._cached_report_file(extract_range_start, extract_range_end)
         logger.info(f"Caching report contents at {cache_file}")
         directory = os.path.dirname(cache_file)
         # Create all necessary parent directories
@@ -545,8 +551,9 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         return meters_sorted, transformed_reads
 
-    def _cached_report_file(self) -> str:
-        return os.path.join(self.output_folder, f"{self.name()}-cached-report.txt")
+    def _cached_report_file(self, extract_range_start: datetime, extract_range_end: datetime) -> str:
+        start, end = extract_range_start.isoformat(), extract_range_end.isoformat()
+        return os.path.join(self.output_folder, f"{self.name()}-{start}-{end}-cached-report.txt")
 
     def _raw_reads_output_file(self) -> str:
         return os.path.join(self.output_folder, f"{self.name()}-raw-reads.txt")
