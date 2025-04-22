@@ -224,7 +224,8 @@ class TestBeacon360Adapter(BaseTestCase):
 
     # Mock the status call response as "not finished" way more times than our max limit
     @mock.patch(
-        "requests.get", side_effect=[mocked_get_range_report_status_not_finished()] * 500
+        "requests.get",
+        side_effect=[mocked_get_range_report_status_not_finished()] * 500,
     )
     @mock.patch("requests.post", side_effect=[mocked_create_range_report()])
     @mock.patch("time.sleep")
