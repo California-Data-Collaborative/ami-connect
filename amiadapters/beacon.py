@@ -415,10 +415,7 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         report = report_response.text
 
-        if self.use_cache:
-            logger.info(f"Caching report contents at {self._cached_report_file()}")
-            with open(self._cached_report_file(), "w") as f:
-                f.write(report)
+        self._write_cached_report(report)
 
         return report
 
@@ -433,6 +430,18 @@ class Beacon360Adapter(BaseAMIAdapter):
             with open(self._cached_report_file(), "r") as f:
                 return f.read()
         return None
+
+    def _write_cached_report(self, report: str):
+        cache_file = self._cached_report_file()
+        logger.info(f"Caching report contents at {cache_file}")
+        directory = os.path.dirname(cache_file)
+        # Create all necessary parent directories
+        if directory:
+            logger.info(f"Making parent directories for {cache_file}")
+            os.makedirs(directory, exist_ok=True)
+
+        with open(cache_file, "w") as f:
+            f.write(report)
 
     def _parse_raw_range_report(self, report: str) -> List[Beacon360MeterAndRead]:
         """
