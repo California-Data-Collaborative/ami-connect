@@ -1,69 +1,56 @@
-from datetime import datetime
-import json
-from typing import List
+import datetime
+import re
+from unittest.mock import Mock
+
 import pytz
 
 from amiadapters.base import GeneralMeter, GeneralMeterRead
-from amiadapters.config import ConfiguredStorageSink
-from amiadapters.storage.base import BaseAMIStorageSink
+from amiadapters.beacon import BeaconSnowflakeStorageSink
+from test.base_test_case import BaseTestCase
 
 
-class SnowflakeStorageSink(BaseAMIStorageSink):
-    """
-    AMI Storage Sink for Snowflake database. Implementors must specify how to store
-    raw data in Snowflake.
-    """
+class TestSnowflakeStorageSink(BaseTestCase):
 
-    def __init__(
-        self,
-        transformed_meter_file: str,
-        transformed_reads_file: str,
-        sink_config: ConfiguredStorageSink,
-    ):
-        super().__init__(transformed_meter_file, transformed_reads_file, sink_config)
-
-    def store_transformed(self):
-        with open(self.transformed_meter_file, "r") as f:
-            text = f.read()
-            meters = [GeneralMeter(**json.loads(d)) for d in text.strip().split("\n")]
-
-        with open(self.transformed_reads_file, "r") as f:
-            text = f.read()
-            reads = [
-                GeneralMeterRead(**json.loads(d)) for d in text.strip().split("\n")
-            ]
-
-        conn = self.sink_config.connection()
-
-        self._upsert_meters(meters, conn)
-        self._upsert_reads(reads, conn)
-
-    def _upsert_meters(self, meters: List[GeneralMeter], conn, row_active_from=None):
-        if row_active_from is None:
-            row_active_from = datetime.now(tz=pytz.UTC)
-
-        create_temp_table_sql = (
-            "CREATE OR REPLACE TEMPORARY TABLE TEMP_METERS LIKE METERS;"
+    def setUp(self):
+        self.snowflake_sink = BeaconSnowflakeStorageSink(
+            None, None, None, "org-id", pytz.timezone("Africa/Algiers"), None
         )
-        conn.cursor().execute(create_temp_table_sql)
 
-        insert_to_temp_table_sql = """
-            INSERT INTO temp_meters (
-                org_id, device_id, account_id, location_id, meter_id, 
-                endpoint_id, meter_install_date, meter_size, meter_manufacturer, 
-                multiplier, location_address, location_city, location_state, location_zip,
-                row_active_from
-            ) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        rows = [self._meter_tuple(m, row_active_from) for m in meters]
-        conn.cursor().executemany(insert_to_temp_table_sql, rows)
+    def test_upsert_meters(self):
+        meters = [
+            GeneralMeter(
+                org_id="this-utility",
+                device_id="1",
+                account_id="101",
+                location_id=None,
+                meter_id="1",
+                endpoint_id=None,
+                meter_install_date=datetime.datetime(
+                    2022, 2, 8, 22, 10, 43, tzinfo=pytz.timezone("Africa/Algiers")
+                ),
+                meter_size="0.375",
+                meter_manufacturer="manufacturer",
+                multiplier=None,
+                location_address="my street",
+                location_city="my town",
+                location_state="CA",
+                location_zip="12312",
+            ),
+        ]
 
-        # We use a Type 2 Slowly Changing Dimension pattern for our meters table
-        # Our implementation follows a pattern in this blog post: https://medium.com/@amit-jsr/implementing-scd2-in-snowflake-slowly-changing-dimension-type-2-7ff793647150
-        # It's extremely important that the source table has no duplicates on the "merge_key"!
-        # Also, if new columns are added, be careful to update this query in each place column names are referenced.
-        merge_sql = f"""
+        conn = Mock()
+        mock_cursor = Mock()
+        conn.cursor.return_value = mock_cursor
+
+        self.snowflake_sink._upsert_meters(
+            meters,
+            conn,
+            row_active_from=datetime.datetime.fromisoformat(
+                "2025-04-22T21:01:37.605366+00:00"
+            ),
+        )
+
+        expected_merge_sql = """
             MERGE INTO meters AS target
             USING(
                 SELECT CONCAT(tm.org_id, '|', tm.device_id) as merge_key, tm.*
@@ -88,7 +75,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     CONCAT(source.account_id, '|', source.location_id, '|', source.meter_id, '|', source.endpoint_id, '|', source.meter_install_date, '|', source.meter_size, '|', source.meter_manufacturer, '|', source.multiplier, '|', source.location_address, '|', source.location_city, '|', source.location_state, '|', source.location_zip, '|')
             THEN
                 UPDATE SET
-                    target.row_active_until = '{row_active_from.isoformat()}'
+                    target.row_active_until = '2025-04-22T21:01:37.605366+00:00'
             WHEN NOT MATCHED THEN
                 INSERT (org_id, device_id, account_id, location_id, meter_id, 
                         endpoint_id, meter_install_date, meter_size, meter_manufacturer, 
@@ -97,48 +84,53 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 VALUES (source.org_id, source.device_id, source.account_id, source.location_id, source.meter_id, 
                         source.endpoint_id, source.meter_install_date, source.meter_size, source.meter_manufacturer, 
                         source.multiplier, source.location_address, source.location_city, source.location_state, source.location_zip,
-                        '{row_active_from.isoformat()}');
+                        '2025-04-22T21:01:37.605366+00:00');
         """
-        conn.cursor().execute(merge_sql)
+        called_query = mock_cursor.execute.call_args[0][0]
 
-    def _meter_tuple(self, meter: GeneralMeter, row_active_from: datetime):
-        result = [
-            meter.org_id,
-            meter.device_id,
-            meter.account_id,
-            meter.location_id,
-            meter.meter_id,
-            meter.endpoint_id,
-            meter.meter_install_date,
-            meter.meter_size,
-            meter.meter_manufacturer,
-            meter.multiplier,
-            meter.location_address,
-            meter.location_city,
-            meter.location_state,
-            meter.location_zip,
-            row_active_from,
-        ]
-        return tuple(result)
-
-    def _upsert_reads(self, reads: List[GeneralMeterRead], conn):
-
-        create_temp_table_sql = (
-            "CREATE OR REPLACE TEMPORARY TABLE temp_readings LIKE readings;"
+        # Normalize both queries before comparing
+        self.assertEqual(
+            self.normalize_sql(called_query), self.normalize_sql(expected_merge_sql)
         )
-        conn.cursor().execute(create_temp_table_sql)
 
-        insert_to_temp_table_sql = """
-            INSERT INTO temp_readings (
-                org_id, device_id, account_id, location_id, flowtime, 
-                register_value, register_unit, interval_value, interval_unit
-            ) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        rows = [self._meter_read_tuple(m) for m in reads]
-        conn.cursor().executemany(insert_to_temp_table_sql, rows)
+    def test_upsert_reads(self):
 
-        merge_sql = """
+        reads = [
+            GeneralMeterRead(
+                org_id="this-utility",
+                device_id="1",
+                account_id="101",
+                location_id=None,
+                flowtime=datetime.datetime(
+                    2024, 7, 7, 1, 0, tzinfo=pytz.timezone("Africa/Algiers")
+                ),
+                register_value=116233.61,
+                register_unit="CF",
+                interval_value=None,
+                interval_unit=None,
+            ),
+            GeneralMeterRead(
+                org_id="this-utility",
+                device_id="2",
+                account_id=None,
+                location_id=None,
+                flowtime=datetime.datetime(
+                    2024, 7, 7, 1, 0, tzinfo=pytz.timezone("Africa/Algiers")
+                ),
+                register_value=11,
+                register_unit="CF",
+                interval_value=None,
+                interval_unit=None,
+            ),
+        ]
+
+        conn = Mock()
+        mock_cursor = Mock()
+        conn.cursor.return_value = mock_cursor
+
+        self.snowflake_sink._upsert_reads(reads, conn)
+
+        expected_merge_sql = """
             MERGE INTO readings AS target
             USING (
                 -- Use GROUP BY to ensure there are no duplicate rows before merge
@@ -165,18 +157,16 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                         VALUES (source.org_id, source.device_id, source.account_id, source.location_id, source.flowtime, 
                     source.register_value, source.register_unit, source.interval_value, source.interval_unit)
         """
-        conn.cursor().execute(merge_sql)
+        called_query = mock_cursor.execute.call_args[0][0]
 
-    def _meter_read_tuple(self, read: GeneralMeterRead):
-        result = [
-            read.org_id,
-            read.device_id,
-            read.account_id,
-            read.location_id,
-            read.flowtime,
-            read.register_value,
-            read.register_unit,
-            read.interval_value,
-            read.interval_unit,
-        ]
-        return tuple(result)
+        # Normalize both queries before comparing
+        self.assertEqual(
+            self.normalize_sql(called_query), self.normalize_sql(expected_merge_sql)
+        )
+
+    def normalize_sql(self, sql):
+        """Normalize SQL by removing extra whitespace"""
+        # Replace multiple spaces, tabs, and newlines with a single space
+        normalized = re.sub(r"\s+", " ", sql)
+        # Trim leading and trailing whitespace
+        return normalized.strip()
