@@ -5,7 +5,6 @@ from io import StringIO
 import json
 import logging
 import os
-import pytz
 from pytz.tzinfo import DstTzInfo
 import requests
 import time

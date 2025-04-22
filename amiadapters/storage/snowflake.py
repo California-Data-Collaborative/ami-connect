@@ -3,10 +3,8 @@ import json
 from typing import List
 import pytz
 
-import snowflake.connector
-
 from amiadapters.base import GeneralMeter, GeneralMeterRead
-from amiadapters.config import AMIAdapterConfiguration, ConfiguredStorageSink
+from amiadapters.config import ConfiguredStorageSink
 from amiadapters.storage.base import BaseAMIStorageSink
 
 
