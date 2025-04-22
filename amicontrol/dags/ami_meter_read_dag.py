@@ -3,22 +3,47 @@ import os
 import pathlib
 
 from airflow.decorators import dag, task
+from airflow.models.param import Param
+from airflow.operators.python import get_current_context
 
-from amiadapters.base import BaseAMIAdapter
+from amiadapters.base import BaseAMIAdapter, default_date_range
 from amiadapters.config import AMIAdapterConfiguration
 
 
 @dag(
     schedule=None,
-    start_date=datetime(2025, 3, 1),
+    params={
+        "extract_range_start": Param(
+            type="string",
+            description="Start of date range for which we'll extract meter read data",
+            default=None,
+        ),
+        "extract_range_end": Param(
+            type="string",
+            description="End of date range for which we'll extract meter read data",
+            default=None,
+        )
+    },
     catchup=False,
     tags=["ami"],
 )
 def ami_control_dag():
 
     @task()
-    def extract(adapter: BaseAMIAdapter):
-        adapter.extract()
+    def extract(
+        adapter: BaseAMIAdapter, **context
+    ):
+        start, end = context["params"]["extract_range_start"], context["params"]["extract_range_end"]
+        
+        if isinstance(start, str):
+            start = datetime.fromisoformat(start)
+        if isinstance(end, str):
+            end = datetime.fromisoformat(end)
+        
+        if start is None or end is None:
+            start, end = default_date_range(start, end)
+
+        adapter.extract(start, end)
 
     @task()
     def transform(adapter: BaseAMIAdapter):
@@ -35,11 +60,11 @@ def ami_control_dag():
     config = AMIAdapterConfiguration.from_yaml(
         os.environ.get(
             "AMI_CONFIG_YAML",
-            pathlib.Path(__file__).joinpath("..", "..", "..", "config.yaml").resolve(),
+            pathlib.Path(__file__).joinpath("..", "..", "config.yaml").resolve(),
         ),
         os.environ.get(
             "AMI_SECRET_YAML",
-            pathlib.Path(__file__).joinpath("..", "..", "..", "secrets.yaml").resolve(),
+            pathlib.Path(__file__).joinpath("..", "..", "secrets.yaml").resolve(),
         ),
     )
 

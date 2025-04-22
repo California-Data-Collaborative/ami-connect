@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import dataclasses
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from typing import List
 
@@ -194,3 +194,17 @@ class GeneralModelJSONEncoder(DataclassJSONEncoder):
         if isinstance(o, datetime):
             return o.isoformat()
         return super().default(o)
+
+
+def default_date_range(start: datetime, end: datetime):
+    default_number_of_days = 2
+
+    if start is None and end is None:
+        end = datetime.now()
+        start = end - timedelta(days=default_number_of_days)
+    elif start is not None and end is None:
+        end = start + timedelta(days=default_number_of_days)
+    elif start is None and end is not None:
+        start = end - timedelta(days=default_number_of_days)
+    
+    return start, end

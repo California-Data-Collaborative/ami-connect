@@ -1,7 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from unittest.mock import patch
 
 import pytz
 
+from amiadapters.base import default_date_range
 from amiadapters.beacon import Beacon360Adapter
 from test.base_test_case import BaseTestCase
 
@@ -70,3 +72,70 @@ class TestBaseAdapter(BaseTestCase):
         for size, expected in cases:
             result = self.adapter.map_unit_of_measure(size)
             self.assertEqual(result, expected)
+
+
+class TestDefaultDateRange(BaseTestCase):
+
+    @patch('amiadapters.base.datetime')
+    def test_both_dates_none(self, mock_datetime):
+        # Set up mock for datetime.now()
+        now = datetime(2025, 4, 22, 12, 0, 0)
+        mock_datetime.now.return_value = now
+        
+        # Expected values
+        expected_end = now
+        expected_start = now - timedelta(days=2)
+        
+        # Test when both start and end are None
+        result_start, result_end = default_date_range(None, None)
+        
+        # Verify results
+        self.assertEqual(result_start, expected_start)
+        self.assertEqual(result_end, expected_end)
+        mock_datetime.now.assert_called_once()
+    
+    def test_start_none_end_provided(self):
+        # Provide end date
+        end_date = datetime(2025, 4, 22, 12, 0, 0)
+        
+        # Expected values
+        expected_end = end_date
+        expected_start = end_date - timedelta(days=2)
+        
+        # Test when start is None and end is provided
+        result_start, result_end = default_date_range(None, end_date)
+        
+        # Verify results
+        self.assertEqual(result_start, expected_start)
+        self.assertEqual(result_end, expected_end)
+    
+    def test_start_provided_end_none(self):
+        # Provide start date
+        start_date = datetime(2025, 4, 20, 12, 0, 0)
+        
+        # Expected values
+        expected_start = start_date
+        expected_end = start_date + timedelta(days=2)
+        
+        # Test when start is provided and end is None
+        result_start, result_end = default_date_range(start_date, None)
+        
+        # Verify results
+        self.assertEqual(result_start, expected_start)
+        self.assertEqual(result_end, expected_end)
+    
+    def test_both_dates_provided(self):
+        # Provide both dates
+        start_date = datetime(2025, 4, 20, 12, 0, 0)
+        end_date = datetime(2025, 4, 25, 12, 0, 0)
+        
+        # Expected values are the same as input
+        expected_start = start_date
+        expected_end = end_date
+        
+        # Test when both start and end are provided
+        result_start, result_end = default_date_range(start_date, end_date)
+        
+        # Verify results
+        self.assertEqual(result_start, expected_start)
+        self.assertEqual(result_end, expected_end)
