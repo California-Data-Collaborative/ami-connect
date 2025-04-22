@@ -4,6 +4,9 @@ from datetime import datetime
 import json
 from typing import List
 
+from pytz import timezone
+from pytz.tzinfo import DstTzInfo
+
 from amiadapters.storage.base import BaseAMIStorageSink
 
 
@@ -37,10 +40,13 @@ class BaseAMIAdapter(ABC):
         for sink in self.storage_sinks:
             sink.store_transformed()
 
-    def datetime_from_iso_str(self, datetime_str: str, org_timezone: str) -> datetime:
-        # TODO timezones
+    def datetime_from_iso_str(
+        self, datetime_str: str, org_timezone: DstTzInfo
+    ) -> datetime:
         if datetime_str:
             result = datetime.fromisoformat(datetime_str)
+            tz = org_timezone if org_timezone is not None else timezone("UTC")
+            result = result.replace(tzinfo=tz)
         else:
             result = None
         return result

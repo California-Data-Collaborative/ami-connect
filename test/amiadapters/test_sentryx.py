@@ -10,16 +10,7 @@ from amiadapters.sentryx import (
     SentryxMeterWithReads,
 )
 
-from test.base_test_case import BaseTestCase
-
-
-class MockResponse:
-    def __init__(self, json_data, status_code):
-        self.json_data = json_data
-        self.status_code = status_code
-
-    def json(self):
-        return self.json_data
+from test.base_test_case import BaseTestCase, MockResponse, mocked_response_500
 
 
 def mocked_get_devices_response_first_page(*args, **kwargs):
@@ -93,10 +84,6 @@ def mocked_get_devices_response_first_page(*args, **kwargs):
 def mocked_get_devices_response_last_page(*args, **kwargs):
     data = {"meters": [], "currentPage": 2, "itemsOnPage": 0, "totalCount": 1}
     return MockResponse(data, 200)
-
-
-def mocked_response_500(*args, **kwargs):
-    return MockResponse({}, 500)
 
 
 def mocked_get_consumption_response_first_page(*args, **kwargs):
@@ -323,7 +310,9 @@ class TestSentryxAdapter(BaseTestCase):
                 location_id=None,
                 meter_id="1",
                 endpoint_id=None,
-                meter_install_date=datetime.datetime(2022, 2, 8, 22, 10, 43),
+                meter_install_date=datetime.datetime(
+                    2022, 2, 8, 22, 10, 43, tzinfo=pytz.timezone("Africa/Algiers")
+                ),
                 meter_size="0.375",
                 meter_manufacturer="manufacturer",
                 multiplier=None,
@@ -340,7 +329,9 @@ class TestSentryxAdapter(BaseTestCase):
                 device_id="1",
                 account_id="101",
                 location_id=None,
-                flowtime=datetime.datetime(2024, 7, 7, 1, 0),
+                flowtime=datetime.datetime(
+                    2024, 7, 7, 1, 0, tzinfo=pytz.timezone("Africa/Algiers")
+                ),
                 register_value=116233.61,
                 register_unit="CF",
                 interval_value=None,
@@ -351,7 +342,9 @@ class TestSentryxAdapter(BaseTestCase):
                 device_id="2",
                 account_id=None,
                 location_id=None,
-                flowtime=datetime.datetime(2024, 7, 7, 1, 0),
+                flowtime=datetime.datetime(
+                    2024, 7, 7, 1, 0, tzinfo=pytz.timezone("Africa/Algiers")
+                ),
                 register_value=11,
                 register_unit="CF",
                 interval_value=None,

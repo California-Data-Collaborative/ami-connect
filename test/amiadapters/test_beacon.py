@@ -9,17 +9,12 @@ from amiadapters.beacon import (
     REQUESTED_COLUMNS,
 )
 
-from test.base_test_case import BaseTestCase
-
-
-class MockResponse:
-    def __init__(self, json_data, status_code, text=None):
-        self.json_data = json_data
-        self.status_code = status_code
-        self.text = text
-
-    def json(self):
-        return self.json_data
+from test.base_test_case import (
+    BaseTestCase,
+    MockResponse,
+    mocked_response_429,
+    mocked_response_500,
+)
 
 
 REPORT_CONTENTS_CSV = """\"Account_Billing_Cycle\",\"Account_Email\",\"Account_First_Name\",\"Account_Full_Name\",\"Account_ID\",\"Account_Last_Name\",\"Account_Phone\",\"Account_Portal_Status\",\"Account_Status\",\"Alert_Code\",\"Backflow_Gallons\",\"Battery_Level\",\"Billing_Address_Line1\",\"Billing_Address_Line2\",\"Billing_Address_Line3\",\"Billing_City\",\"Billing_Country\",\"Billing_State\",\"Billing_ZIP\",\"Connector_Type\",\"Current_Leak_Rate\",\"Current_Leak_Start_Date\",\"Demand_Zone_ID\",\"Dials\",\"Endpoint_Install_Date\",\"Endpoint_SN\",\"Endpoint_Status\",\"Endpoint_Type\",\"Estimated_Flag\",\"Flow\",\"Flow_Time\",\"Flow_Unit\",\"High_Read_Limit\",\"Last_Comm_Time\",\"Location_Address_Line1\",\"Location_Address_Line2\",\"Location_Address_Line3\",\"Location_Address_Parity\",\"Location_Area\",\"Location_Bathrooms\",\"Location_Building_Number\",\"Location_Building_Type\",\"Location_City\",\"Location_Continuous_Flow\",\"Location_Country\",\"Location_County_Name\",\"Location_DHS_Code\",\"Location_District\",\"Location_Funding\",\"Location_ID\",\"Location_Irrigated_Area\",\"Location_Irrigation\",\"Location_Latitude\",\"Location_Longitude\",\"Location_Main_Use\",\"Location_Name\",\"Location_Pool\",\"Location_Population\",\"Location_Site\",\"Location_State\",\"Location_Water_Type\",\"Location_Year_Built\",\"Location_ZIP\",\"Low_Read_Limit\",\"Meter_Continuous_Flow\",\"Meter_ID\",\"Meter_Install_Date\",\"Meter_Manufacturer\",\"Meter_Model\",\"Meter_Note\",\"Meter_Size\",\"Meter_Size_Desc\",\"Meter_Size_Unit\",\"Meter_SN\",\"Person_ID\",\"Portal_ID\",\"Raw_Read\",\"Read\",\"Read_Code_1\",\"Read_Code_2\",\"Read_Code_3\",\"Read_Method\",\"Read_Note\",\"Read_Sequence\",\"Read_Time\",\"Read_Unit\",\"Reader_Initials\",\"Register_Note\",\"Register_Number\",\"Register_Resolution\",\"Register_Unit_Of_Measure\",\"SA_Start_Date\",\"Service_Point_Class_Code\",\"Service_Point_Class_Code_Normalized\",\"Service_Point_Cycle\",\"Service_Point_ID\",\"Service_Point_Latitude\",\"Service_Point_Longitude\",\"Service_Point_Route\",\"Service_Point_Timezone\",\"Service_Point_Type\",\"Signal_Strength\",\"Supply_Zone_ID\",\"Trouble_Code\",\"Utility_Use_1\",\"Utility_Use_2\"
@@ -64,15 +59,6 @@ def mocked_get_report_from_link(*args, **kwargs):
 def mocked_exception_from_status_check(*args, **kwargs):
     data = {"state": "exception"}
     return MockResponse(data, 200)
-
-
-def mocked_response_500(*args, **kwargs):
-    return MockResponse({}, 500)
-
-
-def mocked_response_429(*args, **kwargs):
-    data = {"args": [None, None, 3]}
-    return MockResponse(data, 429)
 
 
 def mocked_get_consumption_response_last_page(*args, **kwargs):
@@ -721,7 +707,9 @@ class TestBeacon360Adapter(BaseTestCase):
                 location_id="303022",
                 meter_id="1470158170",
                 endpoint_id="130615549",
-                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_install_date=datetime.datetime(
+                    2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
                 meter_size="0.625",
                 meter_manufacturer="Sensus",
                 multiplier=None,
@@ -739,7 +727,9 @@ class TestBeacon360Adapter(BaseTestCase):
                 device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
-                flowtime=datetime.datetime(2024, 8, 1, 0, 59),
+                flowtime=datetime.datetime(
+                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
                 register_value=227.6,
                 register_unit="CCF",
                 interval_value=None,
@@ -750,7 +740,9 @@ class TestBeacon360Adapter(BaseTestCase):
                 device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
-                flowtime=datetime.datetime(2024, 8, 1, 1, 59),
+                flowtime=datetime.datetime(
+                    2024, 8, 1, 1, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
                 register_value=227.6,
                 register_unit="CCF",
                 interval_value=None,
@@ -990,7 +982,9 @@ class TestBeacon360Adapter(BaseTestCase):
                 location_id="303022",
                 meter_id="10101",
                 endpoint_id="130615549",
-                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_install_date=datetime.datetime(
+                    2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
                 meter_size="0.625",
                 meter_manufacturer="Sensus",
                 multiplier=None,
@@ -1006,7 +1000,9 @@ class TestBeacon360Adapter(BaseTestCase):
                 location_id="303022",
                 meter_id="1470158170",
                 endpoint_id="130615549",
-                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_install_date=datetime.datetime(
+                    2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
                 meter_size="0.625",
                 meter_manufacturer="Sensus",
                 multiplier=None,
@@ -1024,7 +1020,9 @@ class TestBeacon360Adapter(BaseTestCase):
                 device_id="1470158170",
                 account_id="303022",
                 location_id="303022",
-                flowtime=datetime.datetime(2024, 8, 1, 0, 59),
+                flowtime=datetime.datetime(
+                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
                 register_value=227.6,
                 register_unit="CCF",
                 interval_value=None,
@@ -1035,7 +1033,9 @@ class TestBeacon360Adapter(BaseTestCase):
                 device_id="10101",
                 account_id="1",
                 location_id="303022",
-                flowtime=datetime.datetime(2024, 8, 1, 1, 59),
+                flowtime=datetime.datetime(
+                    2024, 8, 1, 1, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
                 register_value=227.6,
                 register_unit="CCF",
                 interval_value=None,
@@ -1168,7 +1168,9 @@ class TestBeacon360Adapter(BaseTestCase):
                 location_id="303022",
                 meter_id="1470158170",
                 endpoint_id="130615549",
-                meter_install_date=datetime.datetime(2016, 1, 1, 23, 59),
+                meter_install_date=datetime.datetime(
+                    2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
                 meter_size="0.625",
                 meter_manufacturer="Sensus",
                 multiplier=None,
