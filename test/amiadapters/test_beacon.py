@@ -100,17 +100,18 @@ class TestBeacon360Adapter(BaseTestCase):
         self.assertEqual(0, mock_get.call_count)
         self.assertEqual(0, mock_post.call_count)
 
-    def test_fetch_range_report__throws_exception_when_range_not_valid(self, ):
+    def test_fetch_range_report__throws_exception_when_range_not_valid(
+        self,
+    ):
         with self.assertRaises(Exception) as context:
             self.adapter._fetch_range_report(None, self.range_end)
-        
+
         with self.assertRaises(Exception) as context:
             self.adapter._fetch_range_report(self.range_start, None)
-        
+
         with self.assertRaises(Exception) as context:
             # End after start
             self.adapter._fetch_range_report(self.range_end, self.range_start)
-
 
     @mock.patch(
         "requests.get",

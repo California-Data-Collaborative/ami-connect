@@ -28,7 +28,7 @@ class BaseAMIAdapter(ABC):
     def extract(self, extract_range_start: datetime, extract_range_end: datetime):
         """
         Extract data from an AMI data source.
-        
+
         :extract_range_start datetime: start of meter read datetime range for which we'll extract data
         :extract_range_end datetime:   end of meter read datetime range for which we'll extract data
         """
@@ -78,6 +78,18 @@ class BaseAMIAdapter(ABC):
             "Gallon": GeneralMeterUnitOfMeasure.GALLON,
         }
         return mapping.get(unit_of_measure)
+
+    def validate_extract_range(
+        self, extract_range_start: datetime, extract_range_end: datetime
+    ):
+        if extract_range_start is None or extract_range_end is None:
+            raise Exception(
+                f"Expected range start and end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}"
+            )
+        if extract_range_end < extract_range_start:
+            raise Exception(
+                f"Range start must be before end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}"
+            )
 
 
 class GeneralMeterUnitOfMeasure:

@@ -5,7 +5,12 @@ from amiadapters.config import AMIAdapterConfiguration
 logger = logging.getLogger(__name__)
 
 
-def run_pipeline(config_yaml: str, secrets_yaml: str, extract_range_start=None, extract_range_end=None):
+def run_pipeline(
+    config_yaml: str,
+    secrets_yaml: str,
+    extract_range_start=None,
+    extract_range_end=None,
+):
     """
     Run AMI API adapters to fetch AMI data, then shape it into generalized format, then store it.
     """

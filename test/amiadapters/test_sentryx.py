@@ -140,6 +140,8 @@ class TestSentryxAdapter(BaseTestCase):
             org_timezone=pytz.timezone("Africa/Algiers"),
             utility_name="my-utility-name",
         )
+        self.range_start = datetime.datetime(2024, 1, 2, 0, 0)
+        self.range_end = datetime.datetime(2024, 1, 3, 0, 0)
 
     def test_init(self):
         self.assertEqual("output", self.adapter.output_folder)
@@ -207,7 +209,9 @@ class TestSentryxAdapter(BaseTestCase):
         ],
     )
     def test_extract_consumption_for_all_meters(self, mock_get):
-        result = self.adapter._extract_consumption_for_all_meters()
+        result = self.adapter._extract_consumption_for_all_meters(
+            self.range_start, self.range_end
+        )
         expected = [
             SentryxMeterWithReads(
                 device_id=1,
@@ -235,8 +239,8 @@ class TestSentryxAdapter(BaseTestCase):
                 params={
                     "skip": 0,
                     "take": 25,
-                    "StartDate": "2025-03-09T11:02:26.011959",
-                    "EndDate": "2025-03-11T11:02:26.011959",
+                    "StartDate": "2024-01-02T00:00:00",
+                    "EndDate": "2024-01-03T00:00:00",
                 },
             ),
             mock.call(
@@ -245,12 +249,27 @@ class TestSentryxAdapter(BaseTestCase):
                 params={
                     "skip": 2,
                     "take": 25,
-                    "StartDate": "2025-03-09T11:02:26.011959",
-                    "EndDate": "2025-03-11T11:02:26.011959",
+                    "StartDate": "2024-01-02T00:00:00",
+                    "EndDate": "2024-01-03T00:00:00",
                 },
             ),
         ]
         self.assertListEqual(calls, mock_get.call_args_list)
+
+    def test_extract_consumption_for_all_meters__throws_exception_when_range_not_valid(
+        self,
+    ):
+        with self.assertRaises(Exception) as context:
+            self.adapter._extract_consumption_for_all_meters(None, self.range_end)
+
+        with self.assertRaises(Exception) as context:
+            self.adapter._extract_consumption_for_all_meters(self.range_start, None)
+
+        with self.assertRaises(Exception) as context:
+            # End after start
+            self.adapter._extract_consumption_for_all_meters(
+                self.range_end, self.range_start
+            )
 
     @mock.patch(
         "requests.get",
@@ -260,7 +279,9 @@ class TestSentryxAdapter(BaseTestCase):
         ],
     )
     def test_extract_consumption_for_all_meters__non_200_response(self, mock_get):
-        result = self.adapter._extract_consumption_for_all_meters()
+        result = self.adapter._extract_consumption_for_all_meters(
+            self.range_start, self.range_end
+        )
         self.assertEqual(0, len(result))
 
     def test_transform_meters_and_reads(self):

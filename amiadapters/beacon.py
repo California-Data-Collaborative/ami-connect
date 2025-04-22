@@ -299,19 +299,20 @@ class Beacon360Adapter(BaseAMIAdapter):
             )
             f.write(content)
 
-    def _fetch_range_report(self, extract_range_start: datetime, extract_range_end: datetime) -> str:
+    def _fetch_range_report(
+        self, extract_range_start: datetime, extract_range_end: datetime
+    ) -> str:
         """
         Return range report as CSV string, first line with headers.
         Retrieve from cache if configured to do so.
         """
-        if extract_range_start is None or extract_range_end is None:
-            raise Exception(f"Expected range start and end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}")
-        if extract_range_end < extract_range_start:
-            raise Exception(f"Range start must be before end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}")
-        
+        self.validate_extract_range(extract_range_start, extract_range_end)
+
         if self.use_cache:
             logger.info("Attempting to load report from cache")
-            cached_report = self._get_cached_report(extract_range_start, extract_range_end)
+            cached_report = self._get_cached_report(
+                extract_range_start, extract_range_end
+            )
             if cached_report is not None:
                 logger.info("Loaded report from cache")
                 return cached_report
@@ -429,14 +430,18 @@ class Beacon360Adapter(BaseAMIAdapter):
             url="https://api.beaconama.net" + report_url, headers=headers, auth=auth
         )
 
-    def _get_cached_report(self, extract_range_start: datetime, extract_range_end: datetime) -> str:
+    def _get_cached_report(
+        self, extract_range_start: datetime, extract_range_end: datetime
+    ) -> str:
         cache_file = self._cached_report_file(extract_range_start, extract_range_end)
         if os.path.exists(cache_file):
             with open(cache_file, "r") as f:
                 return f.read()
         return None
 
-    def _write_cached_report(self, report: str, extract_range_start: datetime, extract_range_end: datetime):
+    def _write_cached_report(
+        self, report: str, extract_range_start: datetime, extract_range_end: datetime
+    ):
         cache_file = self._cached_report_file(extract_range_start, extract_range_end)
         logger.info(f"Caching report contents at {cache_file}")
         directory = os.path.dirname(cache_file)
@@ -551,9 +556,13 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         return meters_sorted, transformed_reads
 
-    def _cached_report_file(self, extract_range_start: datetime, extract_range_end: datetime) -> str:
+    def _cached_report_file(
+        self, extract_range_start: datetime, extract_range_end: datetime
+    ) -> str:
         start, end = extract_range_start.isoformat(), extract_range_end.isoformat()
-        return os.path.join(self.output_folder, f"{self.name()}-{start}-{end}-cached-report.txt")
+        return os.path.join(
+            self.output_folder, f"{self.name()}-{start}-{end}-cached-report.txt"
+        )
 
     def _raw_reads_output_file(self) -> str:
         return os.path.join(self.output_folder, f"{self.name()}-raw-reads.txt")
