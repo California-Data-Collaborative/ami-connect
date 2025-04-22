@@ -139,11 +139,11 @@ class TestBeacon360Adapter(BaseTestCase):
             generater_report_request.kwargs["params"]["Header_Columns"],
         )
         self.assertEqual(
-            datetime.datetime(2024, 8, 1, 0, 0, tzinfo=pytz.timezone("Europe/Rome")),
+            datetime.datetime(2025, 2, 1, 0, 0, tzinfo=pytz.timezone("Europe/Rome")),
             generater_report_request.kwargs["params"]["Start_Date"],
         )
         self.assertEqual(
-            datetime.datetime(2024, 8, 2, 0, 0, tzinfo=pytz.timezone("Europe/Rome")),
+            datetime.datetime(2025, 2, 1, 1, 0, tzinfo=pytz.timezone("Europe/Rome")),
             generater_report_request.kwargs["params"]["End_Date"],
         )
         self.assertTrue(generater_report_request.kwargs["params"]["Has_Endpoint"])
@@ -222,9 +222,10 @@ class TestBeacon360Adapter(BaseTestCase):
 
         self.assertTrue("Exception found in report status" in str(context.exception))
 
-    # Mock the status call response as "not finished" 50 times
+    # Mock the status call response as "not finished" way more times than our max limit
     @mock.patch(
-        "requests.get", side_effect=[mocked_get_range_report_status_not_finished()] * 50
+        "requests.get",
+        side_effect=[mocked_get_range_report_status_not_finished()] * 500,
     )
     @mock.patch("requests.post", side_effect=[mocked_create_range_report()])
     @mock.patch("time.sleep")

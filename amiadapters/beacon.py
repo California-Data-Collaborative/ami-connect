@@ -319,8 +319,8 @@ class Beacon360Adapter(BaseAMIAdapter):
         auth = requests.auth.HTTPBasicAuth(self.user, self.password)
 
         params = {
-            "Start_Date": datetime(2024, 8, 1, tzinfo=self.org_timezone),
-            "End_Date": datetime(2024, 8, 2, tzinfo=self.org_timezone),
+            "Start_Date": datetime(2025, 2, 1, 0, 0, tzinfo=self.org_timezone),
+            "End_Date": datetime(2025, 2, 1, 1, 0, tzinfo=self.org_timezone),
             "Resolution": "hourly",
             "Header_Columns": ",".join(REQUESTED_COLUMNS),
             "Has_Endpoint": True,
@@ -358,7 +358,7 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         # Poll for report status
         i = 0
-        max_attempts = 45  # 45 minutes
+        max_attempts = 120  # number of minutes
         while True:
             i += 1
             if i >= max_attempts:
