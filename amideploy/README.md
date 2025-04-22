@@ -195,11 +195,3 @@ sudo systemctl restart nginx
 ```
 
 Now you should be able to access your Airflow site in your browser using the domain name you picked. Login with the username and password we created above.
-
-
-
-
-
-
-
-
