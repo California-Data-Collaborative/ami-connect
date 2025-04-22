@@ -19,7 +19,9 @@ def run_pipeline(
     adapters = config.adapters()
 
     if extract_range_start is None or extract_range_end is None:
-        extract_range_start, extract_range_end = default_date_range(extract_range_start, extract_range_end)
+        extract_range_start, extract_range_end = default_date_range(
+            extract_range_start, extract_range_end
+        )
 
     for adapter in adapters:
         logger.info(f"Extracting data for {adapter.name()}")

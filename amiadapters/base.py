@@ -206,5 +206,5 @@ def default_date_range(start: datetime, end: datetime):
         end = start + timedelta(days=default_number_of_days)
     elif start is None and end is not None:
         start = end - timedelta(days=default_number_of_days)
-    
+
     return start, end

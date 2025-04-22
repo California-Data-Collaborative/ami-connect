@@ -22,7 +22,7 @@ from amiadapters.config import AMIAdapterConfiguration
             type="string",
             description="End of date range for which we'll extract meter read data",
             default=None,
-        )
+        ),
     },
     catchup=False,
     tags=["ami"],
@@ -30,16 +30,17 @@ from amiadapters.config import AMIAdapterConfiguration
 def ami_control_dag():
 
     @task()
-    def extract(
-        adapter: BaseAMIAdapter, **context
-    ):
-        start, end = context["params"]["extract_range_start"], context["params"]["extract_range_end"]
-        
+    def extract(adapter: BaseAMIAdapter, **context):
+        start, end = (
+            context["params"]["extract_range_start"],
+            context["params"]["extract_range_end"],
+        )
+
         if isinstance(start, str):
             start = datetime.fromisoformat(start)
         if isinstance(end, str):
             end = datetime.fromisoformat(end)
-        
+
         if start is None or end is None:
             start, end = default_date_range(start, end)
 
