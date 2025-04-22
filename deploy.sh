@@ -41,6 +41,7 @@ scp -i "$PEM_PATH" -r amicontrol/dags "ec2-user@$HOSTNAME:/home/ec2-user/"
 echo
 if [ $? -eq 0 ]; then
     echo "File copy successful!"
+    echo
 else
     echo "File copy failed!"
     exit 1
@@ -54,7 +55,7 @@ ssh -i "$PEM_PATH" "ec2-user@$HOSTNAME" "source venv/bin/activate && \
 
 # Check if the SSH command was successful
 if [ $? -eq 0 ]; then
-    echo "Deployment successful! Virtual environment activated and requirements installed."
+    echo "Successful deploy! Virtual environment activated and requirements installed."
 else
     echo "Error: Failed to activate virtual environment or install requirements."
     exit 1

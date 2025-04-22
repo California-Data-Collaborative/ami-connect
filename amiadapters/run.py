@@ -1,20 +1,31 @@
 import logging
 
+from amiadapters.base import default_date_range
 from amiadapters.config import AMIAdapterConfiguration
 
 logger = logging.getLogger(__name__)
 
 
-def run_pipeline(config_yaml: str, secrets_yaml: str):
+def run_pipeline(
+    config_yaml: str,
+    secrets_yaml: str,
+    extract_range_start=None,
+    extract_range_end=None,
+):
     """
     Run AMI API adapters to fetch AMI data, then shape it into generalized format, then store it.
     """
     config = AMIAdapterConfiguration.from_yaml(config_yaml, secrets_yaml)
     adapters = config.adapters()
 
+    if extract_range_start is None or extract_range_end is None:
+        extract_range_start, extract_range_end = default_date_range(
+            extract_range_start, extract_range_end
+        )
+
     for adapter in adapters:
         logger.info(f"Extracting data for {adapter.name()}")
-        adapter.extract()
+        adapter.extract(extract_range_start, extract_range_end)
         logger.info(f"Extracted data for {adapter.name()} to {adapter.output_folder}")
 
     logger.info(f"Extracted data for {len(adapters)} adapters")

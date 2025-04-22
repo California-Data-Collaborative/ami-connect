@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import dataclasses
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from typing import List
 
@@ -25,7 +25,13 @@ class BaseAMIAdapter(ABC):
         pass
 
     @abstractmethod
-    def extract(self):
+    def extract(self, extract_range_start: datetime, extract_range_end: datetime):
+        """
+        Extract data from an AMI data source.
+
+        :extract_range_start datetime: start of meter read datetime range for which we'll extract data
+        :extract_range_end datetime:   end of meter read datetime range for which we'll extract data
+        """
         pass
 
     @abstractmethod
@@ -72,6 +78,18 @@ class BaseAMIAdapter(ABC):
             "Gallon": GeneralMeterUnitOfMeasure.GALLON,
         }
         return mapping.get(unit_of_measure)
+
+    def validate_extract_range(
+        self, extract_range_start: datetime, extract_range_end: datetime
+    ):
+        if extract_range_start is None or extract_range_end is None:
+            raise Exception(
+                f"Expected range start and end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}"
+            )
+        if extract_range_end < extract_range_start:
+            raise Exception(
+                f"Range start must be before end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}"
+            )
 
 
 class GeneralMeterUnitOfMeasure:
@@ -176,3 +194,17 @@ class GeneralModelJSONEncoder(DataclassJSONEncoder):
         if isinstance(o, datetime):
             return o.isoformat()
         return super().default(o)
+
+
+def default_date_range(start: datetime, end: datetime):
+    default_number_of_days = 2
+
+    if start is None and end is None:
+        end = datetime.now()
+        start = end - timedelta(days=default_number_of_days)
+    elif start is not None and end is None:
+        end = start + timedelta(days=default_number_of_days)
+    elif start is None and end is not None:
+        start = end - timedelta(days=default_number_of_days)
+
+    return start, end

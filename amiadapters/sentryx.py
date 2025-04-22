@@ -166,13 +166,15 @@ class SentryxAdapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"sentryx-api-{self.org_id}"
 
-    def extract(self):
+    def extract(self, extract_range_start: datetime, extract_range_end: datetime):
         meters = self._extract_all_meters()
         with open(self._raw_meter_output_file(), "w") as f:
             content = "\n".join(json.dumps(m, cls=DataclassJSONEncoder) for m in meters)
             f.write(content)
 
-        meters_with_reads = self._extract_consumption_for_all_meters()
+        meters_with_reads = self._extract_consumption_for_all_meters(
+            extract_range_start, extract_range_end
+        )
         with open(self._raw_reads_output_file(), "w") as f:
             content = "\n".join(
                 json.dumps(m, cls=DataclassJSONEncoder) for m in meters_with_reads
@@ -229,16 +231,17 @@ class SentryxAdapter(BaseAMIAdapter):
 
         return meters
 
-    def _extract_consumption_for_all_meters(self) -> List[SentryxMeterWithReads]:
+    def _extract_consumption_for_all_meters(
+        self, extract_range_start: datetime, extract_range_end: datetime
+    ) -> List[SentryxMeterWithReads]:
+
+        self.validate_extract_range(extract_range_start, extract_range_end)
+
         url = f"{BASE_URL}/{self.utility_name}/devices/consumption"
 
         headers = {
             "Authorization": self.api_key,
         }
-
-        # TODO configurable date range
-        end_date = datetime.fromisoformat("2025-03-11T11:02:26.011959")
-        start_date = end_date - timedelta(days=2)
 
         last_page = False
         num_meters = 0
@@ -247,8 +250,8 @@ class SentryxAdapter(BaseAMIAdapter):
             params = {
                 "skip": num_meters,
                 "take": 25,
-                "StartDate": start_date.isoformat(),
-                "EndDate": end_date.isoformat(),
+                "StartDate": extract_range_start.isoformat(),
+                "EndDate": extract_range_end.isoformat(),
             }
             logger.info(
                 f"Extracting meter reads for {self.org_id}, skip={params["skip"]}"
