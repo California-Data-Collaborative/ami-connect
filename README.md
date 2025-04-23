@@ -72,11 +72,12 @@ export AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME=<my EC2 hostname> && sh deploy.sh
 We use Apache Airflow to orchestrate our data pipeline. The Airflow code is in the `amicontrol` package.
 
 With the dependencies from `requirements.txt` installed, you should be able to run Airflow locally. First,
-set the AIRFLOW_HOME variable:
+set the AIRFLOW_HOME variable and your PYTHONPATH:
 
 ```
 mkdir ./amicontrol/airflow
 export AIRFLOW_HOME=`pwd`/amicontrol/airflow
+export PYTHONPATH="${PYTHONPATH}:./amiadapters"
 ```
 
 If it's your first time running the application on your machine, initialize the local Airflow app in `AIRFLOW_HOME` with:
@@ -94,9 +95,6 @@ load_examples = False
 
 Before you run `airflow standalone`, set these environment variables:
 ```
-# This allows the DAG to import code from this project's other Python packages
-export PYTHONPATH="${PYTHONPATH}:./amiadapters"
-
 # This fixes hanging HTTP requests
 # See: https://stackoverflow.com/questions/75980623/why-is-my-airflow-hanging-up-if-i-send-a-http-request-inside-a-task
 export NO_PROXY="*"

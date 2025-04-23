@@ -573,6 +573,16 @@ class Beacon360Adapter(BaseAMIAdapter):
     def _transformed_reads_output_file(self) -> str:
         return os.path.join(self.output_folder, f"{self.name()}-transformed-reads.txt")
 
+    def calculate_backfill_range(self) -> Tuple[datetime, datetime]:
+        snowflake_sink = [s for s in self.storage_sinks if isinstance(s, BeaconSnowflakeStorageSink)]
+        if not snowflake_sink:
+            now = datetime.now()
+            return now - timedelta(days=2), now
+        else:
+            sink = snowflake_sink[0]
+            oldest = sink.get_oldest_meter_read_time(self.org_id)
+            return oldest - timedelta(days=2), oldest
+
 
 class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
     """

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from typing import List
 import pytz
@@ -180,3 +180,16 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             read.interval_unit,
         ]
         return tuple(result)
+
+    def get_oldest_meter_read_time(self, org_id) -> datetime:
+        conn = self.sink_config.connection()
+
+        query = """
+        SELECT MIN(flowtime) FROM readings
+        WHERE org_id = ?
+        """
+        result = conn.cursor().execute(query, (org_id,))
+        rows = [i for i in result]
+        if len(rows) != 1:
+            return datetime.now()
+        return rows[0][0]
