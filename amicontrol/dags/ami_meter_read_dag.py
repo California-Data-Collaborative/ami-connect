@@ -15,6 +15,7 @@ def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
     - The regular run, which refreshes recent data
     - The backfill run, which runs more frequently and attempts to backfill data
     """
+
     @dag(
         dag_id=dag_id,
         schedule=schedule,
@@ -77,15 +78,18 @@ def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
 
         for adapter in adapters:
             # Set sequence of tasks for this utility
-            extract.override(task_id=f"extract-{adapter.name()}")(adapter) >> \
-            transform.override(task_id=f"transform-{adapter.name()}")(adapter) >> \
-            [
-                # Run load tasks in parallel
-                load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter),
-                load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(adapter)
-            ] >> \
-            final_task.override(task_id=f"finish-{adapter.name()}")()
-
+            (
+                extract.override(task_id=f"extract-{adapter.name()}")(adapter)
+                >> transform.override(task_id=f"transform-{adapter.name()}")(adapter)
+                >> [
+                    # Run load tasks in parallel
+                    load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter),
+                    load_transformed.override(
+                        task_id=f"load-transformed-{adapter.name()}"
+                    )(adapter),
+                ]
+                >> final_task.override(task_id=f"finish-{adapter.name()}")()
+            )
 
     ami_control_dag()
 
@@ -101,7 +105,7 @@ standard_params = {
         type="string",
         description="End of date range for which we'll extract meter read data",
         default="",
-    )
+    ),
 }
 ami_control_dag_factory("ami-meter-read-dag-manual", None, standard_params)
 
@@ -109,4 +113,6 @@ ami_control_dag_factory("ami-meter-read-dag-manual", None, standard_params)
 ami_control_dag_factory("ami-meter-read-dag-standard", "0 12 * * *", {})
 
 # Backfill run
-ami_control_dag_factory("ami-meter-read-dag-backfill", "45 * * * *", {}, is_backfill=True)
+ami_control_dag_factory(
+    "ami-meter-read-dag-backfill", "45 * * * *", {}, is_backfill=True
+)
