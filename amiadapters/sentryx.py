@@ -368,6 +368,9 @@ class SentryxAdapter(BaseAMIAdapter):
 
         return list(meters_by_id.values()), meter_reads
 
+    def calculate_backfill_range(self) -> Tuple[datetime, datetime]:
+        raise Exception("Not implemented")
+
     def _raw_meter_output_file(self) -> str:
         return os.path.join(self.output_folder, f"{self.name()}-raw-meters.txt")
 
