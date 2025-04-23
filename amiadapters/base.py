@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import dataclasses
 from datetime import datetime, timedelta
 import json
-from typing import List
+from typing import List, Tuple
 
 from pytz import timezone
 from pytz.tzinfo import DstTzInfo
@@ -36,6 +36,10 @@ class BaseAMIAdapter(ABC):
 
     @abstractmethod
     def transform(self):
+        pass
+
+    @abstractmethod
+    def calculate_backfill_range(self) -> Tuple[datetime, datetime]:
         pass
 
     def load_raw(self):
