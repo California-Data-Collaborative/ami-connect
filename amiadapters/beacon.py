@@ -420,7 +420,9 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         report = report_response.text
 
-        self._write_cached_report(report, extract_range_start, extract_range_end)
+        self._write_cached_report_and_delete_old_cached_files(
+            report, extract_range_start, extract_range_end
+        )
 
         return report
 
@@ -439,7 +441,7 @@ class Beacon360Adapter(BaseAMIAdapter):
                 return f.read()
         return None
 
-    def _write_cached_report(
+    def _write_cached_report_and_delete_old_cached_files(
         self, report: str, extract_range_start: datetime, extract_range_end: datetime
     ):
         cache_file = self._cached_report_file(extract_range_start, extract_range_end)
@@ -450,8 +452,19 @@ class Beacon360Adapter(BaseAMIAdapter):
             logger.info(f"Making parent directories for {cache_file}")
             os.makedirs(directory, exist_ok=True)
 
+        # Remove old cache files so we don't fill up the disk
+        previous_cache_files = [
+            os.path.join(self.output_folder, f)
+            for f in os.listdir(directory)
+            if "cached-report" in f
+        ]
+        for f in previous_cache_files:
+            os.remove(f)
+            logger.info(f"Deleted old cache file {f}")
+
         with open(cache_file, "w") as f:
             f.write(report)
+        logger.info(f"Cached report contents at {cache_file}")
 
     def _parse_raw_range_report(self, report: str) -> List[Beacon360MeterAndRead]:
         """
