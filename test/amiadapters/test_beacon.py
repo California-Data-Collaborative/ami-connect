@@ -713,6 +713,7 @@ class TestBeacon360Adapter(BaseTestCase):
         transformed_meters, transformed_reads = (
             self.adapter._transform_meters_and_reads(raw_meters_with_reads)
         )
+        transformed_meters = list(sorted(transformed_meters, key=lambda m: m.meter_id))
 
         expected_meters = [
             GeneralMeter(
@@ -988,6 +989,7 @@ class TestBeacon360Adapter(BaseTestCase):
         transformed_meters, transformed_reads = (
             self.adapter._transform_meters_and_reads(raw_meters_with_reads)
         )
+        transformed_meters = list(sorted(transformed_meters, key=lambda m: m.meter_id))
 
         expected_meters = [
             GeneralMeter(
@@ -1174,6 +1176,7 @@ class TestBeacon360Adapter(BaseTestCase):
         transformed_meters, transformed_reads = (
             self.adapter._transform_meters_and_reads(raw_meters_with_reads)
         )
+        transformed_meters = list(sorted(transformed_meters, key=lambda m: m.meter_id))
 
         expected_meters = [
             GeneralMeter(
