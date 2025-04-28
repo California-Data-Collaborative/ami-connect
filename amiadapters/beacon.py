@@ -420,7 +420,9 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         report = report_response.text
 
-        self._write_cached_report_and_delete_old_cached_files(report, extract_range_start, extract_range_end)
+        self._write_cached_report_and_delete_old_cached_files(
+            report, extract_range_start, extract_range_end
+        )
 
         return report
 
@@ -447,7 +449,7 @@ class Beacon360Adapter(BaseAMIAdapter):
         for f in previous_cache_files:
             os.remove(f)
             logger.info(f"Deleted old cache file {f}")
-        
+
         cache_file = self._cached_report_file(extract_range_start, extract_range_end)
         logger.info(f"Caching report contents at {cache_file}")
         directory = os.path.dirname(cache_file)
@@ -569,7 +571,9 @@ class Beacon360Adapter(BaseAMIAdapter):
 
     def _list_cached_report_files(self) -> List[str]:
         files = os.listdir(self.output_folder)
-        return [os.path.join(self.output_folder, f) for f in files if "cached-report" in f]
+        return [
+            os.path.join(self.output_folder, f) for f in files if "cached-report" in f
+        ]
 
     def _raw_reads_output_file(self) -> str:
         return os.path.join(self.output_folder, f"{self.name()}-raw-reads.txt")
