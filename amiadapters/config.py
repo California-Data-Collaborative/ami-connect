@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Union
+import pathlib
 from pytz import timezone
 from pytz.tzinfo import DstTzInfo
 import yaml
@@ -292,8 +293,23 @@ class ConfiguredAMISource:
         return f"ConfiguredAMISource[type={self.type}, org_id={self.org_id}, timezone={self.timezone}, use_cache={self.use_raw_data_cache}, intermediate_output={self.intermediate_output} storage_sinks=[{", ".join(s.id for s in self.storage_sinks)}]]"
 
 
-if __name__ == "__main__":
-    path = "./config.yaml.example"
-    secrets_path = "./secrets.yaml.example"
-    config = AMIAdapterConfiguration.from_yaml(path, secrets_path)
-    print(config)
+def find_config_yaml() -> str:
+    """
+    Find path to config.yaml or throw exception. Use this if you need flexibility
+    between test and prod.
+    """
+    p = pathlib.Path(__file__).joinpath("..", "..", "config.yaml").resolve()
+    if not pathlib.Path.exists(p):
+        raise Exception(f"Path to config does not exist: {p}")
+    return p
+
+
+def find_secrets_yaml() -> str:
+    """
+    Find path to secrets.yaml or throw exception. Use this if you need flexibility
+    between test and prod.
+    """
+    p = pathlib.Path(__file__).joinpath("..", "..", "secrets.yaml").resolve()
+    if not pathlib.Path.exists(p):
+        raise Exception(f"Path to secrets does not exist: {p}")
+    return p
