@@ -6,7 +6,11 @@ from airflow.decorators import dag, task
 from airflow.models.param import Param
 
 from amiadapters.base import BaseAMIAdapter, default_date_range
-from amiadapters.config import AMIAdapterConfiguration
+from amiadapters.config import (
+    AMIAdapterConfiguration,
+    find_config_yaml,
+    find_secrets_yaml,
+)
 
 
 def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
@@ -64,14 +68,7 @@ def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
             return
 
         config = AMIAdapterConfiguration.from_yaml(
-            os.environ.get(
-                "AMI_CONFIG_YAML",
-                pathlib.Path(__file__).joinpath("..", "..", "config.yaml").resolve(),
-            ),
-            os.environ.get(
-                "AMI_SECRET_YAML",
-                pathlib.Path(__file__).joinpath("..", "..", "secrets.yaml").resolve(),
-            ),
+            find_config_yaml(), find_secrets_yaml
         )
 
         adapters = config.adapters()

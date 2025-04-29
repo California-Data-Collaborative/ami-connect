@@ -1,5 +1,12 @@
+import pathlib
+from unittest.mock import patch
+
 from amiadapters.beacon import Beacon360Adapter
-from amiadapters.config import AMIAdapterConfiguration
+from amiadapters.config import (
+    AMIAdapterConfiguration,
+    find_config_yaml,
+    find_secrets_yaml,
+)
 from amiadapters.sentryx import SentryxAdapter
 
 from test.base_test_case import BaseTestCase
@@ -71,3 +78,32 @@ class TestConfig(BaseTestCase):
         self.assertEqual(2, len(adapters))
         self.assertIn(SentryxAdapter, map(lambda a: type(a), adapters))
         self.assertIn(Beacon360Adapter, map(lambda a: type(a), adapters))
+
+
+class TestFindConfigAndSecrets(BaseTestCase):
+
+    @patch("pathlib.Path.exists", return_value=True)
+    def test_find_config(self, mock_exists):
+        path = find_config_yaml()
+        expected = (
+            pathlib.Path(__file__).joinpath("..", "..", "..", "config.yaml").resolve()
+        )
+        self.assertEqual(expected, path)
+
+    @patch("pathlib.Path.exists", return_value=False)
+    def test_find_config__error_when_no_file(self, mock_exists):
+        with self.assertRaises(Exception):
+            find_config_yaml()
+
+    @patch("pathlib.Path.exists", return_value=True)
+    def test_find_secrets(self, mock_exists):
+        path = find_secrets_yaml()
+        expected = (
+            pathlib.Path(__file__).joinpath("..", "..", "..", "secrets.yaml").resolve()
+        )
+        self.assertEqual(expected, path)
+
+    @patch("pathlib.Path.exists", return_value=False)
+    def test_find_secrets__error_when_no_file(self, mock_exists):
+        with self.assertRaises(Exception):
+            find_secrets_yaml()
