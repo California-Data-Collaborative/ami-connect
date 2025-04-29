@@ -68,7 +68,7 @@ def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
             return
 
         config = AMIAdapterConfiguration.from_yaml(
-            find_config_yaml(), find_secrets_yaml
+            find_config_yaml(), find_secrets_yaml()
         )
 
         adapters = config.adapters()
