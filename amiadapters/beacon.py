@@ -473,10 +473,6 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         Assumes Beacon360MeterAndRead attribute names are identical to CSV column names.
         """
-        report_csv_rows = report.strip().split("\n")
-        if not report_csv_rows:
-            return
-
         csv_reader = csv.DictReader(StringIO(report), delimiter=",")
         meter_with_reads = []
         for data in csv_reader:
