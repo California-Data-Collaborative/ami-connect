@@ -292,7 +292,9 @@ class Beacon360Adapter(BaseAMIAdapter):
 
     def extract(self, extract_range_start: datetime, extract_range_end: datetime):
         report = self._fetch_range_report(extract_range_start, extract_range_end)
+        logger.info("Fetched report")
         meter_with_reads = self._parse_raw_range_report(report)
+        logger.info(f"Parsed {len(meter_with_reads)} records from report")
         with open(self._raw_reads_output_file(), "w") as f:
             content = "\n".join(
                 json.dumps(m, cls=DataclassJSONEncoder) for m in meter_with_reads
