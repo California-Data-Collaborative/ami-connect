@@ -4,7 +4,8 @@ from unittest.mock import Mock
 
 import pytz
 
-from amiadapters.base import GeneralMeter, GeneralMeterRead
+from amiadapters.models import GeneralMeterRead
+from amiadapters.models import GeneralMeter
 from amiadapters.beacon import BeaconSnowflakeStorageSink
 from test.base_test_case import BaseTestCase
 
@@ -13,7 +14,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
 
     def setUp(self):
         self.snowflake_sink = BeaconSnowflakeStorageSink(
-            None, None, None, "org-id", pytz.timezone("Africa/Algiers"), None
+            None, "org-id", pytz.timezone("Africa/Algiers"), None
         )
 
     def test_upsert_meters(self):

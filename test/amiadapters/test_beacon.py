@@ -2,7 +2,8 @@ import datetime
 import pytz
 from unittest import mock
 
-from amiadapters.base import GeneralMeter, GeneralMeterRead
+from amiadapters.models import GeneralMeterRead
+from amiadapters.models import GeneralMeter
 from amiadapters.beacon import (
     Beacon360Adapter,
     Beacon360MeterAndRead,
