@@ -25,6 +25,11 @@ variable "ssh_ip_allowlist" {
   type        = list(string)
 }
 
+variable "ami_connect_s3_bucket_name" {
+  description = "Name for S3 bucket used for intermediate task outputs. Must be a globally unique name, so include your org name, e.g. my-company-ami-connect-bucket."
+  type        = string
+}
+
 variable "ami_connect_tag" {
   description = "AWS tag used on all resources for this project."
   type        = string

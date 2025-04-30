@@ -20,6 +20,75 @@ provider "aws" {
 
 provider "tls" {}
 
+data "aws_caller_identity" "current" {}
+
+resource "aws_iam_role" "ami_connect_pipeline" {
+  name = "ami-connect-pipeline"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      # Production: allow EC2 instances to assume the role
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
+      },
+      # Development: allow any IAM user from the same AWS account to assume the role
+      {
+        Effect = "Allow",
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        },
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = {
+    Name = var.ami_connect_tag
+  }
+}
+
+resource "aws_iam_policy" "ami_connect_pipeline_s3_policy" {
+  name        = "ami-connect-pipeline-s3-access"
+  description = "Grants read/write access to the AMI Connect S3 bucket"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject"
+        ],
+        Resource = "${aws_s3_bucket.ami_connect_s3_bucket.arn}/*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "s3:ListBucket"
+        ],
+        Resource = aws_s3_bucket.ami_connect_s3_bucket.arn
+      }
+    ]
+  })
+}
+
+# Create an Instance Profile (which EC2 will use)
+resource "aws_iam_instance_profile" "ami_instance_profile" {
+  name = "ami-connect-pipeline-instance-profile"
+  role = aws_iam_role.ami_connect_pipeline.name
+}
+
+resource "aws_iam_role_policy_attachment" "ami_connect_attach_policy" {
+  role       = aws_iam_role.ami_connect_pipeline.name
+  policy_arn = aws_iam_policy.ami_connect_pipeline_s3_policy.arn
+}
+
 resource "tls_private_key" "airflow_server_private_key" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -40,6 +109,8 @@ resource "aws_instance" "ami_connect_airflow_server" {
   instance_type = "t3.xlarge"
   vpc_security_group_ids = [aws_security_group.airflow_server_sg.id]
   key_name      = aws_key_pair.generated_airflow_server_key.key_name
+
+  iam_instance_profile = aws_iam_instance_profile.ami_instance_profile.name
 
   tags = {
     Name = var.ami_connect_tag
@@ -156,4 +227,22 @@ resource "aws_route53_record" "root" {
   type    = "A"
   ttl     = 300
   records = [aws_eip.ami_connect_airflow_server_ip.public_ip]
+}
+
+resource "aws_s3_bucket" "ami_connect_s3_bucket" {
+  bucket = var.ami_connect_s3_bucket_name
+  force_destroy = true
+
+  tags = {
+    Name = var.ami_connect_tag
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "ami_connect_s3_bucket" {
+  bucket = aws_s3_bucket.ami_connect_s3_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }

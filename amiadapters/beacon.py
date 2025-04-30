@@ -18,6 +18,7 @@ from amiadapters.models import GeneralMeter, GeneralMeterRead
 from amiadapters.config import ConfiguredStorageSink, ConfiguredStorageSinkType
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
 from amiadapters.outputs.local import LocalTaskOutputController
+from amiadapters.outputs.s3 import S3TaskOutputController
 from amiadapters.storage.snowflake import SnowflakeStorageSink
 
 logger = logging.getLogger(__name__)
@@ -272,8 +273,12 @@ class Beacon360Adapter(BaseAMIAdapter):
         self.use_cache = use_cache
         self.org_id = org_id
         self.org_timezone = org_timezone
-        self.output_controller = LocalTaskOutputController(
-            self.output_folder, self.org_id
+        # self.output_controller = LocalTaskOutputController(
+        #     self.output_folder, self.org_id
+        # )
+        self.output_controller = S3TaskOutputController(
+            "cadc-ami-connect",
+            self.org_id,
         )
         storage_sinks = []
         for sink in configured_sinks:
