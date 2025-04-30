@@ -11,7 +11,7 @@ class BaseAMIStorageSink(ABC):
         output_controller: BaseTaskOutputController,
         sink_config: ConfiguredStorageSink,
     ):
-        self.output_controller = (output_controller,)
+        self.output_controller = output_controller
         self.sink_config = sink_config
 
     @abstractmethod

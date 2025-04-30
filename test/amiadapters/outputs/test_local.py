@@ -32,6 +32,10 @@ class TestLocalTaskOutputController(BaseTestCase):
             with open(path, "r") as f:
                 self.assertEqual(f.read(), content)
 
+        result = self.controller.read_extract_outputs()
+        self.assertEqual(data, result.get_outputs())
+        self.assertEqual("hello world", result.from_file("file1.txt"))
+
     def test_write_and_read_transformed_meters(self):
         meters = [
             GeneralMeter(
@@ -69,7 +73,7 @@ class TestLocalTaskOutputController(BaseTestCase):
                 location_city="Apple",
                 location_state="CA",
                 location_zip="93727",
-            )
+            ),
         ]
         self.controller.write_transformed_meters(meters)
 

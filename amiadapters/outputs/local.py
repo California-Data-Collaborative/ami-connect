@@ -46,15 +46,16 @@ class LocalTaskOutputController(BaseTaskOutputController):
         outputs = {}
         for name in os.listdir(path):
             logger.info(f"Reading extract output at {name}")
-            with open(name, "r") as f:
+            with open(os.path.join(path, name), "r") as f:
                 content = f.read()
             outputs[name] = content
             logger.info(f"Finished reading extract output at {name}")
+        return ExtractOutput(outputs)
 
     def write_transformed_meters(self, meters: List[GeneralMeter]):
         path = self._transformed_meters_path()
         self._create_parent_directories_if_missing(path)
-        logger.info(f"Writing {len(meters)} meters to {path}")
+        logger.info(f"Writing {len(meters)} transformed meters to {path}")
         with open(path, "w") as f:
             f.write(
                 "\n".join(json.dumps(v, cls=GeneralModelJSONEncoder) for v in meters)
@@ -73,7 +74,7 @@ class LocalTaskOutputController(BaseTaskOutputController):
     def write_transformed_meter_reads(self, reads: List[GeneralMeterRead]):
         path = self._transformed_reads_path()
         self._create_parent_directories_if_missing(path)
-        logger.info(f"Writing {len(reads)} meters to {path}")
+        logger.info(f"Writing {len(reads)} transformed meters to {path}")
         with open(path, "w") as f:
             f.write(
                 "\n".join(json.dumps(v, cls=GeneralModelJSONEncoder) for v in reads)
@@ -103,7 +104,5 @@ class LocalTaskOutputController(BaseTaskOutputController):
     def _create_parent_directories_if_missing(self, path):
         directory = os.path.dirname(path)
         if not os.path.exists(directory):
-            logger.info(
-                f"Creating parent directories for {path}"
-            )
+            logger.info(f"Creating parent directories for {path}")
             os.makedirs(directory, exist_ok=True)

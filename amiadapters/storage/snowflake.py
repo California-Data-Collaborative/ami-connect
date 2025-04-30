@@ -24,7 +24,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
 
     def store_transformed(self):
         meters = self.output_controller.read_transformed_meters()
-        reads = self.output_controller.write_transformed_meter_reads()
+        reads = self.output_controller.read_transformed_meter_reads()
 
         conn = self.sink_config.connection()
 
