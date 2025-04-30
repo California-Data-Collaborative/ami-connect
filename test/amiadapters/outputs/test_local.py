@@ -15,7 +15,7 @@ class TestLocalTaskOutputController(BaseTestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
         self.controller = LocalTaskOutputController(
-            output_folder=self.test_dir, run_id="run123", org_id="org456"
+            output_folder=self.test_dir, org_id="org456"
         )
 
     def tearDown(self):
@@ -24,7 +24,7 @@ class TestLocalTaskOutputController(BaseTestCase):
     def test_write_and_read_extract_outputs(self):
         data = {"file1.txt": "hello world", "file2.txt": "more data"}
         extract_output = ExtractOutput(data)
-        self.controller.write_extract_outputs(extract_output)
+        self.controller.write_extract_outputs("run123", extract_output)
 
         for filename, content in data.items():
             path = os.path.join(self.test_dir, "run123/org456/e", filename)
@@ -32,7 +32,7 @@ class TestLocalTaskOutputController(BaseTestCase):
             with open(path, "r") as f:
                 self.assertEqual(f.read(), content)
 
-        result = self.controller.read_extract_outputs()
+        result = self.controller.read_extract_outputs("run123")
         self.assertEqual(data, result.get_outputs())
         self.assertEqual("hello world", result.from_file("file1.txt"))
 
@@ -75,7 +75,7 @@ class TestLocalTaskOutputController(BaseTestCase):
                 location_zip="93727",
             ),
         ]
-        self.controller.write_transformed_meters(meters)
+        self.controller.write_transformed_meters("run123", meters)
 
         path = os.path.join(self.test_dir, "run123/org456/t/meters.json")
         self.assertTrue(os.path.exists(path))
@@ -84,7 +84,7 @@ class TestLocalTaskOutputController(BaseTestCase):
             lines = f.read().strip().split("\n")
             self.assertEqual(len(lines), 2)
 
-        meters_out = self.controller.read_transformed_meters()
+        meters_out = self.controller.read_transformed_meters("run123")
         self.assertEqual(len(meters_out), 2)
         self.assertEqual(meters_out[0].device_id, "1")
         self.assertEqual(meters_out[1].device_id, "2")
@@ -118,12 +118,12 @@ class TestLocalTaskOutputController(BaseTestCase):
                 interval_unit=None,
             ),
         ]
-        self.controller.write_transformed_meter_reads(reads)
+        self.controller.write_transformed_meter_reads("run123", reads)
 
         path = os.path.join(self.test_dir, "run123/org456/t/reads.json")
         self.assertTrue(os.path.exists(path))
 
-        reads_out = self.controller.read_transformed_meter_reads()
+        reads_out = self.controller.read_transformed_meter_reads("run123")
         self.assertEqual(len(reads_out), 2)
         self.assertEqual(reads_out[0].device_id, "1")
         self.assertEqual(reads_out[0].register_value, 123.4)

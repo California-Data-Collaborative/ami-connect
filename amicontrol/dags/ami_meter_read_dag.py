@@ -32,6 +32,8 @@ def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
 
         @task()
         def extract(adapter: BaseAMIAdapter, **context):
+            run_id = context["dag_run"].run_id
+
             if is_backfill:
                 start, end = adapter.calculate_backfill_range()
             else:
@@ -48,19 +50,22 @@ def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
                 if start is None or end is None:
                     start, end = default_date_range(start, end)
 
-            adapter.extract(start, end)
+            adapter.extract(run_id, start, end)
 
         @task()
-        def transform(adapter: BaseAMIAdapter):
-            adapter.transform()
+        def transform(adapter: BaseAMIAdapter, **context):
+            run_id = context["dag_run"].run_id
+            adapter.transform(run_id)
 
         @task()
-        def load_raw(adapter: BaseAMIAdapter):
-            adapter.load_raw()
+        def load_raw(adapter: BaseAMIAdapter, **context):
+            run_id = context["dag_run"].run_id
+            adapter.load_raw(run_id)
 
         @task()
-        def load_transformed(adapter: BaseAMIAdapter):
-            adapter.load_transformed()
+        def load_transformed(adapter: BaseAMIAdapter, **context):
+            run_id = context["dag_run"].run_id
+            adapter.load_transformed(run_id)
 
         @task()
         def final_task():
@@ -90,6 +95,10 @@ def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
 
     ami_control_dag()
 
+
+#######################################################
+# Configure DAGs
+#######################################################
 
 # Manual runs
 standard_params = {

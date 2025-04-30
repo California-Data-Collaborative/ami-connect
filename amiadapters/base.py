@@ -25,34 +25,61 @@ class BaseAMIAdapter(ABC):
         pass
 
     @abstractmethod
-    def extract(self, extract_range_start: datetime, extract_range_end: datetime):
+    def extract(
+        self, run_id: str, extract_range_start: datetime, extract_range_end: datetime
+    ):
         """
         Extract data from an AMI data source.
 
+        :run_id: identifier for this run of the pipeline, is used to store intermediate output files
         :extract_range_start datetime: start of meter read datetime range for which we'll extract data
         :extract_range_end datetime:   end of meter read datetime range for which we'll extract data
         """
         pass
 
     @abstractmethod
-    def transform(self):
+    def transform(self, run_id: str):
+        """
+        Transform data from an AMI data source into the generalized format.
+
+        :run_id: identifier for this run of the pipeline, is used to find and store intermediate output files
+        """
         pass
 
     @abstractmethod
     def calculate_backfill_range(self) -> Tuple[datetime, datetime]:
+        """
+        Used by orchestration code when automated backfills are run. Returns a date range
+        for which we should backfill data. Used by the automated backfills to determine their
+        extract start and end dates.
+        """
         pass
 
-    def load_raw(self):
-        for sink in self.storage_sinks:
-            sink.store_raw()
+    def load_raw(self, run_id: str):
+        """
+        Stores raw data from extract step into all storage sinks.
 
-    def load_transformed(self):
+        :run_id: identifier for this run of the pipeline, is used to find intermediate output files
+        """
         for sink in self.storage_sinks:
-            sink.store_transformed()
+            sink.store_raw(run_id)
+
+    def load_transformed(self, run_id: str):
+        """
+        Stores transformed data from transform step into all storage sinks.
+
+        :run_id: identifier for this run of the pipeline, is used to find intermediate output files
+        """
+        for sink in self.storage_sinks:
+            sink.store_transformed(run_id)
 
     def datetime_from_iso_str(
         self, datetime_str: str, org_timezone: DstTzInfo
     ) -> datetime:
+        """
+        Parse an ISO format date string into a datetime object with timezone.
+        Uses org_timezone from arguments if provided or defaults to UTC.
+        """
         if datetime_str:
             result = datetime.fromisoformat(datetime_str)
             tz = org_timezone if org_timezone is not None else timezone("UTC")
