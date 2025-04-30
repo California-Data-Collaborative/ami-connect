@@ -273,7 +273,7 @@ class Beacon360Adapter(BaseAMIAdapter):
         self.org_id = org_id
         self.org_timezone = org_timezone
         self.output_controller = LocalTaskOutputController(
-            self.output_folder, "run_id_replace_me", self.org_id
+            self.output_folder, self.org_id
         )
         storage_sinks = []
         for sink in configured_sinks:
@@ -291,7 +291,9 @@ class Beacon360Adapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"beacon-360-{self.org_id}"
 
-    def extract(self, extract_range_start: datetime, extract_range_end: datetime):
+    def extract(
+        self, run_id: str, extract_range_start: datetime, extract_range_end: datetime
+    ):
         report = self._fetch_range_report(extract_range_start, extract_range_end)
         logger.info("Fetched report")
         meter_with_reads = self._parse_raw_range_report(report)
@@ -300,7 +302,7 @@ class Beacon360Adapter(BaseAMIAdapter):
             json.dumps(v, cls=DataclassJSONEncoder) for v in meter_with_reads
         )
         self.output_controller.write_extract_outputs(
-            ExtractOutput({"meters_and_reads.json": output})
+            run_id, ExtractOutput({"meters_and_reads.json": output})
         )
 
     def _fetch_range_report(
@@ -485,8 +487,8 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         return meter_with_reads
 
-    def transform(self):
-        extract_outputs = self.output_controller.read_extract_outputs()
+    def transform(self, run_id: str):
+        extract_outputs = self.output_controller.read_extract_outputs(run_id)
         text = extract_outputs.from_file("meters_and_reads.json")
         raw_meters_with_reads = [
             Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
@@ -496,8 +498,8 @@ class Beacon360Adapter(BaseAMIAdapter):
             raw_meters_with_reads
         )
 
-        self.output_controller.write_transformed_meters(transformed_meters)
-        self.output_controller.write_transformed_meter_reads(transformed_reads)
+        self.output_controller.write_transformed_meters(run_id, transformed_meters)
+        self.output_controller.write_transformed_meter_reads(run_id, transformed_reads)
 
     def _transform_meters_and_reads(
         self, raw_meters_with_reads: List[Beacon360MeterAndRead]
@@ -591,8 +593,8 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
         self.org_id = org_id
         self.org_timezone = org_timezone
 
-    def store_raw(self):
-        extract_outputs = self.output_controller.read_extract_outputs()
+    def store_raw(self, run_id):
+        extract_outputs = self.output_controller.read_extract_outputs(run_id)
         text = extract_outputs.from_file("meters_and_reads.json")
         raw_meters_with_reads = [
             Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")

@@ -1,3 +1,4 @@
+from datetime import datetime
 import logging
 
 from amiadapters.base import default_date_range
@@ -17,6 +18,7 @@ def run_pipeline(
     """
     config = AMIAdapterConfiguration.from_yaml(config_yaml, secrets_yaml)
     adapters = config.adapters()
+    run_id = f"run-{datetime.now().isoformat()}"
 
     if extract_range_start is None or extract_range_end is None:
         extract_range_start, extract_range_end = default_date_range(
@@ -24,9 +26,8 @@ def run_pipeline(
         )
 
     for adapter in adapters:
-        extract_range_start, extract_range_end = adapter.calculate_backfill_range()
         logger.info(f"Extracting data for {adapter.name()}")
-        adapter.extract(extract_range_start, extract_range_end)
+        adapter.extract(run_id, extract_range_start, extract_range_end)
         logger.info(f"Extracted data for {adapter.name()} to {adapter.output_folder}")
 
     logger.info(f"Extracted data for {len(adapters)} adapters")
@@ -35,7 +36,7 @@ def run_pipeline(
         logger.info(
             f"Transforming data for {adapter.name()} from {adapter.output_folder}"
         )
-        adapter.transform()
+        adapter.transform(run_id)
         logger.info(f"Transformed data for {adapter.name()} to {adapter.output_folder}")
 
     logger.info(f"Transformed data for {len(adapters)} adapters")
@@ -44,7 +45,7 @@ def run_pipeline(
         logger.info(
             f"Loading raw data for {adapter.name()} from {adapter.output_folder}"
         )
-        adapter.load_raw()
+        adapter.load_raw(run_id)
         logger.info(
             f"Loaded raw data for {adapter.name()} from {adapter.output_folder}"
         )
@@ -55,7 +56,7 @@ def run_pipeline(
         logger.info(
             f"Loading transformed data for {adapter.name()} from {adapter.output_folder}"
         )
-        adapter.load_transformed()
+        adapter.load_transformed(run_id)
         logger.info(
             f"Loaded transformed data for {adapter.name()} from {adapter.output_folder}"
         )

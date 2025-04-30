@@ -15,9 +15,9 @@ class BaseAMIStorageSink(ABC):
         self.sink_config = sink_config
 
     @abstractmethod
-    def store_raw(self):
+    def store_raw(self, run_id: str):
         pass
 
     @abstractmethod
-    def store_transformed(self):
+    def store_transformed(self, run_id: str):
         pass
