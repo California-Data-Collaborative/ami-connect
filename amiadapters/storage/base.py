@@ -1,18 +1,17 @@
 from abc import ABC, abstractmethod
 
 from amiadapters.config import ConfiguredStorageSink
+from amiadapters.outputs.base import BaseTaskOutputController
 
 
 class BaseAMIStorageSink(ABC):
 
     def __init__(
         self,
-        transformed_meter_file: str,
-        transformed_reads_file,
+        output_controller: BaseTaskOutputController,
         sink_config: ConfiguredStorageSink,
     ):
-        self.transformed_meter_file = transformed_meter_file
-        self.transformed_reads_file = transformed_reads_file
+        self.output_controller = (output_controller,)
         self.sink_config = sink_config
 
     @abstractmethod

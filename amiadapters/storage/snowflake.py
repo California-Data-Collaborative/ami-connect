@@ -1,10 +1,11 @@
-from datetime import datetime, timedelta
-import json
+from datetime import datetime
 from typing import List
 import pytz
 
-from amiadapters.base import GeneralMeter, GeneralMeterRead
+from amiadapters.models import GeneralMeterRead
+from amiadapters.models import GeneralMeter
 from amiadapters.config import ConfiguredStorageSink
+from amiadapters.outputs.base import BaseTaskOutputController
 from amiadapters.storage.base import BaseAMIStorageSink
 
 
@@ -16,22 +17,14 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
 
     def __init__(
         self,
-        transformed_meter_file: str,
-        transformed_reads_file: str,
+        output_controller: BaseTaskOutputController,
         sink_config: ConfiguredStorageSink,
     ):
-        super().__init__(transformed_meter_file, transformed_reads_file, sink_config)
+        super().__init__(output_controller, sink_config)
 
     def store_transformed(self):
-        with open(self.transformed_meter_file, "r") as f:
-            text = f.read()
-            meters = [GeneralMeter(**json.loads(d)) for d in text.strip().split("\n")]
-
-        with open(self.transformed_reads_file, "r") as f:
-            text = f.read()
-            reads = [
-                GeneralMeterRead(**json.loads(d)) for d in text.strip().split("\n")
-            ]
+        meters = self.output_controller.read_transformed_meters()
+        reads = self.output_controller.write_transformed_meter_reads()
 
         conn = self.sink_config.connection()
 
