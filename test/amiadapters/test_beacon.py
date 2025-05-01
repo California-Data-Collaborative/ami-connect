@@ -77,7 +77,9 @@ class TestBeacon360Adapter(BaseTestCase):
             use_cache=False,
             org_id="this-org",
             org_timezone=pytz.timezone("Europe/Rome"),
-            configured_task_output_controller=ConfiguredLocalTaskOutputController("output"),
+            configured_task_output_controller=ConfiguredLocalTaskOutputController(
+                "output"
+            ),
             configured_sinks=[],
         )
         self.range_start = datetime.datetime(2024, 1, 2, 0, 0)

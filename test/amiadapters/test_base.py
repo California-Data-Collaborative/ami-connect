@@ -18,7 +18,9 @@ class TestBaseAdapter(BaseTestCase):
             use_cache=False,
             org_id="this-org",
             org_timezone=pytz.timezone("Europe/Rome"),
-            configured_task_output_controller=ConfiguredLocalTaskOutputController("output"),
+            configured_task_output_controller=ConfiguredLocalTaskOutputController(
+                "output"
+            ),
             configured_sinks=[],
         )
 
