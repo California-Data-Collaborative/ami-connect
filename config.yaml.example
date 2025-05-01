@@ -4,10 +4,15 @@ sources:
   # Must be one of https://gist.github.com/heyalexej/8bf688fd67d7199be4a1682b3eec7568
   timezone: America/Los_Angeles
   use_raw_data_cache: False
-  intermediate_output: ./output
   sinks:
   - my_snowflake_instance
 
 sinks:
 - type: snowflake
-  id: my_snowflake_instance 
+  id: my_snowflake_instance
+
+task_output:
+  type: s3
+  bucket: my-s3-bucket-name-from-terraform
+  # Only used for local development, likely the name of the profile you use for terraform
+  dev_profile: my-local-aws-profile

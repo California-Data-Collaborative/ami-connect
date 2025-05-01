@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
-import dataclasses
 from datetime import datetime, timedelta
-import json
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 from pytz import timezone
 from pytz.tzinfo import DstTzInfo
 
+from amiadapters.outputs.base import BaseTaskOutputController
+from amiadapters.outputs.local import LocalTaskOutputController
+from amiadapters.outputs.s3 import S3TaskOutputController
 from amiadapters.storage.base import BaseAMIStorageSink
 
 
@@ -17,7 +18,16 @@ class BaseAMIAdapter(ABC):
     set you up to include it in our data pipeline.
     """
 
-    def __init__(self, storage_sinks: List[BaseAMIStorageSink] = None):
+    def __init__(
+        self,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        task_output_controller: BaseTaskOutputController,
+        storage_sinks: List[BaseAMIStorageSink] = None,
+    ):
+        self.org_id = org_id
+        self.org_timezone = org_timezone
+        self.output_controller = task_output_controller
         self.storage_sinks = storage_sinks if storage_sinks is not None else []
 
     @abstractmethod
@@ -122,6 +132,32 @@ class BaseAMIAdapter(ABC):
                 f"Range start must be before end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}"
             )
 
+    @staticmethod
+    def create_task_output_controller(configured_task_output_controller, org_id):
+        """
+        Create a task output controller from the config object.
+        """
+        from amiadapters.config import ConfiguredTaskOutputControllerType
+
+        if (
+            configured_task_output_controller.type
+            == ConfiguredTaskOutputControllerType.LOCAL
+        ):
+            return LocalTaskOutputController(
+                configured_task_output_controller.output_folder, org_id
+            )
+        elif (
+            configured_task_output_controller.type
+            == ConfiguredTaskOutputControllerType.S3
+        ):
+            return S3TaskOutputController(
+                configured_task_output_controller.s3_bucket_name,
+                org_id,
+            )
+        raise ValueError(
+            f"Task output configuration with invalid type {configured_task_output_controller.type}"
+        )
+
 
 class GeneralMeterUnitOfMeasure:
     """
@@ -132,29 +168,6 @@ class GeneralMeterUnitOfMeasure:
     CUBIC_FEET = "CF"
     HUNDRED_CUBIC_FEET = "CCF"
     GALLON = "Gallon"
-
-
-class DataclassJSONEncoder(json.JSONEncoder):
-    """
-    Helps write data classes into JSON.
-    """
-
-    def default(self, o):
-        if dataclasses.is_dataclass(o):
-            return dataclasses.asdict(o)
-        return super().default(o)
-
-
-class GeneralModelJSONEncoder(DataclassJSONEncoder):
-    """
-    Standardizes how we serialize our general models into JSON.
-    """
-
-    def default(self, o):
-        # Datetimes use isoformat
-        if isinstance(o, datetime):
-            return o.isoformat()
-        return super().default(o)
 
 
 def default_date_range(start: datetime, end: datetime):

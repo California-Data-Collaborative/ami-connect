@@ -7,7 +7,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from amiadapters.models import GeneralMeter, GeneralMeterRead
-from amiadapters.base import GeneralModelJSONEncoder
+from amiadapters.models import GeneralModelJSONEncoder
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
 
 logger = logging.getLogger(__name__)

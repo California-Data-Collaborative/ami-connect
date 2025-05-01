@@ -5,6 +5,7 @@ import pytz
 
 from amiadapters.base import default_date_range
 from amiadapters.beacon import Beacon360Adapter
+from amiadapters.config import ConfiguredLocalTaskOutputController
 from test.base_test_case import BaseTestCase
 
 
@@ -14,10 +15,12 @@ class TestBaseAdapter(BaseTestCase):
         self.adapter = Beacon360Adapter(
             api_user="user",
             api_password="pass",
-            intermediate_output="output",
             use_cache=False,
             org_id="this-org",
             org_timezone=pytz.timezone("Europe/Rome"),
+            configured_task_output_controller=ConfiguredLocalTaskOutputController(
+                "output"
+            ),
             configured_sinks=[],
         )
 

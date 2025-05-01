@@ -2,6 +2,7 @@ import datetime
 import pytz
 from unittest import mock
 
+from amiadapters.config import ConfiguredLocalTaskOutputController
 from amiadapters.models import GeneralMeterRead
 from amiadapters.models import GeneralMeter
 from amiadapters.beacon import (
@@ -73,17 +74,19 @@ class TestBeacon360Adapter(BaseTestCase):
         self.adapter = Beacon360Adapter(
             api_user="user",
             api_password="pass",
-            intermediate_output="output",
             use_cache=False,
             org_id="this-org",
             org_timezone=pytz.timezone("Europe/Rome"),
+            configured_task_output_controller=ConfiguredLocalTaskOutputController(
+                "output"
+            ),
             configured_sinks=[],
         )
         self.range_start = datetime.datetime(2024, 1, 2, 0, 0)
         self.range_end = datetime.datetime(2024, 1, 3, 0, 0)
 
     def test_init(self):
-        self.assertEqual("output", self.adapter.output_folder)
+        self.assertEqual("output", self.adapter.output_controller.output_folder)
         self.assertEqual("user", self.adapter.user)
         self.assertEqual("pass", self.adapter.password)
         self.assertEqual("beacon-360-this-org", self.adapter.name())
