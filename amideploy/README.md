@@ -35,11 +35,12 @@ you'll specify. Here's an example `terraform.tfvars` file:
 
 ```
 # cat ./terraform.tfvars 
-aws_profile = "cadc-ami-connect"
+aws_profile = "my-aws-profile-name-associated-with-local-credentials"
 aws_region = "us-west-2"
-airflow_db_password = "airflowdbpwd"
+airflow_db_password = "myairflowdbpwd"
 ssh_ip_allowlist = ["my.ip.address/32"]
 airflow_hostname = "my-ami-connect-domain.com"
+ami_connect_s3_bucket_name = "my-s3-bucket-name"
 ```
 
 The value in `aws_profile` should match the AWS profile name in your `~/.aws/credentials` file, where an AWS access key's details give access to your AWS account.
@@ -58,6 +59,8 @@ This command should exit without error. It should describe a number of resources
 - An Elastic IP assigned to our EC2
 - An "A" record that connects your Route53 instance to that Elastic IP
 - Security groups to make all of the networking work
+- An S3 bucket
+- An IAM role that grants permission for resources to access S3
 
 If that looks good, create the infrastructure:
 
