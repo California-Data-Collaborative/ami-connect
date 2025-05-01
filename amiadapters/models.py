@@ -1,5 +1,6 @@
 import dataclasses
 from datetime import datetime
+import json
 
 
 @dataclasses.dataclass(frozen=True)
@@ -70,3 +71,26 @@ class GeneralMeter:
     location_city: str
     location_state: str
     location_zip: str
+
+
+class DataclassJSONEncoder(json.JSONEncoder):
+    """
+    Helps write data classes into JSON.
+    """
+
+    def default(self, o):
+        if dataclasses.is_dataclass(o):
+            return dataclasses.asdict(o)
+        return super().default(o)
+
+
+class GeneralModelJSONEncoder(DataclassJSONEncoder):
+    """
+    Standardizes how we serialize our general models into JSON.
+    """
+
+    def default(self, o):
+        # Datetimes use isoformat
+        if isinstance(o, datetime):
+            return o.isoformat()
+        return super().default(o)

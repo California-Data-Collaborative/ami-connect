@@ -3,10 +3,13 @@ sources:
   org_id: my_utility
   timezone: America/Los_Angeles
   use_raw_data_cache: True
-  intermediate_output: ./output
   sinks:
   - my_snowflake_instance
 
 sinks:
 - type: snowflake
-  id: my_snowflake_instance 
+  id: my_snowflake_instance
+
+task_output:
+  type: s3
+  bucket: my-bucket

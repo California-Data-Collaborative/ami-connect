@@ -26,7 +26,7 @@ class TestConfig(BaseTestCase):
         self.assertEqual("u_name", source.utility_name)
         self.assertEqual("America/Los_Angeles", str(source.timezone))
         self.assertEqual(False, source.use_raw_data_cache)
-        self.assertEqual("./output", source.intermediate_output)
+        self.assertEqual("outputs", source.task_output_controller.output_folder)
         self.assertEqual("key", source.secrets.api_key)
 
         self.assertEqual(1, len(source.storage_sinks))
@@ -52,7 +52,7 @@ class TestConfig(BaseTestCase):
         self.assertEqual("my_utility", source.org_id)
         self.assertEqual("America/Los_Angeles", str(source.timezone))
         self.assertEqual(True, source.use_raw_data_cache)
-        self.assertEqual("./output", source.intermediate_output)
+        self.assertEqual("my-bucket", source.task_output_controller.s3_bucket_name)
         self.assertEqual("my_user", source.secrets.user)
         self.assertEqual("my_password", source.secrets.password)
 

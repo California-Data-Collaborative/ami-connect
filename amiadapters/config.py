@@ -53,6 +53,24 @@ class AMIAdapterConfiguration:
 
         all_sinks_by_id = {s.id: sink for s in all_sinks}
 
+        # Task output controller
+        task_output_config = config_yaml.get("task_output")
+        if task_output_config is None:
+            raise ValueError("Missing task_output in configuration")
+        task_output_type = task_output_config.get("type")
+        match task_output_type:
+            case ConfiguredTaskOutputControllerType.LOCAL:
+                task_output_controller = ConfiguredLocalTaskOutputController(
+                    task_output_config.get("output_folder"),
+                )
+            case ConfiguredTaskOutputControllerType.S3:
+                task_output_controller = ConfiguredS3TaskOutputController(
+                    task_output_config.get("dev_profile"),
+                    task_output_config.get("bucket"),
+                )
+            case _:
+                raise ValueError(f"Unrecognized task output type {task_output_type}")
+
         # Parse all configured sources
         sources = []
         for source in config_yaml.get("sources", []):
@@ -88,7 +106,7 @@ class AMIAdapterConfiguration:
                 org_id,
                 source.get("timezone"),
                 source.get("use_raw_data_cache"),
-                source.get("intermediate_output"),
+                task_output_controller,
                 source.get("utility_name"),
                 secrets,
                 sinks,
@@ -115,21 +133,21 @@ class AMIAdapterConfiguration:
                         Beacon360Adapter(
                             source.secrets.user,
                             source.secrets.password,
-                            source.intermediate_output,
                             source.use_raw_data_cache,
                             source.org_id,
                             source.timezone,
+                            source.task_output_controller,
                             source.storage_sinks,
                         )
                     )
                 case ConfiguredAMISourceType.SENTRYX:
                     adapters.append(
                         SentryxAdapter(
-                            source.intermediate_output,
                             source.secrets.api_key,
                             source.org_id,
                             source.timezone,
                             source.utility_name,
+                            source.task_output_controller,
                         )
                     )
         return adapters
@@ -200,6 +218,42 @@ class ConfiguredStorageSink:
         raise ValueError(f"Unrecognized secret type for sink type {self.type}")
 
 
+class ConfiguredTaskOutputControllerType:
+    LOCAL = "local"
+    S3 = "s3"
+
+
+class ConfiguredLocalTaskOutputController:
+
+    def __init__(self, output_folder: str):
+        self.type = ConfiguredTaskOutputControllerType.LOCAL
+        self.output_folder = self._output_folder(output_folder)
+
+    def _output_folder(self, output_folder: str) -> str:
+        if output_folder is None:
+            raise ValueError(
+                "ConfiguredLocalTaskOutputController must have output_folder"
+            )
+        return output_folder
+
+
+class ConfiguredS3TaskOutputController:
+
+    def __init__(self, dev_aws_profile_name: str, s3_bucket_name: str):
+        self.type = ConfiguredTaskOutputControllerType.S3
+        # Only use for specifying local development AWS credentials. Prod should use
+        # AMI roles provisioned in terraform.
+        self.dev_aws_profile_name = dev_aws_profile_name
+        self.s3_bucket_name = self._s3_bucket_name(s3_bucket_name)
+
+    def _s3_bucket_name(self, s3_bucket_name: str) -> str:
+        if s3_bucket_name is None:
+            raise ValueError(
+                "ConfiguredS3TaskOutputController must have s3_bucket_name"
+            )
+        return s3_bucket_name
+
+
 @dataclass
 class Beacon360Secrets:
     user: str
@@ -229,16 +283,20 @@ class ConfiguredAMISource:
         org_id: str,
         timezone: str,
         use_raw_data_cache: bool,
-        intermediate_output: str,
+        task_output_controller: Union[
+            ConfiguredLocalTaskOutputController, ConfiguredS3TaskOutputController
+        ],
         utility_name: str,
-        secrets: Union[Beacon360Secrets],
+        secrets: Union[Beacon360Secrets, SentryxSecrets],
         sinks: List[ConfiguredStorageSink],
     ):
         self.type = self._type(type)
         self.org_id = self._org_id(org_id)
         self.timezone = self._timezone(timezone)
         self.use_raw_data_cache = bool(use_raw_data_cache)
-        self.intermediate_output = self._intermediate_output(intermediate_output)
+        self.task_output_controller = self._task_output_controller(
+            task_output_controller
+        )
         self.utility_name = utility_name
         self.secrets = self._secrets(secrets)
         self.storage_sinks = self._sinks(sinks)
@@ -261,10 +319,15 @@ class ConfiguredAMISource:
             return timezone(DEFAULT_TIMEZONE)
         return timezone(this_timezone)
 
-    def _intermediate_output(self, intermediate_output: str) -> str:
-        if intermediate_output is None:
-            raise ValueError("AMI Source must have intermediate_output")
-        return intermediate_output
+    def _task_output_controller(
+        self,
+        task_output_controller: Union[
+            ConfiguredLocalTaskOutputController, ConfiguredS3TaskOutputController
+        ],
+    ) -> Union[ConfiguredLocalTaskOutputController, ConfiguredS3TaskOutputController]:
+        if task_output_controller is None:
+            raise ValueError("AMI Source must have task_output_controller")
+        return task_output_controller
 
     def _secrets(self, secrets: str) -> Union[Beacon360Secrets]:
         if self.type == ConfiguredAMISourceType.BEACON_360 and isinstance(
@@ -290,7 +353,7 @@ class ConfiguredAMISource:
         raise ValueError(f"Invalid sink type(s) for source type {self.type}")
 
     def __repr__(self):
-        return f"ConfiguredAMISource[type={self.type}, org_id={self.org_id}, timezone={self.timezone}, use_cache={self.use_raw_data_cache}, intermediate_output={self.intermediate_output} storage_sinks=[{", ".join(s.id for s in self.storage_sinks)}]]"
+        return f"ConfiguredAMISource[type={self.type}, org_id={self.org_id}, timezone={self.timezone}, use_cache={self.use_raw_data_cache}, task_output_controller={self.task_output_controller} storage_sinks=[{", ".join(s.id for s in self.storage_sinks)}]]"
 
 
 def find_config_yaml() -> str:

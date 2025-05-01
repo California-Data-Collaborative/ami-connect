@@ -12,13 +12,10 @@ from typing import List, Tuple
 
 from amiadapters.base import (
     BaseAMIAdapter,
-    DataclassJSONEncoder,
 )
-from amiadapters.models import GeneralMeter, GeneralMeterRead
+from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.config import ConfiguredStorageSink, ConfiguredStorageSinkType
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
-from amiadapters.outputs.local import LocalTaskOutputController
-from amiadapters.outputs.s3 import S3TaskOutputController
 from amiadapters.storage.snowflake import SnowflakeStorageSink
 
 logger = logging.getLogger(__name__)
@@ -257,41 +254,37 @@ class Beacon360Adapter(BaseAMIAdapter):
     API Documentation: https://helpbeaconama.net/beacon-web-services/export-data-service-v2-api-preview/#POSTread
     """
 
+    CACHE_OUTPUT_FOLDER = "./output"
+
     def __init__(
         self,
         api_user: str,
         api_password: str,
-        intermediate_output: str,
         use_cache: bool,
         org_id: str,
         org_timezone: DstTzInfo,
+        configured_task_output_controller,
         configured_sinks,
     ):
         self.user = api_user
         self.password = api_password
-        self.output_folder = intermediate_output
         self.use_cache = use_cache
-        self.org_id = org_id
-        self.org_timezone = org_timezone
-        # self.output_controller = LocalTaskOutputController(
-        #     self.output_folder, self.org_id
-        # )
-        self.output_controller = S3TaskOutputController(
-            "cadc-ami-connect",
-            self.org_id,
+        task_output_controller = self.create_task_output_controller(
+            configured_task_output_controller, org_id
         )
+        # Must create storage sinks here because it's Beacon-specific
         storage_sinks = []
         for sink in configured_sinks:
             if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
                 storage_sinks.append(
                     BeaconSnowflakeStorageSink(
-                        self.output_controller,
-                        self.org_id,
-                        self.org_timezone,
+                        task_output_controller,
+                        org_id,
+                        org_timezone,
                         sink,
                     )
                 )
-        super().__init__(storage_sinks)
+        super().__init__(org_id, org_timezone, task_output_controller, storage_sinks)
 
     def name(self) -> str:
         return f"beacon-360-{self.org_id}"
@@ -465,7 +458,7 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         # Remove old cache files so we don't fill up the disk
         previous_cache_files = [
-            os.path.join(self.output_folder, f)
+            os.path.join(self.CACHE_OUTPUT_FOLDER, f)
             for f in os.listdir(directory)
             if "cached-report" in f
         ]
@@ -565,7 +558,7 @@ class Beacon360Adapter(BaseAMIAdapter):
     ) -> str:
         start, end = extract_range_start.isoformat(), extract_range_end.isoformat()
         return os.path.join(
-            self.output_folder, f"{self.name()}-{start}-{end}-cached-report.txt"
+            self.CACHE_OUTPUT_FOLDER, f"{self.name()}-{start}-{end}-cached-report.txt"
         )
 
     def calculate_backfill_range(self) -> Tuple[datetime, datetime]:

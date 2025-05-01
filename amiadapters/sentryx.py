@@ -6,11 +6,14 @@ import requests
 import os
 from typing import List, Tuple
 
-from amiadapters.models import GeneralMeter, GeneralMeterRead
+from amiadapters.models import (
+    DataclassJSONEncoder,
+    GeneralMeter,
+    GeneralMeterRead,
+    GeneralModelJSONEncoder,
+)
 from amiadapters.base import (
     BaseAMIAdapter,
-    DataclassJSONEncoder,
-    GeneralModelJSONEncoder,
 )
 from amiadapters.config import AMIAdapterConfiguration
 

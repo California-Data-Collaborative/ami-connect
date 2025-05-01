@@ -2,11 +2,14 @@ sources:
 - type: sentryx
   org_id: my_utility
   timezone: America/Los_Angeles
-  intermediate_output: ./output
   utility_name: u_name
   sinks:
   - my_snowflake_instance
 
 sinks:
 - type: snowflake
-  id: my_snowflake_instance 
+  id: my_snowflake_instance
+
+task_output:
+  type: local
+  output_folder: outputs

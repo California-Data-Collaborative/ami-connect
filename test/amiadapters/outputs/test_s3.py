@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, call
 
 import pytz
 
-from amiadapters.base import GeneralModelJSONEncoder
+from amiadapters.models import GeneralModelJSONEncoder
 from amiadapters.models import GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.outputs.s3 import S3TaskOutputController
