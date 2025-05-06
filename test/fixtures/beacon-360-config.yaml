@@ -19,11 +19,14 @@ backfills:
   start_date: 2025-01-01
   end_date: 2025-02-01
   interval_days: 3
+  schedule: "15 * * * *"
 - org_id: my_utility
   start_date: 2024-10-22
   end_date: 2024-11-22
   interval_days: 4
+  schedule: "* 1 * * *"
 - org_id: ignore-me-i-do-not-match-any-org
   start_date: 2025-01-01
   end_date: 2025-02-01
   interval_days: 3
+  schedule: "0 12 3 * *"

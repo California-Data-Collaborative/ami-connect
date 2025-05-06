@@ -110,6 +110,7 @@ class TestConfig(BaseTestCase):
         self.assertEqual(datetime(2025, 1, 1), backfills[0].start_date)
         self.assertEqual(datetime(2025, 2, 1), backfills[0].end_date)
         self.assertEqual(3, backfills[0].interval_days)
+        self.assertEqual("15 * * * *", backfills[0].schedule)
 
         self.assertEqual(datetime(2024, 10, 22), backfills[1].start_date)
         self.assertEqual(datetime(2024, 11, 22), backfills[1].end_date)
