@@ -3,7 +3,6 @@ import logging
 
 import boto3
 
-from amiadapters.base import default_date_range
 from amiadapters.config import (
     AMIAdapterConfiguration,
     ConfiguredTaskOutputControllerType,
@@ -24,6 +23,7 @@ def run_pipeline(
 
     config = AMIAdapterConfiguration.from_yaml(config_yaml, secrets_yaml)
     adapters = config.adapters()
+    backfills = {b.org_id: b for b in config.backfills()}
     run_id = f"run-{datetime.now().isoformat()}"
 
     # If using S3, set an AWS credential profile specified in the config
@@ -35,15 +35,13 @@ def run_pipeline(
             profile_name=config._sources[0].task_output_controller.dev_aws_profile_name
         )
 
-    # Calculate date range if not fully specified
-    if extract_range_start is None or extract_range_end is None:
-        extract_range_start, extract_range_end = default_date_range(
-            extract_range_start, extract_range_end
-        )
-
     for adapter in adapters:
+        backfill = backfills.get(adapter.org_id)
+        start, end = adapter.calculate_extract_range(
+            extract_range_start, extract_range_end, backfill_params=backfill
+        )
         logger.info(f"Extracting data for {adapter.name()}")
-        adapter.extract(run_id, extract_range_start, extract_range_end)
+        adapter.extract(run_id, start, end)
         logger.info(f"Extracted data for {adapter.name()}")
 
     logger.info(f"Extracted data for {len(adapters)} adapters")

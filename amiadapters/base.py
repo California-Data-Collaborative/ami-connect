@@ -5,10 +5,12 @@ from typing import List, Tuple
 from pytz import timezone
 from pytz.tzinfo import DstTzInfo
 
+from amiadapters.config import Backfill
 from amiadapters.outputs.base import BaseTaskOutputController
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
 from amiadapters.storage.base import BaseAMIStorageSink
+from amiadapters.storage.snowflake import SnowflakeStorageSink
 
 
 class BaseAMIAdapter(ABC):
@@ -56,20 +58,24 @@ class BaseAMIAdapter(ABC):
         """
         pass
 
-    @abstractmethod
-    def calculate_backfill_range(
-        self, min_date: datetime, max_date: datetime, interval_days: int
+    def calculate_extract_range(
+        self, start: datetime, end: datetime, backfill_params: Backfill = None
     ) -> Tuple[datetime, datetime]:
         """
-        Used by orchestration code when automated backfills are run. Returns a date range
-        for which we should backfill data. Used by the automated backfills to determine their
-        extract start and end dates.
+        Returns a date range for which we should extract data. Automatically determines if
+        this is a backfill and calculates a range based on backfill parameters. Otherwise calculates
+        a range for extracting recent data.
 
         min_date: caps how far back we will backfill
         max_date: caps how far forward we will backfill
         interval_days: the number of days of data we should backfill
         """
-        pass
+        range_calculator = ExtractRangeCalculator(self.org_id, self.storage_sinks)
+        calculated_start, calculated_end = range_calculator.calculate_extract_range(
+            start, end, backfill_params=backfill_params
+        )
+        self._validate_extract_range(calculated_start, calculated_end)
+        return calculated_start, calculated_end
 
     def load_raw(self, run_id: str):
         """
@@ -126,7 +132,7 @@ class BaseAMIAdapter(ABC):
         }
         return mapping.get(unit_of_measure)
 
-    def validate_extract_range(
+    def _validate_extract_range(
         self, extract_range_start: datetime, extract_range_end: datetime
     ):
         if extract_range_start is None or extract_range_end is None:
@@ -176,15 +182,83 @@ class GeneralMeterUnitOfMeasure:
     GALLON = "Gallon"
 
 
-def default_date_range(start: datetime, end: datetime):
-    default_number_of_days = 2
+class ExtractRangeCalculator:
+    """
+    Helper class for calculating the start and end date for an org's Extract
+    task.
+    """
 
-    if start is None and end is None:
-        end = datetime.now()
-        start = end - timedelta(days=default_number_of_days)
-    elif start is not None and end is None:
-        end = start + timedelta(days=default_number_of_days)
-    elif start is None and end is not None:
-        start = end - timedelta(days=default_number_of_days)
+    def __init__(self, org_id: str, storage_sinks: List[BaseAMIStorageSink]):
+        self.org_id = org_id
+        self.storage_sinks = storage_sinks
 
-    return start, end
+    def calculate_extract_range(
+        self, start: datetime, end: datetime, backfill_params: Backfill
+    ) -> Tuple[datetime, datetime]:
+        """
+        Returns a date range for which we should extract data. Automatically determines if
+        this is a backfill and calculates a range based on backfill parameters. Otherwise calculates
+        a range for extracting recent data.
+
+        min_date: caps how far back we will backfill
+        max_date: caps how far forward we will backfill
+        interval_days: the number of days of data we should backfill
+        """
+        if backfill_params is not None:
+            return self._calculate_backfill_range(
+                backfill_params.start_date,
+                backfill_params.end_date,
+                backfill_params.interval_days,
+            )
+        else:
+            if isinstance(start, str):
+                start = datetime.fromisoformat(start)
+            if isinstance(end, str):
+                end = datetime.fromisoformat(end)
+
+            if start is None or end is None:
+                start, end = self._default_date_range(start, end)
+
+            return start, end
+
+    def _calculate_backfill_range(
+        self, min_date: datetime, max_date: datetime, interval_days: int
+    ) -> Tuple[datetime, datetime]:
+        """
+        Used by orchestration code when automated backfills are run. Returns a date range
+        for which we should backfill data. Used by the automated backfills to determine their
+        extract start and end dates.
+
+        min_date: caps how far back we will backfill
+        max_date: caps how far forward we will backfill
+        interval_days: the number of days of data we should backfill
+        """
+        snowflake_sink = [
+            s for s in self.storage_sinks if isinstance(s, SnowflakeStorageSink)
+        ]
+        if not snowflake_sink:
+            raise Exception(
+                "Could not calculate backfill range, no Snowflake sink available"
+            )
+
+        sink = snowflake_sink[0]
+        end = sink.get_oldest_meter_read_time(self.org_id, min_date, max_date)
+        if not end:
+            raise Exception(
+                f"No backfillable days found between {min_date} and {max_date} for {self.org_id}, consider removing this backfill from the configuration."
+            )
+        start = end - timedelta(days=interval_days)
+        return start, end
+
+    def _default_date_range(self, start: datetime, end: datetime):
+        default_number_of_days = 2
+
+        if start is None and end is None:
+            end = datetime.now()
+            start = end - timedelta(days=default_number_of_days)
+        elif start is not None and end is None:
+            end = start + timedelta(days=default_number_of_days)
+        elif start is None and end is not None:
+            start = end - timedelta(days=default_number_of_days)
+
+        return start, end

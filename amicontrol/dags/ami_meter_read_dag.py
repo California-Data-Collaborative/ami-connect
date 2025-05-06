@@ -3,7 +3,7 @@ from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 
-from amiadapters.base import BaseAMIAdapter, default_date_range
+from amiadapters.base import BaseAMIAdapter
 from amiadapters.config import (
     AMIAdapterConfiguration,
     find_config_yaml,
@@ -11,15 +11,7 @@ from amiadapters.config import (
 )
 
 
-def ami_control_dag_factory(
-    dag_id,
-    schedule,
-    params,
-    adapters,
-    min_date=None,
-    max_date=None,
-    interval_days=None,
-):
+def ami_control_dag_factory(dag_id, schedule, params, adapters, backfill_params=None):
     """
     Factory for AMI control meter read DAGs that run on different schedules:
     - The regular run, which refreshes recent data
@@ -41,28 +33,13 @@ def ami_control_dag_factory(
         def extract(adapter: BaseAMIAdapter, **context):
             run_id = context["dag_run"].run_id
 
-            if min_date and max_date and interval_days:
-                range = adapter.calculate_backfill_range(
-                    min_date, max_date, interval_days
-                )
-                if range is None:
-                    raise Exception(
-                        f"Backfill with min_date={min_date} max_date={max_date} is finished, consider removing it from config"
-                    )
-                start, end = range
-            else:
-                start, end = (
-                    context["params"].get("extract_range_start"),
-                    context["params"].get("extract_range_end"),
-                )
+            # start and end dates from Airflow UI, if specified
+            start_from_params = (context["params"].get("extract_range_start"),)
+            end_from_params = (context["params"].get("extract_range_end"),)
 
-                if isinstance(start, str):
-                    start = datetime.fromisoformat(start)
-                if isinstance(end, str):
-                    end = datetime.fromisoformat(end)
-
-                if start is None or end is None:
-                    start, end = default_date_range(start, end)
+            start, end = adapter.calculate_extract_range(
+                start_from_params, end_from_params, backfill_params=backfill_params
+            )
 
             adapter.extract(run_id, start, end)
 
@@ -139,7 +116,5 @@ for backfill in backfills:
         backfill.schedule,
         {},
         matching_adapters,
-        min_date=backfill.start_date,
-        max_date=backfill.end_date,
-        interval_days=backfill.interval_days,
+        backfill_params=backfill,
     )

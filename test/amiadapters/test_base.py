@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytz
 
-from amiadapters.base import default_date_range
+from amiadapters.base import ExtractRangeCalculator
 from amiadapters.beacon import Beacon360Adapter
-from amiadapters.config import ConfiguredLocalTaskOutputController
+from amiadapters.config import Backfill, ConfiguredLocalTaskOutputController
+from amiadapters.storage.snowflake import SnowflakeStorageSink
 from test.base_test_case import BaseTestCase
 
 
@@ -76,11 +77,30 @@ class TestBaseAdapter(BaseTestCase):
             result = self.adapter.map_unit_of_measure(size)
             self.assertEqual(result, expected)
 
+    def test_extract_consumption_for_all_meters__throws_exception_when_range_not_valid(
+        self,
+    ):
+        with self.assertRaises(Exception) as context:
+            self.adapter._validate_extract_range(None, self.range_end)
 
-class TestDefaultDateRange(BaseTestCase):
+        with self.assertRaises(Exception) as context:
+            self.adapter._validate_extract_range(self.range_start, None)
+
+        with self.assertRaises(Exception) as context:
+            # End after start
+            self.adapter._validate_extract_range(self.range_end, self.range_start)
+
+
+class TestExtractRangeCalculator(BaseTestCase):
+
+    def setUp(self):
+        self.snowflake_sink = MagicMock(spec=SnowflakeStorageSink)
+        self.snowflake_sink.get_oldest_meter_read_time.return_value = 3
+        sinks = [self.snowflake_sink]
+        self.calculator = ExtractRangeCalculator(org_id="my_org", storage_sinks=sinks)
 
     @patch("amiadapters.base.datetime")
-    def test_both_dates_none(self, mock_datetime):
+    def test_calculate_extract_range__both_dates_none(self, mock_datetime):
         # Set up mock for datetime.now()
         now = datetime(2025, 4, 22, 12, 0, 0)
         mock_datetime.now.return_value = now
@@ -90,14 +110,16 @@ class TestDefaultDateRange(BaseTestCase):
         expected_start = now - timedelta(days=2)
 
         # Test when both start and end are None
-        result_start, result_end = default_date_range(None, None)
+        result_start, result_end = self.calculator.calculate_extract_range(
+            None, None, backfill_params=None
+        )
 
         # Verify results
         self.assertEqual(result_start, expected_start)
         self.assertEqual(result_end, expected_end)
         mock_datetime.now.assert_called_once()
 
-    def test_start_none_end_provided(self):
+    def test_calculate_extract_range__start_none_end_provided(self):
         # Provide end date
         end_date = datetime(2025, 4, 22, 12, 0, 0)
 
@@ -106,13 +128,15 @@ class TestDefaultDateRange(BaseTestCase):
         expected_start = end_date - timedelta(days=2)
 
         # Test when start is None and end is provided
-        result_start, result_end = default_date_range(None, end_date)
+        result_start, result_end = self.calculator.calculate_extract_range(
+            None, end_date, backfill_params=None
+        )
 
         # Verify results
         self.assertEqual(result_start, expected_start)
         self.assertEqual(result_end, expected_end)
 
-    def test_start_provided_end_none(self):
+    def test_calculate_extract_range__start_provided_end_none(self):
         # Provide start date
         start_date = datetime(2025, 4, 20, 12, 0, 0)
 
@@ -121,13 +145,15 @@ class TestDefaultDateRange(BaseTestCase):
         expected_end = start_date + timedelta(days=2)
 
         # Test when start is provided and end is None
-        result_start, result_end = default_date_range(start_date, None)
+        result_start, result_end = self.calculator.calculate_extract_range(
+            start_date, None, backfill_params=None
+        )
 
         # Verify results
         self.assertEqual(result_start, expected_start)
         self.assertEqual(result_end, expected_end)
 
-    def test_both_dates_provided(self):
+    def test_calculate_extract_range__both_dates_provided(self):
         # Provide both dates
         start_date = datetime(2025, 4, 20, 12, 0, 0)
         end_date = datetime(2025, 4, 25, 12, 0, 0)
@@ -137,8 +163,71 @@ class TestDefaultDateRange(BaseTestCase):
         expected_end = end_date
 
         # Test when both start and end are provided
-        result_start, result_end = default_date_range(start_date, end_date)
+        result_start, result_end = self.calculator.calculate_extract_range(
+            start_date, end_date, backfill_params=None
+        )
 
         # Verify results
         self.assertEqual(result_start, expected_start)
         self.assertEqual(result_end, expected_end)
+
+    def test_calculate_extract_range__backfill_with_no_snowflake_sink(self):
+        start_date = datetime(2025, 4, 20, 12, 0, 0)
+        end_date = datetime(2025, 4, 25, 12, 0, 0)
+        backfill_params = Backfill(
+            org_id=self.calculator.org_id,
+            start_date=start_date,
+            end_date=end_date,
+            interval_days=3,
+            schedule="",
+        )
+
+        self.calculator.storage_sinks = [MagicMock()]
+
+        with self.assertRaises(Exception):
+            self.calculator.calculate_extract_range(
+                None, None, backfill_params=backfill_params
+            )
+
+    def test_calculate_extract_range__backfill_with_snowflake_sink(self):
+        start_date = datetime(2025, 4, 20, 12, 0, 0)
+        end_date = datetime(2025, 4, 25, 12, 0, 0)
+        self.snowflake_sink.get_oldest_meter_read_time.return_value = end_date
+        backfill_params = Backfill(
+            org_id=self.calculator.org_id,
+            start_date=start_date,
+            end_date=end_date,
+            interval_days=3,
+            schedule="",
+        )
+
+        # Test when backfill
+        result_start, result_end = self.calculator.calculate_extract_range(
+            None, None, backfill_params=backfill_params
+        )
+
+        expected_start = end_date - timedelta(days=3)
+        expected_end = end_date
+
+        # Verify results
+        self.assertEqual(result_start, expected_start)
+        self.assertEqual(result_end, expected_end)
+
+    def test_calculate_extract_range__backfill_with_snowflake_sink_that_gives_no_oldest_time(
+        self,
+    ):
+        start_date = datetime(2025, 4, 20, 12, 0, 0)
+        end_date = datetime(2025, 4, 25, 12, 0, 0)
+        self.snowflake_sink.get_oldest_meter_read_time.return_value = None
+        backfill_params = Backfill(
+            org_id=self.calculator.org_id,
+            start_date=start_date,
+            end_date=end_date,
+            interval_days=3,
+            schedule="",
+        )
+
+        with self.assertRaises(Exception):
+            self.calculator.calculate_extract_range(
+                None, None, backfill_params=backfill_params
+            )

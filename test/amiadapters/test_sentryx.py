@@ -257,21 +257,6 @@ class TestSentryxAdapter(BaseTestCase):
         ]
         self.assertListEqual(calls, mock_get.call_args_list)
 
-    def test_extract_consumption_for_all_meters__throws_exception_when_range_not_valid(
-        self,
-    ):
-        with self.assertRaises(Exception) as context:
-            self.adapter._extract_consumption_for_all_meters(None, self.range_end)
-
-        with self.assertRaises(Exception) as context:
-            self.adapter._extract_consumption_for_all_meters(self.range_start, None)
-
-        with self.assertRaises(Exception) as context:
-            # End after start
-            self.adapter._extract_consumption_for_all_meters(
-                self.range_end, self.range_start
-            )
-
     @mock.patch(
         "requests.get",
         side_effect=[
