@@ -192,6 +192,7 @@ class TestExtractRangeCalculator(BaseTestCase):
     def test_calculate_extract_range__backfill_with_snowflake_sink(self):
         start_date = datetime(2025, 4, 20, 12, 0, 0)
         end_date = datetime(2025, 4, 25, 12, 0, 0)
+        self.snowflake_sink.get_oldest_meter_read_time.return_value = end_date
         backfill_params = Backfill(
             org_id=self.calculator.org_id,
             start_date=start_date,
@@ -200,7 +201,29 @@ class TestExtractRangeCalculator(BaseTestCase):
             schedule="",
         )
 
-        self.calculator.storage_sinks = [MagicMock()]
+        # Test when backfill
+        result_start, result_end = self.calculator.calculate_extract_range(
+            None, None, backfill_params=backfill_params
+        )
+
+        expected_start = end_date - timedelta(days=3)
+        expected_end = end_date
+
+        # Verify results
+        self.assertEqual(result_start, expected_start)
+        self.assertEqual(result_end, expected_end)
+    
+    def test_calculate_extract_range__backfill_with_snowflake_sink_that_gives_no_oldest_time(self):
+        start_date = datetime(2025, 4, 20, 12, 0, 0)
+        end_date = datetime(2025, 4, 25, 12, 0, 0)
+        self.snowflake_sink.get_oldest_meter_read_time.return_value = None
+        backfill_params = Backfill(
+            org_id=self.calculator.org_id,
+            start_date=start_date,
+            end_date=end_date,
+            interval_days=3,
+            schedule="",
+        )
 
         with self.assertRaises(Exception):
             self.calculator.calculate_extract_range(
