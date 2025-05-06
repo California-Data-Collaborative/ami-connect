@@ -561,17 +561,26 @@ class Beacon360Adapter(BaseAMIAdapter):
             self.CACHE_OUTPUT_FOLDER, f"{self.name()}-{start}-{end}-cached-report.txt"
         )
 
-    def calculate_backfill_range(self) -> Tuple[datetime, datetime]:
+    def calculate_backfill_range(
+        self, min_date: datetime, max_date: datetime, interval_days: int
+    ) -> Tuple[datetime, datetime]:
         snowflake_sink = [
             s for s in self.storage_sinks if isinstance(s, BeaconSnowflakeStorageSink)
         ]
         if not snowflake_sink:
-            now = datetime.now()
-            return now - timedelta(days=2), now
+            start = datetime.now()
+            end = start - timedelta(days=interval_days)
         else:
             sink = snowflake_sink[0]
-            oldest = sink.get_oldest_meter_read_time(self.org_id)
-            return oldest - timedelta(days=2), oldest
+            start = sink.get_oldest_meter_read_time(self.org_id)
+            end = start - timedelta(days=interval_days)
+
+        if start <= min_date and end <= min_date:
+            return None
+        elif start >= max_date and end >= max_date:
+            return None
+        else:
+            return start, end
 
 
 class BeaconSnowflakeStorageSink(SnowflakeStorageSink):

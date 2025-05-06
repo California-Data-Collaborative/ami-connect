@@ -16,3 +16,11 @@ task_output:
   bucket: my-s3-bucket-name-from-terraform
   # Only used for local development, likely the name of the profile you use for terraform
   dev_profile: my-local-aws-profile
+
+# Optionally specify DAGs for backfills between start_date and end_date
+backfills:
+- org_id: my_utility
+  start_date: 2025-02-01
+  end_date: 2025-04-01
+  interval_days: 2
+  schedule: "15 * * * *"

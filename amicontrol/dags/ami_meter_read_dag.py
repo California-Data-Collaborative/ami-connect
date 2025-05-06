@@ -1,6 +1,4 @@
 from datetime import datetime
-import os
-import pathlib
 
 from airflow.decorators import dag, task
 from airflow.models.param import Param
@@ -13,11 +11,20 @@ from amiadapters.config import (
 )
 
 
-def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
+def ami_control_dag_factory(
+    dag_id,
+    schedule,
+    params,
+    adapters,
+    min_date=None,
+    max_date=None,
+    interval_days=None,
+):
     """
     Factory for AMI control meter read DAGs that run on different schedules:
     - The regular run, which refreshes recent data
-    - The backfill run, which runs more frequently and attempts to backfill data
+    - The backfill runs, which run more frequently and attempt to backfill data
+    - Manual runs whose range can be parameterized in the Airflow UI
     """
 
     @dag(
@@ -34,8 +41,15 @@ def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
         def extract(adapter: BaseAMIAdapter, **context):
             run_id = context["dag_run"].run_id
 
-            if is_backfill:
-                start, end = adapter.calculate_backfill_range()
+            if min_date and max_date and interval_days:
+                range = adapter.calculate_backfill_range(
+                    min_date, max_date, interval_days
+                )
+                if range is None:
+                    raise Exception(
+                        f"Backfill with min_date={min_date} max_date={max_date} is finished, consider removing it from config"
+                    )
+                start, end = range
             else:
                 start, end = (
                     context["params"].get("extract_range_start"),
@@ -72,12 +86,6 @@ def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
             # Placeholder to gather results of parallel tasks in DAG
             return
 
-        config = AMIAdapterConfiguration.from_yaml(
-            find_config_yaml(), find_secrets_yaml()
-        )
-
-        adapters = config.adapters()
-
         for adapter in adapters:
             # Set sequence of tasks for this utility
             (
@@ -99,6 +107,9 @@ def ami_control_dag_factory(dag_id, schedule, params, is_backfill=False):
 #######################################################
 # Configure DAGs
 #######################################################
+config = AMIAdapterConfiguration.from_yaml(find_config_yaml(), find_secrets_yaml())
+adapters = config.adapters()
+backfills = config.backfills()
 
 # Manual runs
 standard_params = {
@@ -113,12 +124,22 @@ standard_params = {
         default="",
     ),
 }
-ami_control_dag_factory("ami-meter-read-dag-manual", None, standard_params)
+ami_control_dag_factory("ami-meter-read-dag-manual", None, standard_params, adapters)
 
 # Standard run that fetches most recent meter read data
-ami_control_dag_factory("ami-meter-read-dag-standard", "0 12 * * *", {})
+ami_control_dag_factory("ami-meter-read-dag-standard", "0 12 * * *", {}, adapters)
 
-# Backfill run
-ami_control_dag_factory(
-    "ami-meter-read-dag-backfill", "45 * * * *", {}, is_backfill=True
-)
+# Backfill runs
+for backfill in backfills:
+    matching_adapters = [a for a in adapters if a.org_id == backfill.org_id]
+    if len(matching_adapters) != 1:
+        continue
+    ami_control_dag_factory(
+        f"ami-meter-read-dag-backfill-{backfill.org_id}-{datetime.strftime(backfill.start_date, "%Y-%m-%d")}-{datetime.strftime(backfill.end_date, "%Y-%m-%d")}",
+        backfill.schedule,
+        {},
+        matching_adapters,
+        min_date=backfill.start_date,
+        max_date=backfill.end_date,
+        interval_days=backfill.interval_days,
+    )
