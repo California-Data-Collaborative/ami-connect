@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Union
 import pathlib
-from pytz import timezone
+from pytz import timezone, UTC
 from pytz.tzinfo import DstTzInfo
 import yaml
 
@@ -137,8 +137,12 @@ class AMIAdapterConfiguration:
             backfills.append(
                 Backfill(
                     org_id=org_id,
-                    start_date=datetime.combine(start_date, datetime.min.time()),
-                    end_date=datetime.combine(end_date, datetime.min.time()),
+                    start_date=datetime.combine(
+                        start_date, datetime.min.time(), tzinfo=UTC
+                    ),
+                    end_date=datetime.combine(
+                        end_date, datetime.min.time(), tzinfo=UTC
+                    ),
                     interval_days=interval_days,
                     schedule=schedule,
                 )

@@ -2,6 +2,8 @@ from datetime import datetime
 import pathlib
 from unittest.mock import patch
 
+import pytz
+
 from amiadapters.beacon import Beacon360Adapter
 from amiadapters.config import (
     AMIAdapterConfiguration,
@@ -107,13 +109,15 @@ class TestConfig(BaseTestCase):
         backfills = config.backfills()
         self.assertEqual(2, len(backfills))
 
-        self.assertEqual(datetime(2025, 1, 1), backfills[0].start_date)
-        self.assertEqual(datetime(2025, 2, 1), backfills[0].end_date)
+        self.assertEqual(datetime(2025, 1, 1, tzinfo=pytz.UTC), backfills[0].start_date)
+        self.assertEqual(datetime(2025, 2, 1, tzinfo=pytz.UTC), backfills[0].end_date)
         self.assertEqual(3, backfills[0].interval_days)
         self.assertEqual("15 * * * *", backfills[0].schedule)
 
-        self.assertEqual(datetime(2024, 10, 22), backfills[1].start_date)
-        self.assertEqual(datetime(2024, 11, 22), backfills[1].end_date)
+        self.assertEqual(
+            datetime(2024, 10, 22, tzinfo=pytz.UTC), backfills[1].start_date
+        )
+        self.assertEqual(datetime(2024, 11, 22, tzinfo=pytz.UTC), backfills[1].end_date)
         self.assertEqual(4, backfills[1].interval_days)
 
     def test_can_create_adapters(self):

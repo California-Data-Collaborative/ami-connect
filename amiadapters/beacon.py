@@ -310,8 +310,6 @@ class Beacon360Adapter(BaseAMIAdapter):
         Return range report as CSV string, first line with headers.
         Retrieve from cache if configured to do so.
         """
-        self.validate_extract_range(extract_range_start, extract_range_end)
-
         if self.use_cache:
             logger.info("Attempting to load report from cache")
             cached_report = self._get_cached_report(
@@ -560,27 +558,6 @@ class Beacon360Adapter(BaseAMIAdapter):
         return os.path.join(
             self.CACHE_OUTPUT_FOLDER, f"{self.name()}-{start}-{end}-cached-report.txt"
         )
-
-    def calculate_backfill_range(
-        self, min_date: datetime, max_date: datetime, interval_days: int
-    ) -> Tuple[datetime, datetime]:
-        snowflake_sink = [
-            s for s in self.storage_sinks if isinstance(s, BeaconSnowflakeStorageSink)
-        ]
-        if not snowflake_sink:
-            start = datetime.now()
-            end = start - timedelta(days=interval_days)
-        else:
-            sink = snowflake_sink[0]
-            start = sink.get_oldest_meter_read_time(self.org_id)
-            end = start - timedelta(days=interval_days)
-
-        if start <= min_date and end <= min_date:
-            return None
-        elif start >= max_date and end >= max_date:
-            return None
-        else:
-            return start, end
 
 
 class BeaconSnowflakeStorageSink(SnowflakeStorageSink):

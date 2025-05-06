@@ -174,15 +174,45 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         ]
         return tuple(result)
 
-    def get_oldest_meter_read_time(self, org_id) -> datetime:
+    def get_oldest_meter_read_time(
+        self, org_id: str, min_date: datetime, max_date: datetime
+    ) -> datetime:
+        """
+        Find the oldest meter read time for this org within the specified date range.
+        """
         conn = self.sink_config.connection()
 
-        query = """
-        SELECT MIN(flowtime) FROM readings
-        WHERE org_id = ?
+        # Calculate nth percentile of number of readings per day
+        # We will use that as a threshold for what we consider "already backfilled"
+        percentile_query = """
+        SELECT PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY num_readings) AS percentile_75
+        FROM (select count(*) as num_readings FROM readings WHERE org_id = ? GROUP BY date(flowtime))
         """
-        result = conn.cursor().execute(query, (org_id,))
+        percentile_result = conn.cursor().execute(percentile_query, (org_id,))
+        percentile_rows = [i for i in percentile_result]
+        if len(percentile_rows) != 1:
+            threshold = 0
+        else:
+            threshold = percentile_rows[0][0]
+
+        query = """
+        SELECT MIN(flow_date) from (
+            SELECT DATE(flowtime) as flow_date FROM readings 
+            WHERE org_id = ? AND flowtime > ? AND flowtime < ?
+            GROUP BY DATE(flowtime)
+            HAVING COUNT(*) < ?
+        ) 
+        """
+        result = conn.cursor().execute(
+            query,
+            (
+                org_id,
+                min_date,
+                max_date,
+                threshold,
+            ),
+        )
         rows = [i for i in result]
-        if len(rows) != 1:
-            return datetime.now()
+        if len(rows) != 1 or rows[0][0] is None:
+            return max_date
         return rows[0][0]

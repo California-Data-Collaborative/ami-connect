@@ -236,9 +236,6 @@ class SentryxAdapter(BaseAMIAdapter):
     def _extract_consumption_for_all_meters(
         self, extract_range_start: datetime, extract_range_end: datetime
     ) -> List[SentryxMeterWithReads]:
-
-        self.validate_extract_range(extract_range_start, extract_range_end)
-
         url = f"{BASE_URL}/{self.utility_name}/devices/consumption"
 
         headers = {
@@ -369,9 +366,6 @@ class SentryxAdapter(BaseAMIAdapter):
                 meter_reads.append(read)
 
         return list(meters_by_id.values()), meter_reads
-
-    def calculate_backfill_range(self) -> Tuple[datetime, datetime]:
-        raise Exception("Not implemented")
 
     def _raw_meter_output_file(self) -> str:
         return os.path.join(self.output_folder, f"{self.name()}-raw-meters.txt")
