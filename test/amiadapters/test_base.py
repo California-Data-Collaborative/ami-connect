@@ -212,8 +212,10 @@ class TestExtractRangeCalculator(BaseTestCase):
         # Verify results
         self.assertEqual(result_start, expected_start)
         self.assertEqual(result_end, expected_end)
-    
-    def test_calculate_extract_range__backfill_with_snowflake_sink_that_gives_no_oldest_time(self):
+
+    def test_calculate_extract_range__backfill_with_snowflake_sink_that_gives_no_oldest_time(
+        self,
+    ):
         start_date = datetime(2025, 4, 20, 12, 0, 0)
         end_date = datetime(2025, 4, 25, 12, 0, 0)
         self.snowflake_sink.get_oldest_meter_read_time.return_value = None
