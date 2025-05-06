@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import List, Union
 import pathlib
 from pytz import timezone
@@ -10,8 +11,9 @@ import snowflake.connector
 
 class AMIAdapterConfiguration:
 
-    def __init__(self, sources):
-        self.sources = sources
+    def __init__(self, sources, backfills=None):
+        self._sources = sources
+        self._backfills = backfills if backfills is not None else []
 
     @classmethod
     def from_yaml(cls, config_file: str, secrets_file: str):
@@ -77,6 +79,9 @@ class AMIAdapterConfiguration:
             org_id = source.get("org_id")
             type = source.get("type")
 
+            if any(s.org_id == org_id for s in sources):
+                raise ValueError(f"Cannot have duplicate org_id: {org_id}")
+
             # Parse secrets for data source
             this_source_secrets = secrets_yaml.get("sources", {}).get(org_id)
             match type:
@@ -114,7 +119,32 @@ class AMIAdapterConfiguration:
 
             sources.append(configured_source)
 
-        return AMIAdapterConfiguration(sources=sources)
+        # Backfills
+        backfills = []
+        for backfill_config in config_yaml.get("backfills", []):
+            org_id = backfill_config.get("org_id")
+            start_date = backfill_config.get("start_date")
+            end_date = backfill_config.get("end_date")
+            interval_days = backfill_config.get("interval_days")
+            schedule = backfill_config.get("schedule")
+            if any(
+                i is None
+                for i in [org_id, start_date, end_date, interval_days, schedule]
+            ):
+                raise ValueError(f"Invalid backfill config: {backfill_config}")
+            if not any(s.org_id == org_id for s in sources):
+                continue
+            backfills.append(
+                Backfill(
+                    org_id=org_id,
+                    start_date=datetime.combine(start_date, datetime.min.time()),
+                    end_date=datetime.combine(end_date, datetime.min.time()),
+                    interval_days=interval_days,
+                    schedule=schedule,
+                )
+            )
+
+        return AMIAdapterConfiguration(sources=sources, backfills=backfills)
 
     def adapters(self):
         """
@@ -126,7 +156,7 @@ class AMIAdapterConfiguration:
         from amiadapters.sentryx import SentryxAdapter
 
         adapters = []
-        for source in self.sources:
+        for source in self._sources:
             match source.type:
                 case ConfiguredAMISourceType.BEACON_360:
                     adapters.append(
@@ -152,8 +182,11 @@ class AMIAdapterConfiguration:
                     )
         return adapters
 
+    def backfills(self) -> List:
+        return self._backfills
+
     def __repr__(self):
-        return f"sources=[{", ".join(str(s) for s in self.sources)}]"
+        return f"sources=[{", ".join(str(s) for s in self._sources)}]"
 
 
 @dataclass
@@ -252,6 +285,19 @@ class ConfiguredS3TaskOutputController:
                 "ConfiguredS3TaskOutputController must have s3_bucket_name"
             )
         return s3_bucket_name
+
+
+@dataclass
+class Backfill:
+    """
+    Configuration for backfilling an organization's data from start_date to end_date.
+    """
+
+    org_id: str
+    start_date: datetime
+    end_date: datetime
+    interval_days: str  # Number of days to backfill in one run
+    schedule: str  # crontab-formatted string specifying run schedule
 
 
 @dataclass

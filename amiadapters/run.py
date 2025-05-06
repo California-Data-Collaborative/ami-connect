@@ -28,11 +28,11 @@ def run_pipeline(
 
     # If using S3, set an AWS credential profile specified in the config
     if (
-        config.sources[0].task_output_controller.type
+        config._sources[0].task_output_controller.type
         == ConfiguredTaskOutputControllerType.S3
     ):
         boto3.setup_default_session(
-            profile_name=config.sources[0].task_output_controller.dev_aws_profile_name
+            profile_name=config._sources[0].task_output_controller.dev_aws_profile_name
         )
 
     # Calculate date range if not fully specified

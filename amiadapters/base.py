@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 from pytz import timezone
 from pytz.tzinfo import DstTzInfo
@@ -57,11 +57,17 @@ class BaseAMIAdapter(ABC):
         pass
 
     @abstractmethod
-    def calculate_backfill_range(self) -> Tuple[datetime, datetime]:
+    def calculate_backfill_range(
+        self, min_date: datetime, max_date: datetime, interval_days: int
+    ) -> Tuple[datetime, datetime]:
         """
         Used by orchestration code when automated backfills are run. Returns a date range
         for which we should backfill data. Used by the automated backfills to determine their
         extract start and end dates.
+
+        min_date: caps how far back we will backfill
+        max_date: caps how far forward we will backfill
+        interval_days: the number of days of data we should backfill
         """
         pass
 

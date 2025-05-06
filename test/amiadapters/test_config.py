@@ -1,3 +1,4 @@
+from datetime import datetime
 import pathlib
 from unittest.mock import patch
 
@@ -19,8 +20,8 @@ class TestConfig(BaseTestCase):
             self.get_fixture_path("sentryx-config.yaml"),
             self.get_fixture_path("sentryx-secrets.yaml"),
         )
-        self.assertEqual(1, len(config.sources))
-        source = config.sources[0]
+        self.assertEqual(1, len(config._sources))
+        source = config._sources[0]
         self.assertEqual("sentryx", source.type)
         self.assertEqual("my_utility", source.org_id)
         self.assertEqual("u_name", source.utility_name)
@@ -41,13 +42,15 @@ class TestConfig(BaseTestCase):
         self.assertEqual("my_database", sink.secrets.database)
         self.assertEqual("my_schema", sink.secrets.schema)
 
+        self.assertEqual([], config._backfills)
+
     def test_can_instantiate_beacon_via_yaml(self):
         config = AMIAdapterConfiguration.from_yaml(
             self.get_fixture_path("beacon-360-config.yaml"),
             self.get_fixture_path("beacon-360-secrets.yaml"),
         )
-        self.assertEqual(1, len(config.sources))
-        source = config.sources[0]
+        self.assertEqual(1, len(config._sources))
+        source = config._sources[0]
         self.assertEqual("beacon_360", source.type)
         self.assertEqual("my_utility", source.org_id)
         self.assertEqual("America/Los_Angeles", str(source.timezone))
@@ -67,6 +70,50 @@ class TestConfig(BaseTestCase):
         self.assertEqual("my_warehouse", sink.secrets.warehouse)
         self.assertEqual("my_database", sink.secrets.database)
         self.assertEqual("my_schema", sink.secrets.schema)
+
+    def test_can_instantiate_beacon_via_yaml(self):
+        config = AMIAdapterConfiguration.from_yaml(
+            self.get_fixture_path("beacon-360-config.yaml"),
+            self.get_fixture_path("beacon-360-secrets.yaml"),
+        )
+        self.assertEqual(1, len(config._sources))
+        source = config._sources[0]
+        self.assertEqual("beacon_360", source.type)
+        self.assertEqual("my_utility", source.org_id)
+        self.assertEqual("America/Los_Angeles", str(source.timezone))
+        self.assertEqual(True, source.use_raw_data_cache)
+        self.assertEqual("my-bucket", source.task_output_controller.s3_bucket_name)
+        self.assertEqual("my_user", source.secrets.user)
+        self.assertEqual("my_password", source.secrets.password)
+
+        self.assertEqual(1, len(source.storage_sinks))
+        sink = source.storage_sinks[0]
+        self.assertEqual("snowflake", sink.type)
+        self.assertEqual("my_snowflake_instance", sink.id)
+        self.assertEqual("my_account", sink.secrets.account)
+        self.assertEqual("my_user", sink.secrets.user)
+        self.assertEqual("my_password", sink.secrets.password)
+        self.assertEqual("my_role", sink.secrets.role)
+        self.assertEqual("my_warehouse", sink.secrets.warehouse)
+        self.assertEqual("my_database", sink.secrets.database)
+        self.assertEqual("my_schema", sink.secrets.schema)
+
+    def test_can_instantiate_backfills_from_yaml(self):
+        config = AMIAdapterConfiguration.from_yaml(
+            self.get_fixture_path("beacon-360-config.yaml"),
+            self.get_fixture_path("beacon-360-secrets.yaml"),
+        )
+        self.assertEqual(1, len(config._sources))
+        backfills = config.backfills()
+        self.assertEqual(2, len(backfills))
+
+        self.assertEqual(datetime(2025, 1, 1), backfills[0].start_date)
+        self.assertEqual(datetime(2025, 2, 1), backfills[0].end_date)
+        self.assertEqual(3, backfills[0].interval_days)
+
+        self.assertEqual(datetime(2024, 10, 22), backfills[1].start_date)
+        self.assertEqual(datetime(2024, 11, 22), backfills[1].end_date)
+        self.assertEqual(4, backfills[1].interval_days)
 
     def test_can_create_adapters(self):
         config = AMIAdapterConfiguration.from_yaml(
