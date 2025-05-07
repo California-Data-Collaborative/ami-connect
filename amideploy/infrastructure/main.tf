@@ -89,6 +89,12 @@ resource "aws_iam_role_policy_attachment" "ami_connect_attach_policy" {
   policy_arn = aws_iam_policy.ami_connect_pipeline_s3_policy.arn
 }
 
+resource "aws_iam_role_policy_attachment" "cloudwatch_agent_attach_policy" {
+  role       = aws_iam_role.ami_connect_pipeline.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+
 resource "tls_private_key" "airflow_server_private_key" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -111,6 +117,51 @@ resource "aws_instance" "ami_connect_airflow_server" {
   key_name      = aws_key_pair.generated_airflow_server_key.key_name
 
   iam_instance_profile = aws_iam_instance_profile.ami_instance_profile.name
+
+  user_data = <<-EOF
+              #!/bin/bash
+              sudo yum install -y amazon-cloudwatch-agent
+              cat <<EOC > /opt/aws/amazon-cloudwatch-agent/bin/config.json
+              {
+                "agent": {
+                  "metrics_collection_interval": 60,
+                  "run_as_user": "root"
+                },
+                "metrics": {
+                  "append_dimensions": {
+                    "InstanceId": "$${aws:InstanceId}"
+                  },
+                  "metrics_collected": {
+                    "mem": {
+                      "measurement": [
+                        "mem_used_percent"
+                      ],
+                      "metrics_collection_interval": 60
+                    },
+                    "disk": {
+                      "measurement": [
+                        "used_percent"
+                      ],
+                      "resources": [
+                        "/"
+                      ],
+                      "metrics_collection_interval": 60
+                    },
+                    "swap": {
+                      "measurement": [
+                        "swap_used_percent"
+                      ],
+                      "metrics_collection_interval": 60
+                    }
+                  }
+                }
+              }
+              EOC
+
+              /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+                -a fetch-config -m ec2 \
+                -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json -s
+              EOF
 
   tags = {
     Name = var.ami_connect_tag
