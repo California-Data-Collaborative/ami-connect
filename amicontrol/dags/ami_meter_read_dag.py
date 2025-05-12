@@ -34,8 +34,8 @@ def ami_control_dag_factory(dag_id, schedule, params, adapters, backfill_params=
             run_id = context["dag_run"].run_id
 
             # start and end dates from Airflow UI, if specified
-            start_from_params = (context["params"].get("extract_range_start"),)
-            end_from_params = (context["params"].get("extract_range_end"),)
+            start_from_params = context["params"].get("extract_range_start")
+            end_from_params = context["params"].get("extract_range_end")
 
             start, end = adapter.calculate_extract_range(
                 start_from_params, end_from_params, backfill_params=backfill_params

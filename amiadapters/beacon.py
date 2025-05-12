@@ -8,7 +8,7 @@ import os
 from pytz.tzinfo import DstTzInfo
 import requests
 import time
-from typing import List, Tuple
+from typing import Generator, List, Tuple
 
 from amiadapters.base import (
     BaseAMIAdapter,
@@ -21,112 +21,32 @@ from amiadapters.storage.snowflake import SnowflakeStorageSink
 logger = logging.getLogger(__name__)
 
 REQUESTED_COLUMNS = [
-    "Account_Billing_Cycle",
-    "Account_Email",
-    "Account_First_Name",
-    "Account_Full_Name",
     "Account_ID",
-    "Account_Last_Name",
-    "Account_Phone",
-    "Account_Portal_Status",
-    "Account_Status",
-    "Alert_Code",
-    "Backflow_Gallons",
-    "Battery_Level",
-    "Billing_Address_Line1",
-    "Billing_Address_Line2",
-    "Billing_Address_Line3",
-    "Billing_City",
-    "Billing_Country",
-    "Billing_State",
-    "Billing_ZIP",
-    "Connector_Type",
-    "Current_Leak_Rate",
-    "Current_Leak_Start_Date",
-    "Demand_Zone_ID",
-    "Dials",
-    "Endpoint_Install_Date",
     "Endpoint_SN",
-    "Endpoint_Status",
-    "Endpoint_Type",
     "Estimated_Flag",
     "Flow",
     "Flow_Time",
     "Flow_Unit",
-    "High_Read_Limit",
-    "Last_Comm_Time",
     "Location_Address_Line1",
     "Location_Address_Line2",
     "Location_Address_Line3",
-    "Location_Address_Parity",
-    "Location_Area",
-    "Location_Bathrooms",
-    "Location_Building_Number",
-    "Location_Building_Type",
     "Location_City",
-    "Location_Continuous_Flow",
     "Location_Country",
-    "Location_County_Name",
-    "Location_DHS_Code",
-    "Location_District",
-    "Location_Funding",
     "Location_ID",
-    "Location_Irrigated_Area",
-    "Location_Irrigation",
-    "Location_Latitude",
-    "Location_Longitude",
-    "Location_Main_Use",
-    "Location_Name",
-    "Location_Pool",
-    "Location_Population",
-    "Location_Site",
     "Location_State",
-    "Location_Water_Type",
-    "Location_Year_Built",
     "Location_ZIP",
-    "Low_Read_Limit",
-    "Meter_Continuous_Flow",
     "Meter_ID",
     "Meter_Install_Date",
     "Meter_Manufacturer",
     "Meter_Model",
-    "Meter_Note",
     "Meter_Size",
     "Meter_Size_Desc",
     "Meter_Size_Unit",
     "Meter_SN",
-    "Person_ID",
-    "Portal_ID",
     "Raw_Read",
     "Read",
-    "Read_Code_1",
-    "Read_Code_2",
-    "Read_Code_3",
-    "Read_Method",
-    "Read_Note",
-    "Read_Sequence",
     "Read_Time",
     "Read_Unit",
-    "Reader_Initials",
-    "Register_Note",
-    "Register_Number",
-    "Register_Resolution",
-    "Register_Unit_Of_Measure",
-    "SA_Start_Date",
-    "Service_Point_Class_Code",
-    "Service_Point_Class_Code_Normalized",
-    "Service_Point_Cycle",
-    "Service_Point_ID",
-    "Service_Point_Latitude",
-    "Service_Point_Longitude",
-    "Service_Point_Route",
-    "Service_Point_Timezone",
-    "Service_Point_Type",
-    "Signal_Strength",
-    "Supply_Zone_ID",
-    "Trouble_Code",
-    "Utility_Use_1",
-    "Utility_Use_2",
 ]
 
 
@@ -139,112 +59,32 @@ class Beacon360MeterAndRead:
     We make the attribute names match the column names in the Beacon 360 CSV for code convenience.
     """
 
-    Account_Billing_Cycle: str
-    Account_Email: str
-    Account_First_Name: str
-    Account_Full_Name: str
     Account_ID: str
-    Account_Last_Name: str
-    Account_Phone: str
-    Account_Portal_Status: str
-    Account_Status: str
-    Alert_Code: str
-    Backflow_Gallons: str
-    Battery_Level: str
-    Billing_Address_Line1: str
-    Billing_Address_Line2: str
-    Billing_Address_Line3: str
-    Billing_City: str
-    Billing_Country: str
-    Billing_State: str
-    Billing_ZIP: str
-    Connector_Type: str
-    Current_Leak_Rate: str
-    Current_Leak_Start_Date: str
-    Demand_Zone_ID: str
-    Dials: str
-    Endpoint_Install_Date: str
     Endpoint_SN: str
-    Endpoint_Status: str
-    Endpoint_Type: str
     Estimated_Flag: str
     Flow: str
     Flow_Time: str
     Flow_Unit: str
-    High_Read_Limit: str
-    Last_Comm_Time: str
     Location_Address_Line1: str
     Location_Address_Line2: str
     Location_Address_Line3: str
-    Location_Address_Parity: str
-    Location_Area: str
-    Location_Bathrooms: str
-    Location_Building_Number: str
-    Location_Building_Type: str
     Location_City: str
-    Location_Continuous_Flow: str
     Location_Country: str
-    Location_County_Name: str
-    Location_DHS_Code: str
-    Location_District: str
-    Location_Funding: str
     Location_ID: str
-    Location_Irrigated_Area: str
-    Location_Irrigation: str
-    Location_Latitude: str
-    Location_Longitude: str
-    Location_Main_Use: str
-    Location_Name: str
-    Location_Pool: str
-    Location_Population: str
-    Location_Site: str
     Location_State: str
-    Location_Water_Type: str
-    Location_Year_Built: str
     Location_ZIP: str
-    Low_Read_Limit: str
-    Meter_Continuous_Flow: str
     Meter_ID: str
     Meter_Install_Date: str
     Meter_Manufacturer: str
     Meter_Model: str
-    Meter_Note: str
     Meter_Size: str
     Meter_Size_Desc: str
     Meter_Size_Unit: str
     Meter_SN: str
-    Person_ID: str
-    Portal_ID: str
     Raw_Read: str
     Read: str
-    Read_Code_1: str
-    Read_Code_2: str
-    Read_Code_3: str
-    Read_Method: str
-    Read_Note: str
-    Read_Sequence: str
     Read_Time: str
     Read_Unit: str
-    Reader_Initials: str
-    Register_Note: str
-    Register_Number: str
-    Register_Resolution: str
-    Register_Unit_Of_Measure: str
-    SA_Start_Date: str
-    Service_Point_Class_Code: str
-    Service_Point_Class_Code_Normalized: str
-    Service_Point_Cycle: str
-    Service_Point_ID: str
-    Service_Point_Latitude: str
-    Service_Point_Longitude: str
-    Service_Point_Route: str
-    Service_Point_Timezone: str
-    Service_Point_Type: str
-    Signal_Strength: str
-    Supply_Zone_ID: str
-    Trouble_Code: str
-    Utility_Use_1: str
-    Utility_Use_2: str
 
 
 class Beacon360Adapter(BaseAMIAdapter):
@@ -294,14 +134,19 @@ class Beacon360Adapter(BaseAMIAdapter):
     ):
         report = self._fetch_range_report(extract_range_start, extract_range_end)
         logger.info("Fetched report")
-        meter_with_reads = self._parse_raw_range_report(report)
-        logger.info(f"Parsed {len(meter_with_reads)} records from report")
-        output = "\n".join(
-            json.dumps(v, cls=DataclassJSONEncoder) for v in meter_with_reads
-        )
         self.output_controller.write_extract_outputs(
-            run_id, ExtractOutput({"meters_and_reads.json": output})
+            run_id,
+            ExtractOutput({"meters_and_reads.json": self._report_to_output(report)}),
         )
+
+    def _report_to_output(self, report: str):
+        return "\n".join(self._report_to_output_stream(report))
+
+    def _report_to_output_stream(self, report: str) -> Generator[str, None, None]:
+        csv_reader = csv.DictReader(StringIO(report), delimiter=",")
+        for data in csv_reader:
+            meter_and_read = Beacon360MeterAndRead(**data)
+            yield json.dumps(meter_and_read, cls=DataclassJSONEncoder)
 
     def _fetch_range_report(
         self, extract_range_start: datetime, extract_range_end: datetime
@@ -467,21 +312,6 @@ class Beacon360Adapter(BaseAMIAdapter):
         with open(cache_file, "w") as f:
             f.write(report)
         logger.info(f"Cached report contents at {cache_file}")
-
-    def _parse_raw_range_report(self, report: str) -> List[Beacon360MeterAndRead]:
-        """
-        Convert the CSV string of a range report into our
-        raw model in prep for output.
-
-        Assumes Beacon360MeterAndRead attribute names are identical to CSV column names.
-        """
-        csv_reader = csv.DictReader(StringIO(report), delimiter=",")
-        meter_with_reads = []
-        for data in csv_reader:
-            meter_and_read = Beacon360MeterAndRead(**data)
-            meter_with_reads.append(meter_and_read)
-
-        return meter_with_reads
 
     def transform(self, run_id: str):
         extract_outputs = self.output_controller.read_extract_outputs(run_id)
