@@ -112,7 +112,7 @@ output "airflow_server_private_key_pem" {
 
 resource "aws_instance" "ami_connect_airflow_server" {
   ami           = "ami-087f352c165340ea1"
-  instance_type = "t3.xlarge"
+  instance_type = "r7i.large"
   vpc_security_group_ids = [aws_security_group.airflow_server_sg.id]
   key_name      = aws_key_pair.generated_airflow_server_key.key_name
 

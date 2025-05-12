@@ -139,9 +139,11 @@ There should now be an `airflow.cfg` file in the `/home/ec2-user` directory. You
 [webserver]
 authenticate = True
 auth_backend = airflow.www.security.auth_backend.password_auth
+warn_deployment_exposure = False
 
 [core]
 load_examples = False
+executor = LocalExecutor
 
 [database]
 sql_alchemy_conn = postgresql+psycopg2://airflow_user:<your airflow database password>@<your airflow postgres database hostname>:5432/airflow_db
