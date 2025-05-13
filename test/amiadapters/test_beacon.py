@@ -20,12 +20,6 @@ from test.base_test_case import (
 )
 
 
-REPORT_CONTENTS_CSV = """\"Account_ID\",\"Endpoint_SN\",\"Estimated_Flag\",\"Flow\",\"Flow_Time\",\"Flow_Unit\",\"Location_Address_Line1\",\"Location_Address_Line2\",\"Location_Address_Line3\",\"Location_City\",\"Location_Country\",\"Location_ID\",\"Location_State\",\"Location_ZIP\",\"Meter_ID\",\"Meter_Install_Date\",\"Meter_Manufacturer\",\"Meter_Model\",\"Meter_Size\",\"Meter_Size_Desc\",\"Meter_Size_Unit\",\"Meter_SN\",\"Raw_Read\",\"Read\",\"Read_Time\",\"Read_Unit\"
-\"303022\",\"130615549\",\"0\",\"0.0\",\"2024-08-01 00:59\",\"Gallons\",\"5391 E. MYSTREET\",\"\",\"\",\"Apple\",\"US\",\"303022\",\"CA\",\"93727\",\"1470158170\",\"\",\"BADGER\",\"T-10\",\"0.625\",\"5/8\"\"\",\"INCHES\",\"1470158170\",\"022760\",\"227.6\",\"2024-08-01 00:59\",\"CCF\"
-\"303022\",\"130615549\",\"0\",\"0.0\",\"2024-08-01 01:59\",\"Gallons\",\"5391 E. MYSTREET\",\"\",\"\",\"Apple\",\"US\",\"303022\",\"CA\",\"93727\",\"1470158170\",\"\",\"BADGER\",\"T-10\",\"0.625\",\"5/8\"\"\",\"INCHES\",\"1470158170\",\"022760\",\"227.6\",\"2024-08-01 01:59\",\"CCF\"
-"""
-
-
 def mocked_create_range_report(*args, **kwargs):
     data = {
         "edsUUID": "acecd48e8b794f49a61c2b96c9ff9118",
@@ -56,8 +50,8 @@ def mocked_get_range_report_status_finished(*args, **kwargs):
     return MockResponse(data, 200)
 
 
-def mocked_get_report_from_link(*args, **kwargs):
-    return MockResponse(None, 200, text=REPORT_CONTENTS_CSV)
+def mocked_get_report_from_link(text, *args, **kwargs):
+    return MockResponse(None, 200, text=text)
 
 
 def mocked_exception_from_status_check(*args, **kwargs):
@@ -70,7 +64,65 @@ def mocked_get_consumption_response_last_page(*args, **kwargs):
     return MockResponse(data, 200)
 
 
+def beacon_meter_and_read_factory(
+    account_id: str = "303022",
+    meter_id: str = "1470158170",
+    flow_time: str = "2024-08-01 00:59",
+    meter_install_date: str = "",
+) -> Beacon360MeterAndRead:
+    return Beacon360MeterAndRead(
+        Account_ID=account_id,
+        Endpoint_SN="130615549",
+        Estimated_Flag="0",
+        Flow="0.0",
+        Flow_Time=flow_time,
+        Flow_Unit="Gallons",
+        Location_Address_Line1="5391 E. MYSTREET",
+        Location_Address_Line2="",
+        Location_Address_Line3="",
+        Location_City="Apple",
+        Location_Country="US",
+        Location_ID=account_id,
+        Location_State="CA",
+        Location_ZIP="93727",
+        Meter_ID=meter_id,
+        Meter_Install_Date=meter_install_date,
+        Meter_Manufacturer="BADGER",
+        Meter_Model="T-10",
+        Meter_Size="0.625",
+        Meter_Size_Desc='5/8"',
+        Meter_Size_Unit="INCHES",
+        Meter_SN=meter_id,
+        Raw_Read="022760",
+        Read="227.6",
+        Read_Time=flow_time,
+        Read_Unit="CCF",
+        Current_Leak_Rate="",
+        Current_Leak_Start_Date="",
+        Demand_Zone_ID="",
+        Dials="",
+        Endpoint_Install_Date="",
+        Location_Continuous_Flow="",
+        Location_Latitude="",
+        Location_Longitude="",
+        Location_Irrigated_Area="",
+        Location_Irrigation="",
+        Location_Main_Use="",
+        Location_Name="",
+        Location_Pool="",
+        Location_Water_Type="",
+        Location_Year_Built="",
+        Register_Number="",
+        Register_Resolution="",
+        SA_Start_Date="",
+        Service_Point_Class_Code="",
+        Service_Point_Class_Code_Normalized="",
+    )
+
+
 class TestBeacon360Adapter(BaseTestCase):
+
+    report_csv = BaseTestCase.load_fixture("beacon-360-report.csv")
 
     def setUp(self):
         self.adapter = Beacon360Adapter(
@@ -83,6 +135,7 @@ class TestBeacon360Adapter(BaseTestCase):
                 "/tmp/output"
             ),
             configured_sinks=[],
+            cache_output_folder="/tmp/output",
         )
         self.range_start = datetime.datetime(2024, 1, 2, 0, 0)
         self.range_end = datetime.datetime(2024, 1, 3, 0, 0)
@@ -97,12 +150,10 @@ class TestBeacon360Adapter(BaseTestCase):
     @mock.patch("requests.post")
     def test_fetch_range_report__uses_cache(self, mock_post, mock_get):
         self.adapter.use_cache = True
-        self.adapter._get_cached_report = mock.MagicMock(
-            return_value=REPORT_CONTENTS_CSV
-        )
+        self.adapter._get_cached_report = mock.MagicMock(return_value=self.report_csv)
 
         result = self.adapter._fetch_range_report(self.range_start, self.range_end)
-        self.assertEqual(REPORT_CONTENTS_CSV, result)
+        self.assertEqual(self.report_csv, result)
         self.assertEqual(0, mock_get.call_count)
         self.assertEqual(0, mock_post.call_count)
 
@@ -124,7 +175,7 @@ class TestBeacon360Adapter(BaseTestCase):
         side_effect=[
             mocked_get_range_report_status_not_finished(),
             mocked_get_range_report_status_finished(),
-            mocked_get_report_from_link(),
+            mocked_get_report_from_link(text=report_csv),
         ],
     )
     @mock.patch("requests.post", side_effect=[mocked_create_range_report()])
@@ -133,7 +184,7 @@ class TestBeacon360Adapter(BaseTestCase):
         self, mock_sleep, mock_post, mock_get
     ):
         result = self.adapter._fetch_range_report(self.range_start, self.range_end)
-        self.assertEqual(REPORT_CONTENTS_CSV, result)
+        self.assertEqual(self.report_csv, result)
 
         self.assertEqual(1, len(mock_post.call_args_list))
         generater_report_request = mock_post.call_args_list[0]
@@ -183,7 +234,7 @@ class TestBeacon360Adapter(BaseTestCase):
         side_effect=[
             mocked_get_range_report_status_not_finished(),
             mocked_get_range_report_status_finished(),
-            mocked_get_report_from_link(),
+            mocked_get_report_from_link(text=report_csv),
         ],
     )
     @mock.patch("requests.post", side_effect=[mocked_response_429()])
@@ -249,7 +300,7 @@ class TestBeacon360Adapter(BaseTestCase):
         side_effect=[
             mocked_get_range_report_status_finished(),
             Exception,
-            mocked_get_report_from_link(),
+            mocked_get_report_from_link(text=report_csv),
         ],
     )
     @mock.patch("requests.post", side_effect=[mocked_create_range_report()])
@@ -258,7 +309,7 @@ class TestBeacon360Adapter(BaseTestCase):
         self, mock_sleep, mock_post, mock_get
     ):
         result = self.adapter._fetch_range_report(self.range_start, self.range_end)
-        self.assertEqual(REPORT_CONTENTS_CSV, result)
+        self.assertEqual(self.report_csv, result)
         self.assertEqual(1, mock_sleep.call_count)
 
     @mock.patch(
@@ -276,128 +327,24 @@ class TestBeacon360Adapter(BaseTestCase):
         self.assertTrue("Failed request to download report" in str(context.exception))
 
     def test_report_to_output(self):
-        result = self.adapter._report_to_output_stream(REPORT_CONTENTS_CSV)
+        result = self.adapter._report_to_output_stream(self.report_csv)
         result = [r for r in result]
         result = [Beacon360MeterAndRead(**json.loads(d)) for d in result]
 
         expected = [
-            Beacon360MeterAndRead(
-                Account_ID="303022",
-                Endpoint_SN="130615549",
-                Estimated_Flag="0",
-                Flow="0.0",
-                Flow_Time="2024-08-01 00:59",
-                Flow_Unit="Gallons",
-                Location_Address_Line1="5391 E. MYSTREET",
-                Location_Address_Line2="",
-                Location_Address_Line3="",
-                Location_City="Apple",
-                Location_Country="US",
-                Location_ID="303022",
-                Location_State="CA",
-                Location_ZIP="93727",
-                Meter_ID="1470158170",
-                Meter_Install_Date="",
-                Meter_Manufacturer="BADGER",
-                Meter_Model="T-10",
-                Meter_Size="0.625",
-                Meter_Size_Desc='5/8"',
-                Meter_Size_Unit="INCHES",
-                Meter_SN="1470158170",
-                Raw_Read="022760",
-                Read="227.6",
-                Read_Time="2024-08-01 00:59",
-                Read_Unit="CCF",
-            ),
-            Beacon360MeterAndRead(
-                Account_ID="303022",
-                Endpoint_SN="130615549",
-                Estimated_Flag="0",
-                Flow="0.0",
-                Flow_Time="2024-08-01 01:59",
-                Flow_Unit="Gallons",
-                Location_Address_Line1="5391 E. MYSTREET",
-                Location_Address_Line2="",
-                Location_Address_Line3="",
-                Location_City="Apple",
-                Location_Country="US",
-                Location_ID="303022",
-                Location_State="CA",
-                Location_ZIP="93727",
-                Meter_ID="1470158170",
-                Meter_Install_Date="",
-                Meter_Manufacturer="BADGER",
-                Meter_Model="T-10",
-                Meter_Size="0.625",
-                Meter_Size_Desc='5/8"',
-                Meter_Size_Unit="INCHES",
-                Meter_SN="1470158170",
-                Raw_Read="022760",
-                Read="227.6",
-                Read_Time="2024-08-01 01:59",
-                Read_Unit="CCF",
-            ),
+            beacon_meter_and_read_factory(flow_time="2024-08-01 00:59"),
+            beacon_meter_and_read_factory(flow_time="2024-08-01 01:59"),
         ]
 
         self.assertEqual(expected, result)
 
     def test_transform_meters_and_reads(self):
         raw_meters_with_reads = [
-            Beacon360MeterAndRead(
-                Account_ID="303022",
-                Endpoint_SN="130615549",
-                Estimated_Flag="0",
-                Flow="0.0",
-                Flow_Time="2024-08-01 00:59",
-                Flow_Unit="Gallons",
-                Location_Address_Line1="5391 E. MYSTREET",
-                Location_Address_Line2="",
-                Location_Address_Line3="",
-                Location_City="Apple",
-                Location_Country="US",
-                Location_ID="303022",
-                Location_State="CA",
-                Location_ZIP="93727",
-                Meter_ID="1470158170",
-                Meter_Install_Date="2016-01-01 23:59",
-                Meter_Manufacturer="BADGER",
-                Meter_Model="T-10",
-                Meter_Size="0.625",
-                Meter_Size_Desc='5/8"',
-                Meter_Size_Unit="INCHES",
-                Meter_SN="1470158170",
-                Raw_Read="022760",
-                Read="227.6",
-                Read_Time="2024-08-01 00:59",
-                Read_Unit="CCF",
+            beacon_meter_and_read_factory(
+                flow_time="2024-08-01 00:59", meter_install_date="2016-01-01 23:59"
             ),
-            Beacon360MeterAndRead(
-                Account_ID="303022",
-                Endpoint_SN="130615549",
-                Estimated_Flag="0",
-                Flow="0.0",
-                Flow_Time="2024-08-01 01:59",
-                Flow_Unit="Gallons",
-                Location_Address_Line1="5391 E. MYSTREET",
-                Location_Address_Line2="",
-                Location_Address_Line3="",
-                Location_City="Apple",
-                Location_Country="US",
-                Location_ID="303022",
-                Location_State="CA",
-                Location_ZIP="93727",
-                Meter_ID="1470158170",
-                Meter_Install_Date="2016-01-01 23:59",
-                Meter_Manufacturer="BADGER",
-                Meter_Model="T-10",
-                Meter_Size="0.625",
-                Meter_Size_Desc='5/8"',
-                Meter_Size_Unit="INCHES",
-                Meter_SN="1470158170",
-                Raw_Read="022760",
-                Read="227.6",
-                Read_Time="2024-08-01 01:59",
-                Read_Unit="CCF",
+            beacon_meter_and_read_factory(
+                flow_time="2024-08-01 01:59", meter_install_date="2016-01-01 23:59"
             ),
         ]
         transformed_meters, transformed_reads = (
@@ -459,61 +406,17 @@ class TestBeacon360Adapter(BaseTestCase):
 
     def test_transform_meters_and_reads__two_different_meters(self):
         raw_meters_with_reads = [
-            Beacon360MeterAndRead(
-                Account_ID="1",
-                Endpoint_SN="130615549",
-                Estimated_Flag="0",
-                Flow="0.0",
-                Flow_Time="2024-08-01 00:59",
-                Flow_Unit="Gallons",
-                Location_Address_Line1="5391 E. MYSTREET",
-                Location_Address_Line2="",
-                Location_Address_Line3="",
-                Location_City="Apple",
-                Location_Country="US",
-                Location_ID="303022",
-                Location_State="CA",
-                Location_ZIP="93727",
-                Meter_ID="10101",
-                Meter_Install_Date="2016-01-01 23:59",
-                Meter_Manufacturer="BADGER",
-                Meter_Model="T-10",
-                Meter_Size="0.625",
-                Meter_Size_Desc='5/8"',
-                Meter_Size_Unit="INCHES",
-                Meter_SN="10101",
-                Raw_Read="022760",
-                Read="227.6",
-                Read_Time="2024-08-01 01:59",
-                Read_Unit="CCF",
+            beacon_meter_and_read_factory(
+                account_id="1",
+                meter_id="10101",
+                flow_time="2024-08-01 00:59",
+                meter_install_date="2016-01-01 23:59",
             ),
-            Beacon360MeterAndRead(
-                Account_ID="303022",
-                Endpoint_SN="130615549",
-                Estimated_Flag="0",
-                Flow="0.0",
-                Flow_Time="2024-08-01 01:59",
-                Flow_Unit="Gallons",
-                Location_Address_Line1="5391 E. MYSTREET",
-                Location_Address_Line2="",
-                Location_Address_Line3="",
-                Location_City="Apple",
-                Location_Country="US",
-                Location_ID="303022",
-                Location_State="CA",
-                Location_ZIP="93727",
-                Meter_ID="1470158170",
-                Meter_Install_Date="2016-01-01 23:59",
-                Meter_Manufacturer="BADGER",
-                Meter_Model="T-10",
-                Meter_Size="0.625",
-                Meter_Size_Desc='5/8"',
-                Meter_Size_Unit="INCHES",
-                Meter_SN="1470158170",
-                Raw_Read="022760",
-                Read="227.6",
-                Read_Time="2024-08-01 00:59",
-                Read_Unit="CCF",
+            beacon_meter_and_read_factory(
+                account_id="303022",
+                meter_id="1470158170",
+                flow_time="2024-08-01 01:59",
+                meter_install_date="2016-01-01 23:59",
             ),
         ]
         transformed_meters, transformed_reads = (
@@ -522,13 +425,12 @@ class TestBeacon360Adapter(BaseTestCase):
         transformed_meters = list(sorted(transformed_meters, key=lambda m: m.device_id))
         transformed_reads = list(sorted(transformed_reads, key=lambda m: m.device_id))
 
-        self.maxDiff = None
         expected_meters = [
             GeneralMeter(
                 org_id="this-org",
                 device_id="10101",
                 account_id="1",
-                location_id="303022",
+                location_id="1",
                 meter_id="10101",
                 endpoint_id="130615549",
                 meter_install_date=datetime.datetime(
@@ -568,9 +470,9 @@ class TestBeacon360Adapter(BaseTestCase):
                 org_id="this-org",
                 device_id="10101",
                 account_id="1",
-                location_id="303022",
+                location_id="1",
                 flowtime=datetime.datetime(
-                    2024, 8, 1, 1, 59, tzinfo=pytz.timezone("Europe/Rome")
+                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
                 ),
                 register_value=227.6,
                 register_unit="CCF",
@@ -583,7 +485,7 @@ class TestBeacon360Adapter(BaseTestCase):
                 account_id="303022",
                 location_id="303022",
                 flowtime=datetime.datetime(
-                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                    2024, 8, 1, 1, 59, tzinfo=pytz.timezone("Europe/Rome")
                 ),
                 register_value=227.6,
                 register_unit="CCF",
@@ -595,35 +497,7 @@ class TestBeacon360Adapter(BaseTestCase):
 
     def test_transform_meters_and_reads__ignores_reads_when_date_missing(self):
         raw_meters_with_reads = [
-            # Read_Time is None
-            Beacon360MeterAndRead(
-                Account_ID="303022",
-                Endpoint_SN="130615549",
-                Estimated_Flag="0",
-                Flow="0.0",
-                Flow_Time="2024-08-01 00:59",
-                Flow_Unit="Gallons",
-                Location_Address_Line1="5391 E. MYSTREET",
-                Location_Address_Line2="",
-                Location_Address_Line3="",
-                Location_City="Apple",
-                Location_Country="US",
-                Location_ID="303022",
-                Location_State="CA",
-                Location_ZIP="93727",
-                Meter_ID="1470158170",
-                Meter_Install_Date="2016-01-01 23:59",
-                Meter_Manufacturer="BADGER",
-                Meter_Model="T-10",
-                Meter_Size="0.625",
-                Meter_Size_Desc='5/8"',
-                Meter_Size_Unit="INCHES",
-                Meter_SN="1470158170",
-                Raw_Read="022760",
-                Read="227.6",
-                Read_Time=None,
-                Read_Unit="CCF",
-            ),
+            beacon_meter_and_read_factory(flow_time=None),
         ]
         transformed_meters, transformed_reads = (
             self.adapter._transform_meters_and_reads(raw_meters_with_reads)
@@ -638,9 +512,7 @@ class TestBeacon360Adapter(BaseTestCase):
                 location_id="303022",
                 meter_id="1470158170",
                 endpoint_id="130615549",
-                meter_install_date=datetime.datetime(
-                    2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
-                ),
+                meter_install_date=None,
                 meter_size="0.625",
                 meter_manufacturer="BADGER",
                 multiplier=None,

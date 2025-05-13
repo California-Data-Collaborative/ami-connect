@@ -20,35 +20,6 @@ from amiadapters.storage.snowflake import SnowflakeStorageSink
 
 logger = logging.getLogger(__name__)
 
-REQUESTED_COLUMNS = [
-    "Account_ID",
-    "Endpoint_SN",
-    "Estimated_Flag",
-    "Flow",
-    "Flow_Time",
-    "Flow_Unit",
-    "Location_Address_Line1",
-    "Location_Address_Line2",
-    "Location_Address_Line3",
-    "Location_City",
-    "Location_Country",
-    "Location_ID",
-    "Location_State",
-    "Location_ZIP",
-    "Meter_ID",
-    "Meter_Install_Date",
-    "Meter_Manufacturer",
-    "Meter_Model",
-    "Meter_Size",
-    "Meter_Size_Desc",
-    "Meter_Size_Unit",
-    "Meter_SN",
-    "Raw_Read",
-    "Read",
-    "Read_Time",
-    "Read_Unit",
-]
-
 
 @dataclass
 class Beacon360MeterAndRead:
@@ -56,10 +27,16 @@ class Beacon360MeterAndRead:
     Representation of row in the Beacon 360 range report CSV, which includes
     meter metadata and meter read data.
 
-    We make the attribute names match the column names in the Beacon 360 CSV for code convenience.
+    NOTE: We make the attribute names match the column names in the Beacon 360 API call and resulting CSV
+    for code convenience.
     """
 
     Account_ID: str
+    Current_Leak_Rate: str
+    Current_Leak_Start_Date: str
+    Demand_Zone_ID: str
+    Dials: str
+    Endpoint_Install_Date: str
     Endpoint_SN: str
     Estimated_Flag: str
     Flow: str
@@ -73,6 +50,16 @@ class Beacon360MeterAndRead:
     Location_ID: str
     Location_State: str
     Location_ZIP: str
+    Location_Continuous_Flow: str
+    Location_Latitude: str
+    Location_Longitude: str
+    Location_Irrigated_Area: str
+    Location_Irrigation: str
+    Location_Main_Use: str
+    Location_Name: str
+    Location_Pool: str
+    Location_Water_Type: str
+    Location_Year_Built: str
     Meter_ID: str
     Meter_Install_Date: str
     Meter_Manufacturer: str
@@ -85,6 +72,15 @@ class Beacon360MeterAndRead:
     Read: str
     Read_Time: str
     Read_Unit: str
+    Register_Number: str
+    Register_Resolution: str
+    SA_Start_Date: str
+    Service_Point_Class_Code: str
+    Service_Point_Class_Code_Normalized: str
+
+
+# Columns we'll request from Beacon 360 API
+REQUESTED_COLUMNS = list(Beacon360MeterAndRead.__dataclass_fields__.keys())
 
 
 class Beacon360Adapter(BaseAMIAdapter):
@@ -93,8 +89,6 @@ class Beacon360Adapter(BaseAMIAdapter):
 
     API Documentation: https://helpbeaconama.net/beacon-web-services/export-data-service-v2-api-preview/#POSTread
     """
-
-    CACHE_OUTPUT_FOLDER = "./output"
 
     def __init__(
         self,
@@ -105,10 +99,12 @@ class Beacon360Adapter(BaseAMIAdapter):
         org_timezone: DstTzInfo,
         configured_task_output_controller,
         configured_sinks,
+        cache_output_folder: str = "./output",
     ):
         self.user = api_user
         self.password = api_password
         self.use_cache = use_cache
+        self.cache_output_folder = cache_output_folder
         task_output_controller = self.create_task_output_controller(
             configured_task_output_controller, org_id
         )
@@ -301,14 +297,14 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         # Remove old cache files so we don't fill up the disk
         previous_cache_files = [
-            os.path.join(self.CACHE_OUTPUT_FOLDER, f)
+            os.path.join(self.cache_output_folder, f)
             for f in os.listdir(directory)
             if "cached-report" in f
         ]
         for f in previous_cache_files:
             os.remove(f)
             logger.info(f"Deleted old cache file {f}")
-
+        print(cache_file)
         with open(cache_file, "w") as f:
             f.write(report)
         logger.info(f"Cached report contents at {cache_file}")
@@ -386,7 +382,7 @@ class Beacon360Adapter(BaseAMIAdapter):
     ) -> str:
         start, end = extract_range_start.isoformat(), extract_range_end.isoformat()
         return os.path.join(
-            self.CACHE_OUTPUT_FOLDER, f"{self.name()}-{start}-{end}-cached-report.txt"
+            self.cache_output_folder, f"{self.name()}-{start}-{end}-cached-report.txt"
         )
 
 
