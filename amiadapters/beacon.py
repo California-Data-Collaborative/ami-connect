@@ -90,8 +90,6 @@ class Beacon360Adapter(BaseAMIAdapter):
     API Documentation: https://helpbeaconama.net/beacon-web-services/export-data-service-v2-api-preview/#POSTread
     """
 
-    CACHE_OUTPUT_FOLDER = "./output"
-
     def __init__(
         self,
         api_user: str,
@@ -101,10 +99,12 @@ class Beacon360Adapter(BaseAMIAdapter):
         org_timezone: DstTzInfo,
         configured_task_output_controller,
         configured_sinks,
+        cache_output_folder: str = "./output",
     ):
         self.user = api_user
         self.password = api_password
         self.use_cache = use_cache
+        self.cache_output_folder = cache_output_folder
         task_output_controller = self.create_task_output_controller(
             configured_task_output_controller, org_id
         )
@@ -297,14 +297,14 @@ class Beacon360Adapter(BaseAMIAdapter):
 
         # Remove old cache files so we don't fill up the disk
         previous_cache_files = [
-            os.path.join(self.CACHE_OUTPUT_FOLDER, f)
+            os.path.join(self.cache_output_folder, f)
             for f in os.listdir(directory)
             if "cached-report" in f
         ]
         for f in previous_cache_files:
             os.remove(f)
             logger.info(f"Deleted old cache file {f}")
-
+        print(cache_file)
         with open(cache_file, "w") as f:
             f.write(report)
         logger.info(f"Cached report contents at {cache_file}")
@@ -382,7 +382,7 @@ class Beacon360Adapter(BaseAMIAdapter):
     ) -> str:
         start, end = extract_range_start.isoformat(), extract_range_end.isoformat()
         return os.path.join(
-            self.CACHE_OUTPUT_FOLDER, f"{self.name()}-{start}-{end}-cached-report.txt"
+            self.cache_output_folder, f"{self.name()}-{start}-{end}-cached-report.txt"
         )
 
 

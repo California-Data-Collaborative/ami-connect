@@ -130,6 +130,7 @@ class TestBeacon360Adapter(BaseTestCase):
                 "/tmp/output"
             ),
             configured_sinks=[],
+            cache_output_folder="/tmp/output"
         )
         self.range_start = datetime.datetime(2024, 1, 2, 0, 0)
         self.range_end = datetime.datetime(2024, 1, 3, 0, 0)
