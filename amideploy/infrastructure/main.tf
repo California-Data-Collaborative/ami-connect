@@ -260,6 +260,17 @@ resource "aws_db_instance" "ami_connect_airflow_metastore" {
   }
 }
 
+output "airflow_db_host" {
+  description = "The hostname for the RDS instance"
+  value     = aws_db_instance.ami_connect_airflow_metastore.endpoint
+}
+
+output "airflow_db_password" {
+  description = "The password for the RDS instance"
+  value       = var.airflow_db_password
+  sensitive   = true
+}
+
 data "aws_route53_zone" "airflow_route53_zone" {
   name = var.airflow_hostname
 }

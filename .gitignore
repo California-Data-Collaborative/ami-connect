@@ -172,7 +172,9 @@ cython_debug/
 
 airflow
 output
+amideploy/configuration
 config.yaml
-config.prod.yaml
+config.*.yaml
 secrets.yaml
-secrets.prod.yaml
+secrets.*.yaml
+amideploy/infrastructure/environments
