@@ -16,10 +16,9 @@ We use `terraform` to manage infrastructure resources. [Here are installation in
 
 ### Pick a hostname for your Airflow application
 
-AMI Connect will build an Airflow application accessible on the public internet (but protected by a username and password). You'll want to pick a domain name for this site, then create a Route53
-instance in your AWS account that reserves this domain. The Route53 instance is left out of our `terraform` code because we don't want anyone to accidentally create multiple Route53 instances and domain names.
+AMI Connect will build an Airflow application accessible on the public internet (but protected by a username and password). You'll want to pick a domain name for this site, then register a domain with Route 53 in your AWS account. The Route53 domain is left out of our `terraform` code because we don't want anyone to accidentally create multiple domain names. Terraform will link the hosted zone for your domain name to your Airflow webserver.
 
-As an example: CaDC's AMI Connect deployment uses the cadc-ami-connect.com domain. CaDC has a Route53 hosted zone that reserves the domain. They configure terraform to connect the domain to their Airflow deployment via an A record.
+As an example: CaDC's AMI Connect deployment uses the cadc-ami-connect.com domain.
 
 ## Get started with terraform
 
@@ -29,12 +28,23 @@ Go to the `./amideploy/infrastructure` directory:
 cd amideploy/infrastructure
 ```
 
-We expect that you'll create a `terraform.tfvars` file in this directory, then fill it
-with your own AMI Connect infrastructure configuration. See `variables.tf` for the variables
-you'll specify. Here's an example `terraform.tfvars` file:
+We expect that you'll create a terraform workspace here. This will isolate your terraform state and
+allow you to create a `*.tfvars` file for your environment.
+
+From `amideploy/infrastructure`, run:
 
 ```
-# cat ./terraform.tfvars 
+terraform init
+terraform workspace new <your workspace>
+
+mkdir environments/<your workspace>
+touch environments/<your workspace>/<your workspace>.tfvars
+```
+
+`<your workspace>.tfvars` should contain your own AMI Connect infrastructure configuration. See `variables.tf` for the variables you'll specify. Here's an example `<your workspace>.tfvars` file:
+
+```
+# cat ./environments/my-workspace/my-workspace.tfvars 
 aws_profile = "my-aws-profile-name-associated-with-local-credentials"
 aws_region = "us-west-2"
 airflow_db_password = "myairflowdbpwd"
@@ -47,10 +57,12 @@ The value in `aws_profile` should match the AWS profile name in your `~/.aws/cre
 
 ## Run terraform to create the infrastructure
 
-Run `terraform` to see if everything is set up properly:
+Each terraform command will need to reference the `*.tfvars` file you created above. Run this to make sure
+everything is working:
 
 ```
-terraform plan
+
+terraform plan -var-file="./environments/<your workspace>/<your workspace>.tfvars"
 ```
 
 This command should exit without error. It should describe a number of resources we'll create:
@@ -65,7 +77,7 @@ This command should exit without error. It should describe a number of resources
 If that looks good, create the infrastructure:
 
 ```
-terraform apply
+terraform apply -var-file="./environments/<your workspace>/<your workspace>.tfvars"
 ```
 
 ## Configure the infrastructure
@@ -146,7 +158,7 @@ load_examples = False
 executor = LocalExecutor
 
 [database]
-sql_alchemy_conn = postgresql+psycopg2://airflow_user:<your airflow database password>@<your airflow postgres database hostname>:5432/airflow_db
+sql_alchemy_conn = postgresql+psycopg2://airflow_user:<your airflow database password>@<your postgres hostname>:5432/airflow_db
 ```
 
 Start the Airflow webserver and scheduler:
