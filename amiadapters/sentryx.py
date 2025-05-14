@@ -15,7 +15,7 @@ from amiadapters.models import (
 from amiadapters.base import (
     BaseAMIAdapter,
 )
-from amiadapters.config import AMIAdapterConfiguration
+from amiadapters.config import ConfiguredStorageSinkType
 
 logger = logging.getLogger(__name__)
 
@@ -151,13 +151,13 @@ class SentryxAdapter(BaseAMIAdapter):
 
     def __init__(
         self,
-        intermediate_output: str,
         api_key: str,
         org_id: str,
         org_timezone: str,
+        configured_task_output_controller,
+        configured_sinks,
         utility_name: str = None,
     ):
-        self.output_folder = intermediate_output
         self.api_key = api_key
         self.org_id = org_id
         self.org_timezone = org_timezone
@@ -165,10 +165,30 @@ class SentryxAdapter(BaseAMIAdapter):
         # It defaults to the org_id.
         self.utility_name = utility_name if utility_name is not None else org_id
 
+        task_output_controller = self.create_task_output_controller(
+            configured_task_output_controller, org_id
+        )
+        # Must create storage sinks here because it's Beacon-specific
+        storage_sinks = []
+        for sink in configured_sinks:
+            if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
+                storage_sinks.append(
+                    # BeaconSnowflakeStorageSink(
+                    #     task_output_controller,
+                    #     org_id,
+                    #     org_timezone,
+                    #     sink,
+                    # )
+                    None
+                )
+        super().__init__(org_id, org_timezone, task_output_controller, storage_sinks)
+
     def name(self) -> str:
         return f"sentryx-api-{self.org_id}"
 
-    def extract(self, extract_range_start: datetime, extract_range_end: datetime):
+    def extract(
+        self, run_id: str, extract_range_start: datetime, extract_range_end: datetime
+    ):
         meters = self._extract_all_meters()
         with open(self._raw_meter_output_file(), "w") as f:
             content = "\n".join(json.dumps(m, cls=DataclassJSONEncoder) for m in meters)

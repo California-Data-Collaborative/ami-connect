@@ -180,8 +180,9 @@ class AMIAdapterConfiguration:
                             source.secrets.api_key,
                             source.org_id,
                             source.timezone,
-                            source.utility_name,
                             source.task_output_controller,
+                            source.storage_sinks,
+                            utility_name=source.utility_name,
                         )
                     )
         return adapters

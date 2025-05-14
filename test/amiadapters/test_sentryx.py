@@ -2,6 +2,7 @@ import datetime
 import pytz
 from unittest import mock
 
+from amiadapters.config import ConfiguredLocalTaskOutputController
 from amiadapters.models import GeneralMeterRead
 from amiadapters.models import GeneralMeter
 from amiadapters.sentryx import (
@@ -135,17 +136,19 @@ class TestSentryxAdapter(BaseTestCase):
 
     def setUp(self):
         self.adapter = SentryxAdapter(
-            intermediate_output="output",
             api_key="key",
             org_id="this-utility",
             org_timezone=pytz.timezone("Africa/Algiers"),
+            configured_task_output_controller=ConfiguredLocalTaskOutputController(
+                "/tmp/output"
+            ),
+            configured_sinks=[],
             utility_name="my-utility-name",
         )
         self.range_start = datetime.datetime(2024, 1, 2, 0, 0)
         self.range_end = datetime.datetime(2024, 1, 3, 0, 0)
 
     def test_init(self):
-        self.assertEqual("output", self.adapter.output_folder)
         self.assertEqual("key", self.adapter.api_key)
         self.assertEqual("this-utility", self.adapter.org_id)
         self.assertEqual(pytz.timezone("Africa/Algiers"), self.adapter.org_timezone)
