@@ -178,3 +178,5 @@ config.*.yaml
 secrets.yaml
 secrets.*.yaml
 amideploy/infrastructure/environments
+Makefile
+

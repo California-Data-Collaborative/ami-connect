@@ -242,7 +242,7 @@ class ExtractRangeCalculator:
             )
 
         sink = snowflake_sink[0]
-        end = sink.get_oldest_meter_read_time(self.org_id, min_date, max_date)
+        end = sink.calculate_end_of_backfill_range(self.org_id, min_date, max_date)
         if not end:
             raise Exception(
                 f"No backfillable days found between {min_date} and {max_date} for {self.org_id}, consider removing this backfill from the configuration."
