@@ -2,9 +2,9 @@
 
 # Set these variables before running the script
 HOSTNAME=$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME
-PEM_PATH=./amideploy/configuration/airflow-key.pem
-PROD_CONFIG=./config.prod.yaml
-PROD_SECRETS=./secrets.prod.yaml
+PEM_PATH=$AMI_CONNECT__AIRFLOW_SERVER_PEM
+PROD_CONFIG=$AMI_CONNECT__CONFIG
+PROD_SECRETS=$AMI_CONNECT__SECRET
 
 # Check if required environment variables are set
 if [ -z "$HOSTNAME" ]; then

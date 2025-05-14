@@ -95,7 +95,7 @@ class TestExtractRangeCalculator(BaseTestCase):
 
     def setUp(self):
         self.snowflake_sink = MagicMock(spec=SnowflakeStorageSink)
-        self.snowflake_sink.get_oldest_meter_read_time.return_value = 3
+        self.snowflake_sink.calculate_end_of_backfill_range.return_value = 3
         sinks = [self.snowflake_sink]
         self.calculator = ExtractRangeCalculator(org_id="my_org", storage_sinks=sinks)
 
@@ -192,7 +192,7 @@ class TestExtractRangeCalculator(BaseTestCase):
     def test_calculate_extract_range__backfill_with_snowflake_sink(self):
         start_date = datetime(2025, 4, 20, 12, 0, 0)
         end_date = datetime(2025, 4, 25, 12, 0, 0)
-        self.snowflake_sink.get_oldest_meter_read_time.return_value = end_date
+        self.snowflake_sink.calculate_end_of_backfill_range.return_value = end_date
         backfill_params = Backfill(
             org_id=self.calculator.org_id,
             start_date=start_date,
@@ -218,7 +218,7 @@ class TestExtractRangeCalculator(BaseTestCase):
     ):
         start_date = datetime(2025, 4, 20, 12, 0, 0)
         end_date = datetime(2025, 4, 25, 12, 0, 0)
-        self.snowflake_sink.get_oldest_meter_read_time.return_value = None
+        self.snowflake_sink.calculate_end_of_backfill_range.return_value = None
         backfill_params = Backfill(
             org_id=self.calculator.org_id,
             start_date=start_date,

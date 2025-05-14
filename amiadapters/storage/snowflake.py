@@ -174,11 +174,12 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         ]
         return tuple(result)
 
-    def get_oldest_meter_read_time(
+    def calculate_end_of_backfill_range(
         self, org_id: str, min_date: datetime, max_date: datetime
     ) -> datetime:
         """
-        Find the oldest meter read time for this org within the specified date range.
+        Find the end day of the range we should backfill. Try to automatically calculate
+        the oldest day in the range that we've already backfilled.
         """
         conn = self.sink_config.connection()
 
@@ -195,12 +196,13 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         else:
             threshold = percentile_rows[0][0]
 
+        # Find the oldest day in the range that we've already backfilled
         query = """
         SELECT MIN(flow_date) from (
             SELECT DATE(flowtime) as flow_date FROM readings 
             WHERE org_id = ? AND flowtime > ? AND flowtime < ?
             GROUP BY DATE(flowtime)
-            HAVING COUNT(*) < ?
+            HAVING COUNT(*) > ?
         ) 
         """
         result = conn.cursor().execute(
