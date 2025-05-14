@@ -22,7 +22,11 @@ class S3TaskOutputController(BaseTaskOutputController):
     TRANSFORM = "t"
 
     def __init__(
-        self, bucket_name: str, org_id: str, s3_prefix: str = "intermediate_outputs", aws_profile_name: str = None
+        self,
+        bucket_name: str,
+        org_id: str,
+        s3_prefix: str = "intermediate_outputs",
+        aws_profile_name: str = None,
     ):
         """
         bucket_name: S3 bucket to use

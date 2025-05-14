@@ -12,8 +12,9 @@ from amiadapters.models import (
     GeneralMeterRead,
 )
 from amiadapters.base import BaseAMIAdapter
-from amiadapters.config import ConfiguredStorageSinkType
-from amiadapters.outputs.base import ExtractOutput
+from amiadapters.config import ConfiguredStorageSink, ConfiguredStorageSinkType
+from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
+from amiadapters.storage.snowflake import SnowflakeStorageSink
 
 logger = logging.getLogger(__name__)
 
@@ -171,13 +172,12 @@ class SentryxAdapter(BaseAMIAdapter):
         for sink in configured_sinks:
             if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
                 storage_sinks.append(
-                    # BeaconSnowflakeStorageSink(
-                    #     task_output_controller,
-                    #     org_id,
-                    #     org_timezone,
-                    #     sink,
-                    # )
-                    None
+                    SentryxSnowflakeStorageSink(
+                        task_output_controller,
+                        org_id,
+                        org_timezone,
+                        sink,
+                    )
                 )
         super().__init__(org_id, org_timezone, task_output_controller, storage_sinks)
 
@@ -377,3 +377,76 @@ class SentryxAdapter(BaseAMIAdapter):
                 meter_reads.append(read)
 
         return list(meters_by_id.values()), meter_reads
+
+
+class SentryxSnowflakeStorageSink(SnowflakeStorageSink):
+    """
+    Sentryx implementation of Snowflake AMI Storage Sink. In addition to parent class's storage of generalized
+    data, this stores raw meters and reads into a Snowflake table.
+    """
+
+    def __init__(
+        self,
+        output_controller: BaseTaskOutputController,
+        org_id: str,
+        org_timezone: str,
+        sink_config: ConfiguredStorageSink,
+    ):
+        super().__init__(output_controller, sink_config)
+        self.org_id = org_id
+        self.org_timezone = org_timezone
+
+    def store_raw(self, run_id):
+        # extract_outputs = self.output_controller.read_extract_outputs(run_id)
+        # text = extract_outputs.from_file("meters_and_reads.json")
+        # raw_meters_with_reads = [
+        #     Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
+        # ]
+
+        # conn = self.sink_config.connection()
+
+        # create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_beacon_360_base LIKE beacon_360_base;"
+        # conn.cursor().execute(create_temp_table_sql)
+
+        # columns = ", ".join(REQUESTED_COLUMNS)
+        # qmarks = "?, " * (len(REQUESTED_COLUMNS) - 1) + "?"
+        # insert_temp_data_sql = f"""
+        #     INSERT INTO temp_beacon_360_base (org_id, device_id, created_time, {columns})
+        #         VALUES (?, ?, ?, {qmarks})
+        # """
+        # created_time = datetime.now(tz=self.org_timezone)
+        # rows = [
+        #     tuple(
+        #         [self.org_id, i.Meter_ID, created_time]
+        #         + [i.__getattribute__(name) for name in REQUESTED_COLUMNS]
+        #     )
+        #     for i in raw_meters_with_reads
+        # ]
+        # conn.cursor().executemany(insert_temp_data_sql, rows)
+
+        # merge_sql = f"""
+        #     MERGE INTO beacon_360_base AS target
+        #     USING (
+        #         -- Use GROUP BY to ensure there are no duplicate rows before merge
+        #         SELECT
+        #             org_id,
+        #             device_id,
+        #             Read_Time,
+        #             {", ".join([f"max({name}) as {name}" for name in REQUESTED_COLUMNS if name not in {"Read_Time",}])},
+        #             max(created_time) as created_time
+        #         FROM temp_beacon_360_base
+        #         GROUP BY org_id, device_id, Read_Time
+        #     ) AS source
+        #     ON source.org_id = target.org_id
+        #         AND source.device_id = target.device_id
+        #         AND source.Read_Time = target.Read_Time
+        #     WHEN MATCHED THEN
+        #         UPDATE SET
+        #             target.created_time = source.created_time,
+        #             {",".join([f"target.{name} = source.{name}" for name in REQUESTED_COLUMNS])}
+        #     WHEN NOT MATCHED THEN
+        #         INSERT (org_id, device_id, {", ".join(name for name in REQUESTED_COLUMNS)}, created_time)
+        #                 VALUES (source.org_id, source.device_id, {", ".join(f"source.{name}" for name in REQUESTED_COLUMNS)}, source.created_time)
+        # """
+        # conn.cursor().execute(merge_sql)
+        pass

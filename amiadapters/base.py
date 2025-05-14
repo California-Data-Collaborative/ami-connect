@@ -150,6 +150,7 @@ class BaseAMIAdapter(ABC):
         Create a task output controller from the config object.
         """
         from amiadapters.config import ConfiguredTaskOutputControllerType
+
         if (
             configured_task_output_controller.type
             == ConfiguredTaskOutputControllerType.LOCAL
@@ -164,7 +165,7 @@ class BaseAMIAdapter(ABC):
             return S3TaskOutputController(
                 configured_task_output_controller.s3_bucket_name,
                 org_id,
-                aws_profile_name=configured_task_output_controller.dev_aws_profile_name
+                aws_profile_name=configured_task_output_controller.dev_aws_profile_name,
             )
         raise ValueError(
             f"Task output configuration with invalid type {configured_task_output_controller.type}"
