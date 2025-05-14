@@ -167,7 +167,7 @@ class SentryxAdapter(BaseAMIAdapter):
         task_output_controller = self.create_task_output_controller(
             configured_task_output_controller, org_id
         )
-        # Must create storage sinks here because it's Beacon-specific
+        # Must create storage sinks here because it's Sentryx-specific
         storage_sinks = []
         for sink in configured_sinks:
             if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
