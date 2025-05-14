@@ -1,12 +1,7 @@
 from datetime import datetime
 import logging
 
-import boto3
-
-from amiadapters.config import (
-    AMIAdapterConfiguration,
-    ConfiguredTaskOutputControllerType,
-)
+from amiadapters.config import AMIAdapterConfiguration
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +20,6 @@ def run_pipeline(
     adapters = config.adapters()
     backfills = {b.org_id: b for b in config.backfills()}
     run_id = f"run-{datetime.now().isoformat()}"
-
-    # If using S3, set an AWS credential profile specified in the config
-    if (
-        config._sources[0].task_output_controller.type
-        == ConfiguredTaskOutputControllerType.S3
-    ):
-        boto3.setup_default_session(
-            profile_name=config._sources[0].task_output_controller.dev_aws_profile_name
-        )
 
     for adapter in adapters:
         backfill = backfills.get(adapter.org_id)

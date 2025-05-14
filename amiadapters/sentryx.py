@@ -1,21 +1,19 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 import json
-import requests
-import os
 from typing import List, Tuple
+
+import requests
 
 from amiadapters.models import (
     DataclassJSONEncoder,
     GeneralMeter,
     GeneralMeterRead,
-    GeneralModelJSONEncoder,
 )
-from amiadapters.base import (
-    BaseAMIAdapter,
-)
+from amiadapters.base import BaseAMIAdapter
 from amiadapters.config import ConfiguredStorageSinkType
+from amiadapters.outputs.base import ExtractOutput
 
 logger = logging.getLogger(__name__)
 
@@ -190,18 +188,23 @@ class SentryxAdapter(BaseAMIAdapter):
         self, run_id: str, extract_range_start: datetime, extract_range_end: datetime
     ):
         meters = self._extract_all_meters()
-        with open(self._raw_meter_output_file(), "w") as f:
-            content = "\n".join(json.dumps(m, cls=DataclassJSONEncoder) for m in meters)
-            f.write(content)
-
         meters_with_reads = self._extract_consumption_for_all_meters(
             extract_range_start, extract_range_end
         )
-        with open(self._raw_reads_output_file(), "w") as f:
-            content = "\n".join(
-                json.dumps(m, cls=DataclassJSONEncoder) for m in meters_with_reads
-            )
-            f.write(content)
+        self.output_controller.write_extract_outputs(
+            run_id,
+            ExtractOutput(
+                {
+                    "meters.json": "\n".join(
+                        json.dumps(m, cls=DataclassJSONEncoder) for m in meters
+                    ),
+                    "reads.json": "\n".join(
+                        json.dumps(m, cls=DataclassJSONEncoder)
+                        for m in meters_with_reads
+                    ),
+                }
+            ),
+        )
 
     def _extract_all_meters(self) -> List[SentryxMeter]:
         url = f"{BASE_URL}/{self.utility_name}/devices"
@@ -300,38 +303,26 @@ class SentryxAdapter(BaseAMIAdapter):
 
         return meters
 
-    def transform(self):
-        with open(self._raw_meter_output_file(), "r") as f:
-            text = f.read()
-            raw_meters = [
-                SentryxMeter(**json.loads(d)) for d in text.strip().split("\n")
-            ]
+    def transform(self, run_id: str):
+        extract_outputs = self.output_controller.read_extract_outputs(run_id)
 
-        with open(self._raw_reads_output_file(), "r") as f:
-            text = f.read()
-            raw_meters_with_reads = [
-                SentryxMeterWithReads.from_json(d) for d in text.strip().split("\n")
-            ]
+        raw_meter_text = extract_outputs.from_file("meters.json")
+        raw_meters = [
+            SentryxMeter(**json.loads(d)) for d in raw_meter_text.strip().split("\n")
+        ]
+
+        raw_meters_with_reads_text = extract_outputs.from_file("reads.json")
+        raw_meters_with_reads = [
+            SentryxMeterWithReads.from_json(d)
+            for d in raw_meters_with_reads_text.strip().split("\n")
+        ]
 
         transformed_meters, transformed_reads = self._transform_meters_and_reads(
             raw_meters, raw_meters_with_reads
         )
 
-        with open(self._transformed_meter_output_file(), "w") as f:
-            f.write(
-                "\n".join(
-                    json.dumps(v, cls=GeneralModelJSONEncoder)
-                    for v in transformed_meters
-                )
-            )
-
-        with open(self._transformed_reads_output_file(), "w") as f:
-            f.write(
-                "\n".join(
-                    json.dumps(m, cls=GeneralModelJSONEncoder)
-                    for m in transformed_reads
-                )
-            )
+        self.output_controller.write_transformed_meters(run_id, transformed_meters)
+        self.output_controller.write_transformed_meter_reads(run_id, transformed_reads)
 
     def _transform_meters_and_reads(
         self,
@@ -386,15 +377,3 @@ class SentryxAdapter(BaseAMIAdapter):
                 meter_reads.append(read)
 
         return list(meters_by_id.values()), meter_reads
-
-    def _raw_meter_output_file(self) -> str:
-        return os.path.join(self.output_folder, f"{self.name()}-raw-meters.txt")
-
-    def _raw_reads_output_file(self) -> str:
-        return os.path.join(self.output_folder, f"{self.name()}-raw-reads.txt")
-
-    def _transformed_meter_output_file(self) -> str:
-        return os.path.join(self.output_folder, f"{self.name()}-transformed-meters.txt")
-
-    def _transformed_reads_output_file(self) -> str:
-        return os.path.join(self.output_folder, f"{self.name()}-transformed-reads.txt")

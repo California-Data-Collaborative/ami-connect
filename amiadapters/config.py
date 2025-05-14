@@ -280,7 +280,7 @@ class ConfiguredS3TaskOutputController:
     def __init__(self, dev_aws_profile_name: str, s3_bucket_name: str):
         self.type = ConfiguredTaskOutputControllerType.S3
         # Only use for specifying local development AWS credentials. Prod should use
-        # AMI roles provisioned in terraform.
+        # IAM role provisioned in terraform.
         self.dev_aws_profile_name = dev_aws_profile_name
         self.s3_bucket_name = self._s3_bucket_name(s3_bucket_name)
 
