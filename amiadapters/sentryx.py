@@ -1,21 +1,20 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 import json
-import requests
-import os
 from typing import List, Tuple
+
+import requests
 
 from amiadapters.models import (
     DataclassJSONEncoder,
     GeneralMeter,
     GeneralMeterRead,
-    GeneralModelJSONEncoder,
 )
-from amiadapters.base import (
-    BaseAMIAdapter,
-)
-from amiadapters.config import AMIAdapterConfiguration
+from amiadapters.base import BaseAMIAdapter
+from amiadapters.config import ConfiguredStorageSink, ConfiguredStorageSinkType
+from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
+from amiadapters.storage.snowflake import SnowflakeStorageSink
 
 logger = logging.getLogger(__name__)
 
@@ -151,13 +150,13 @@ class SentryxAdapter(BaseAMIAdapter):
 
     def __init__(
         self,
-        intermediate_output: str,
         api_key: str,
         org_id: str,
         org_timezone: str,
+        configured_task_output_controller,
+        configured_sinks,
         utility_name: str = None,
     ):
-        self.output_folder = intermediate_output
         self.api_key = api_key
         self.org_id = org_id
         self.org_timezone = org_timezone
@@ -165,23 +164,47 @@ class SentryxAdapter(BaseAMIAdapter):
         # It defaults to the org_id.
         self.utility_name = utility_name if utility_name is not None else org_id
 
+        task_output_controller = self.create_task_output_controller(
+            configured_task_output_controller, org_id
+        )
+        # Must create storage sinks here because it's Sentryx-specific
+        storage_sinks = []
+        for sink in configured_sinks:
+            if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
+                storage_sinks.append(
+                    SentryxSnowflakeStorageSink(
+                        task_output_controller,
+                        org_id,
+                        org_timezone,
+                        sink,
+                    )
+                )
+        super().__init__(org_id, org_timezone, task_output_controller, storage_sinks)
+
     def name(self) -> str:
         return f"sentryx-api-{self.org_id}"
 
-    def extract(self, extract_range_start: datetime, extract_range_end: datetime):
+    def extract(
+        self, run_id: str, extract_range_start: datetime, extract_range_end: datetime
+    ):
         meters = self._extract_all_meters()
-        with open(self._raw_meter_output_file(), "w") as f:
-            content = "\n".join(json.dumps(m, cls=DataclassJSONEncoder) for m in meters)
-            f.write(content)
-
         meters_with_reads = self._extract_consumption_for_all_meters(
             extract_range_start, extract_range_end
         )
-        with open(self._raw_reads_output_file(), "w") as f:
-            content = "\n".join(
-                json.dumps(m, cls=DataclassJSONEncoder) for m in meters_with_reads
-            )
-            f.write(content)
+        self.output_controller.write_extract_outputs(
+            run_id,
+            ExtractOutput(
+                {
+                    "meters.json": "\n".join(
+                        json.dumps(m, cls=DataclassJSONEncoder) for m in meters
+                    ),
+                    "reads.json": "\n".join(
+                        json.dumps(m, cls=DataclassJSONEncoder)
+                        for m in meters_with_reads
+                    ),
+                }
+            ),
+        )
 
     def _extract_all_meters(self) -> List[SentryxMeter]:
         url = f"{BASE_URL}/{self.utility_name}/devices"
@@ -280,38 +303,26 @@ class SentryxAdapter(BaseAMIAdapter):
 
         return meters
 
-    def transform(self):
-        with open(self._raw_meter_output_file(), "r") as f:
-            text = f.read()
-            raw_meters = [
-                SentryxMeter(**json.loads(d)) for d in text.strip().split("\n")
-            ]
+    def transform(self, run_id: str):
+        extract_outputs = self.output_controller.read_extract_outputs(run_id)
 
-        with open(self._raw_reads_output_file(), "r") as f:
-            text = f.read()
-            raw_meters_with_reads = [
-                SentryxMeterWithReads.from_json(d) for d in text.strip().split("\n")
-            ]
+        raw_meter_text = extract_outputs.from_file("meters.json")
+        raw_meters = [
+            SentryxMeter(**json.loads(d)) for d in raw_meter_text.strip().split("\n")
+        ]
+
+        raw_meters_with_reads_text = extract_outputs.from_file("reads.json")
+        raw_meters_with_reads = [
+            SentryxMeterWithReads.from_json(d)
+            for d in raw_meters_with_reads_text.strip().split("\n")
+        ]
 
         transformed_meters, transformed_reads = self._transform_meters_and_reads(
             raw_meters, raw_meters_with_reads
         )
 
-        with open(self._transformed_meter_output_file(), "w") as f:
-            f.write(
-                "\n".join(
-                    json.dumps(v, cls=GeneralModelJSONEncoder)
-                    for v in transformed_meters
-                )
-            )
-
-        with open(self._transformed_reads_output_file(), "w") as f:
-            f.write(
-                "\n".join(
-                    json.dumps(m, cls=GeneralModelJSONEncoder)
-                    for m in transformed_reads
-                )
-            )
+        self.output_controller.write_transformed_meters(run_id, transformed_meters)
+        self.output_controller.write_transformed_meter_reads(run_id, transformed_reads)
 
     def _transform_meters_and_reads(
         self,
@@ -367,14 +378,75 @@ class SentryxAdapter(BaseAMIAdapter):
 
         return list(meters_by_id.values()), meter_reads
 
-    def _raw_meter_output_file(self) -> str:
-        return os.path.join(self.output_folder, f"{self.name()}-raw-meters.txt")
 
-    def _raw_reads_output_file(self) -> str:
-        return os.path.join(self.output_folder, f"{self.name()}-raw-reads.txt")
+class SentryxSnowflakeStorageSink(SnowflakeStorageSink):
+    """
+    Sentryx implementation of Snowflake AMI Storage Sink. In addition to parent class's storage of generalized
+    data, this stores raw meters and reads into a Snowflake table.
+    """
 
-    def _transformed_meter_output_file(self) -> str:
-        return os.path.join(self.output_folder, f"{self.name()}-transformed-meters.txt")
+    def __init__(
+        self,
+        output_controller: BaseTaskOutputController,
+        org_id: str,
+        org_timezone: str,
+        sink_config: ConfiguredStorageSink,
+    ):
+        super().__init__(output_controller, sink_config)
+        self.org_id = org_id
+        self.org_timezone = org_timezone
 
-    def _transformed_reads_output_file(self) -> str:
-        return os.path.join(self.output_folder, f"{self.name()}-transformed-reads.txt")
+    def store_raw(self, run_id):
+        # extract_outputs = self.output_controller.read_extract_outputs(run_id)
+        # text = extract_outputs.from_file("meters_and_reads.json")
+        # raw_meters_with_reads = [
+        #     Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
+        # ]
+
+        # conn = self.sink_config.connection()
+
+        # create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_beacon_360_base LIKE beacon_360_base;"
+        # conn.cursor().execute(create_temp_table_sql)
+
+        # columns = ", ".join(REQUESTED_COLUMNS)
+        # qmarks = "?, " * (len(REQUESTED_COLUMNS) - 1) + "?"
+        # insert_temp_data_sql = f"""
+        #     INSERT INTO temp_beacon_360_base (org_id, device_id, created_time, {columns})
+        #         VALUES (?, ?, ?, {qmarks})
+        # """
+        # created_time = datetime.now(tz=self.org_timezone)
+        # rows = [
+        #     tuple(
+        #         [self.org_id, i.Meter_ID, created_time]
+        #         + [i.__getattribute__(name) for name in REQUESTED_COLUMNS]
+        #     )
+        #     for i in raw_meters_with_reads
+        # ]
+        # conn.cursor().executemany(insert_temp_data_sql, rows)
+
+        # merge_sql = f"""
+        #     MERGE INTO beacon_360_base AS target
+        #     USING (
+        #         -- Use GROUP BY to ensure there are no duplicate rows before merge
+        #         SELECT
+        #             org_id,
+        #             device_id,
+        #             Read_Time,
+        #             {", ".join([f"max({name}) as {name}" for name in REQUESTED_COLUMNS if name not in {"Read_Time",}])},
+        #             max(created_time) as created_time
+        #         FROM temp_beacon_360_base
+        #         GROUP BY org_id, device_id, Read_Time
+        #     ) AS source
+        #     ON source.org_id = target.org_id
+        #         AND source.device_id = target.device_id
+        #         AND source.Read_Time = target.Read_Time
+        #     WHEN MATCHED THEN
+        #         UPDATE SET
+        #             target.created_time = source.created_time,
+        #             {",".join([f"target.{name} = source.{name}" for name in REQUESTED_COLUMNS])}
+        #     WHEN NOT MATCHED THEN
+        #         INSERT (org_id, device_id, {", ".join(name for name in REQUESTED_COLUMNS)}, created_time)
+        #                 VALUES (source.org_id, source.device_id, {", ".join(f"source.{name}" for name in REQUESTED_COLUMNS)}, source.created_time)
+        # """
+        # conn.cursor().execute(merge_sql)
+        pass

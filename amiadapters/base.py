@@ -165,6 +165,7 @@ class BaseAMIAdapter(ABC):
             return S3TaskOutputController(
                 configured_task_output_controller.s3_bucket_name,
                 org_id,
+                aws_profile_name=configured_task_output_controller.dev_aws_profile_name,
             )
         raise ValueError(
             f"Task output configuration with invalid type {configured_task_output_controller.type}"
