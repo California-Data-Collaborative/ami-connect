@@ -70,9 +70,9 @@ def ami_control_dag_factory(dag_id, schedule, params, adapter, backfill_params=N
             >> [
                 # Run load tasks in parallel
                 load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter),
-                load_transformed.override(
-                    task_id=f"load-transformed-{adapter.name()}"
-                )(adapter),
+                load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(
+                    adapter
+                ),
             ]
             >> final_task.override(task_id=f"finish-{adapter.name()}")()
         )
@@ -102,10 +102,14 @@ for adapter in utility_adapters:
             default="",
         ),
     }
-    ami_control_dag_factory(f"{adapter.org_id}-ami-meter-read-dag-manual", None, standard_params, adapter)
+    ami_control_dag_factory(
+        f"{adapter.org_id}-ami-meter-read-dag-manual", None, standard_params, adapter
+    )
 
     # Standard run that fetches most recent meter read data
-    ami_control_dag_factory(f"{adapter.org_id}-ami-meter-read-dag-standard", "0 12 * * *", {}, adapter)
+    ami_control_dag_factory(
+        f"{adapter.org_id}-ami-meter-read-dag-standard", "0 12 * * *", {}, adapter
+    )
 
 # Create DAGs for configured backfill runs
 for backfill in backfills:
