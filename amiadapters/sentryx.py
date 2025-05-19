@@ -187,6 +187,9 @@ class SentryxAdapter(BaseAMIAdapter):
     def extract(
         self, run_id: str, extract_range_start: datetime, extract_range_end: datetime
     ):
+        logger.info(
+            f"Extracting {self.org_id} data from {extract_range_start} to {extract_range_end}"
+        )
         meters = self._extract_all_meters()
         meters_with_reads = self._extract_consumption_for_all_meters(
             extract_range_start, extract_range_end

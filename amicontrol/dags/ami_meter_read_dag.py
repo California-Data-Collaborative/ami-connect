@@ -11,7 +11,7 @@ from amiadapters.config import (
 )
 
 
-def ami_control_dag_factory(dag_id, schedule, params, adapters, backfill_params=None):
+def ami_control_dag_factory(dag_id, schedule, params, adapter, backfill_params=None):
     """
     Factory for AMI control meter read DAGs that run on different schedules:
     - The regular run, which refreshes recent data
@@ -63,20 +63,19 @@ def ami_control_dag_factory(dag_id, schedule, params, adapters, backfill_params=
             # Placeholder to gather results of parallel tasks in DAG
             return
 
-        for adapter in adapters:
-            # Set sequence of tasks for this utility
-            (
-                extract.override(task_id=f"extract-{adapter.name()}")(adapter)
-                >> transform.override(task_id=f"transform-{adapter.name()}")(adapter)
-                >> [
-                    # Run load tasks in parallel
-                    load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter),
-                    load_transformed.override(
-                        task_id=f"load-transformed-{adapter.name()}"
-                    )(adapter),
-                ]
-                >> final_task.override(task_id=f"finish-{adapter.name()}")()
-            )
+        # Set sequence of tasks for this utility
+        (
+            extract.override(task_id=f"extract-{adapter.name()}")(adapter)
+            >> transform.override(task_id=f"transform-{adapter.name()}")(adapter)
+            >> [
+                # Run load tasks in parallel
+                load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter),
+                load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(
+                    adapter
+                ),
+            ]
+            >> final_task.override(task_id=f"finish-{adapter.name()}")()
+        )
 
     ami_control_dag()
 
@@ -85,36 +84,42 @@ def ami_control_dag_factory(dag_id, schedule, params, adapters, backfill_params=
 # Configure DAGs
 #######################################################
 config = AMIAdapterConfiguration.from_yaml(find_config_yaml(), find_secrets_yaml())
-adapters = config.adapters()
+utility_adapters = config.adapters()
 backfills = config.backfills()
 
-# Manual runs
-standard_params = {
-    "extract_range_start": Param(
-        type="string",
-        description="Start of date range for which we'll extract meter read data",
-        default="",
-    ),
-    "extract_range_end": Param(
-        type="string",
-        description="End of date range for which we'll extract meter read data",
-        default="",
-    ),
-}
-ami_control_dag_factory("ami-meter-read-dag-manual", None, standard_params, adapters)
+# Create DAGs for each configured utility
+for adapter in utility_adapters:
+    # Manual runs
+    standard_params = {
+        "extract_range_start": Param(
+            type="string",
+            description="Start of date range for which we'll extract meter read data",
+            default="",
+        ),
+        "extract_range_end": Param(
+            type="string",
+            description="End of date range for which we'll extract meter read data",
+            default="",
+        ),
+    }
+    ami_control_dag_factory(
+        f"{adapter.org_id}-ami-meter-read-dag-manual", None, standard_params, adapter
+    )
 
-# Standard run that fetches most recent meter read data
-ami_control_dag_factory("ami-meter-read-dag-standard", "0 12 * * *", {}, adapters)
+    # Standard run that fetches most recent meter read data
+    ami_control_dag_factory(
+        f"{adapter.org_id}-ami-meter-read-dag-standard", "0 12 * * *", {}, adapter
+    )
 
-# Backfill runs
+# Create DAGs for configured backfill runs
 for backfill in backfills:
-    matching_adapters = [a for a in adapters if a.org_id == backfill.org_id]
+    matching_adapters = [a for a in utility_adapters if a.org_id == backfill.org_id]
     if len(matching_adapters) != 1:
         continue
     ami_control_dag_factory(
-        f"ami-meter-read-dag-backfill-{backfill.org_id}-{datetime.strftime(backfill.start_date, "%Y-%m-%d")}-{datetime.strftime(backfill.end_date, "%Y-%m-%d")}",
+        f"{backfill.org_id}-ami-meter-read-dag-backfill-{datetime.strftime(backfill.start_date, "%Y-%m-%d")}-{datetime.strftime(backfill.end_date, "%Y-%m-%d")}",
         backfill.schedule,
         {},
-        matching_adapters,
+        matching_adapters[0],
         backfill_params=backfill,
     )
