@@ -237,7 +237,7 @@ resource "aws_security_group" "airflow_db_sg" {
 }
 
 resource "aws_db_instance" "ami_connect_airflow_metastore" {
-  identifier                 = "prod-postgres-db"
+  identifier                 = "ami-connect-airflow-db"
   engine                     = "postgres"
   engine_version             = "16.8"
   instance_class             = "db.t4g.micro"
@@ -253,7 +253,7 @@ resource "aws_db_instance" "ami_connect_airflow_metastore" {
   password                   = var.airflow_db_password
   vpc_security_group_ids     = [aws_security_group.airflow_db_sg.id]
   skip_final_snapshot        = false
-  final_snapshot_identifier  = "final-snapshot-prod-db"
+  final_snapshot_identifier  = "final-snapshot-ami-connect-airflow-db"
 
   tags = {
     Name = var.ami_connect_tag
