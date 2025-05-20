@@ -582,19 +582,19 @@ class SentryxSnowflakeStorageSink(SnowflakeStorageSink):
                 SELECT
                     org_id,
                     device_id,
-                    max(TIME_STAMP) as TIME_STAMP,
+                    TIME_STAMP,
                     max(READING) as READING,
                     max(UNITS) as UNITS,
                     max(created_time) as created_time
                 FROM temp_sentryx_read_base
-                GROUP BY org_id, device_id
+                GROUP BY org_id, device_id, TIME_STAMP
             ) AS source
             ON source.org_id = target.org_id
                 AND source.device_id = target.device_id
+                AND source.TIME_STAMP = target.TIME_STAMP
             WHEN MATCHED THEN
                 UPDATE SET
                     target.created_time = source.created_time,
-                    target.TIME_STAMP = source.TIME_STAMP,
                     target.READING = source.READING,
                     target.UNITS = source.UNITS
             WHEN NOT MATCHED THEN
