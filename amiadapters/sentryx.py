@@ -400,56 +400,217 @@ class SentryxSnowflakeStorageSink(SnowflakeStorageSink):
         self.org_timezone = org_timezone
 
     def store_raw(self, run_id):
-        # extract_outputs = self.output_controller.read_extract_outputs(run_id)
-        # text = extract_outputs.from_file("meters_and_reads.json")
-        # raw_meters_with_reads = [
-        #     Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
-        # ]
+        extract_outputs = self.output_controller.read_extract_outputs(run_id)
+        raw_meter_text = extract_outputs.from_file("meters.json")
+        raw_meters = [
+            SentryxMeter(**json.loads(d)) for d in raw_meter_text.strip().split("\n")
+        ]
 
-        # conn = self.sink_config.connection()
+        raw_meters_with_reads_text = extract_outputs.from_file("reads.json")
+        raw_meters_with_reads = [
+            SentryxMeterWithReads.from_json(d)
+            for d in raw_meters_with_reads_text.strip().split("\n")
+        ]
 
-        # create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_beacon_360_base LIKE beacon_360_base;"
-        # conn.cursor().execute(create_temp_table_sql)
+        created_time = datetime.now(tz=self.org_timezone)
 
-        # columns = ", ".join(REQUESTED_COLUMNS)
-        # qmarks = "?, " * (len(REQUESTED_COLUMNS) - 1) + "?"
-        # insert_temp_data_sql = f"""
-        #     INSERT INTO temp_beacon_360_base (org_id, device_id, created_time, {columns})
-        #         VALUES (?, ?, ?, {qmarks})
-        # """
-        # created_time = datetime.now(tz=self.org_timezone)
-        # rows = [
-        #     tuple(
-        #         [self.org_id, i.Meter_ID, created_time]
-        #         + [i.__getattribute__(name) for name in REQUESTED_COLUMNS]
-        #     )
-        #     for i in raw_meters_with_reads
-        # ]
-        # conn.cursor().executemany(insert_temp_data_sql, rows)
+        conn = self.sink_config.connection()
 
-        # merge_sql = f"""
-        #     MERGE INTO beacon_360_base AS target
-        #     USING (
-        #         -- Use GROUP BY to ensure there are no duplicate rows before merge
-        #         SELECT
-        #             org_id,
-        #             device_id,
-        #             Read_Time,
-        #             {", ".join([f"max({name}) as {name}" for name in REQUESTED_COLUMNS if name not in {"Read_Time",}])},
-        #             max(created_time) as created_time
-        #         FROM temp_beacon_360_base
-        #         GROUP BY org_id, device_id, Read_Time
-        #     ) AS source
-        #     ON source.org_id = target.org_id
-        #         AND source.device_id = target.device_id
-        #         AND source.Read_Time = target.Read_Time
-        #     WHEN MATCHED THEN
-        #         UPDATE SET
-        #             target.created_time = source.created_time,
-        #             {",".join([f"target.{name} = source.{name}" for name in REQUESTED_COLUMNS])}
-        #     WHEN NOT MATCHED THEN
-        #         INSERT (org_id, device_id, {", ".join(name for name in REQUESTED_COLUMNS)}, created_time)
-        #                 VALUES (source.org_id, source.device_id, {", ".join(f"source.{name}" for name in REQUESTED_COLUMNS)}, source.created_time)
-        # """
-        # conn.cursor().execute(merge_sql)
-        pass
+        self._store_raw_meters(conn, created_time, raw_meters)
+        self._store_raw_meter_reads(conn, created_time, raw_meters_with_reads)
+
+    def _store_raw_meters(
+        self, conn, created_time: datetime, raw_meters: List[SentryxMeter]
+    ):
+        create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_sentryx_meter_base LIKE sentryx_meter_base;"
+        conn.cursor().execute(create_temp_table_sql)
+
+        insert_temp_data_sql = f"""
+            INSERT INTO temp_sentryx_meter_base (
+                org_id,
+                device_id,
+                created_time,
+                DEVICE_STATUS,
+                SERVICE_STATUS,
+                STREET,
+                CITY,
+                STATE,
+                ZIP,
+                DESCRIPTION,
+                MANUFACTURER,
+                INSTALL_NOTES,
+                INSTALL_DATE,
+                METER_SIZE
+            )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        rows = [
+            tuple(
+                [
+                    self.org_id,
+                    i.device_id,
+                    created_time,
+                    i.device_status,
+                    i.service_status,
+                    i.street,
+                    i.city,
+                    i.state,
+                    i.zip,
+                    i.description,
+                    i.manufacturer,
+                    i.install_notes,
+                    i.install_date,
+                    i.meter_size,
+                ]
+            )
+            for i in raw_meters
+        ]
+        conn.cursor().executemany(insert_temp_data_sql, rows)
+
+        merge_sql = f"""
+            MERGE INTO sentryx_meter_base AS target
+            USING (
+                -- Use GROUP BY to ensure there are no duplicate rows before merge
+                SELECT
+                    org_id,
+                    device_id,
+                    max(DEVICE_STATUS) as DEVICE_STATUS,
+                    max(SERVICE_STATUS) as SERVICE_STATUS,
+                    max(STREET) as STREET,
+                    max(CITY) as CITY,
+                    max(STATE) as STATE,
+                    max(ZIP) as ZIP,
+                    max(DESCRIPTION) as DESCRIPTION,
+                    max(MANUFACTURER) as MANUFACTURER,
+                    max(INSTALL_NOTES) as INSTALL_NOTES,
+                    max(INSTALL_DATE) as INSTALL_DATE,
+                    max(METER_SIZE) as METER_SIZE,
+                    max(created_time) as created_time
+                FROM temp_sentryx_meter_base
+                GROUP BY org_id, device_id
+            ) AS source
+            ON source.org_id = target.org_id
+                AND source.device_id = target.device_id
+            WHEN MATCHED THEN
+                UPDATE SET
+                    target.created_time = source.created_time,
+                    target.DEVICE_STATUS = source.DEVICE_STATUS,
+                    target.SERVICE_STATUS = source.SERVICE_STATUS,
+                    target.STREET = source.STREET,
+                    target.CITY = source.CITY,
+                    target.STATE = source.STATE,
+                    target.ZIP = source.ZIP,
+                    target.DESCRIPTION = source.DESCRIPTION,
+                    target.MANUFACTURER = source.MANUFACTURER,
+                    target.INSTALL_NOTES = source.INSTALL_NOTES,
+                    target.INSTALL_DATE = source.INSTALL_DATE,
+                    target.METER_SIZE = source.METER_SIZE
+            WHEN NOT MATCHED THEN
+                INSERT (
+                    org_id, 
+                    device_id, 
+                    DEVICE_STATUS,
+                    SERVICE_STATUS,
+                    STREET,
+                    CITY,
+                    STATE,
+                    ZIP,
+                    DESCRIPTION,
+                    MANUFACTURER,
+                    INSTALL_NOTES,
+                    INSTALL_DATE,
+                    METER_SIZE,
+                    created_time)
+                        VALUES (
+                        source.org_id, 
+                        source.device_id, 
+                        source.DEVICE_STATUS,
+                        source.SERVICE_STATUS,
+                        source.STREET,
+                        source.CITY,
+                        source.STATE,
+                        source.ZIP,
+                        source.DESCRIPTION,
+                        source.MANUFACTURER,
+                        source.INSTALL_NOTES,
+                        source.INSTALL_DATE,
+                        source.METER_SIZE,
+                        source.created_time)
+        """
+        conn.cursor().execute(merge_sql)
+
+    def _store_raw_meter_reads(
+        self,
+        conn,
+        created_time: datetime,
+        raw_meters_with_reads: List[SentryxMeterWithReads],
+    ):
+        create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_sentryx_read_base LIKE sentryx_read_base;"
+        conn.cursor().execute(create_temp_table_sql)
+
+        insert_temp_data_sql = f"""
+            INSERT INTO temp_sentryx_read_base (
+                org_id,
+                device_id,
+                created_time,
+                TIME_STAMP,
+                READING,
+                UNITS
+            )
+                VALUES (?, ?, ?, ?, ?, ?)
+        """
+        rows = [
+            tuple(
+                [
+                    self.org_id,
+                    meter.device_id,
+                    created_time,
+                    reading.time_stamp,
+                    reading.reading,
+                    meter.units,
+                ]
+            )
+            for meter in raw_meters_with_reads
+            for reading in meter.data
+        ]
+        conn.cursor().executemany(insert_temp_data_sql, rows)
+
+        merge_sql = f"""
+            MERGE INTO sentryx_read_base AS target
+            USING (
+                -- Use GROUP BY to ensure there are no duplicate rows before merge
+                SELECT
+                    org_id,
+                    device_id,
+                    max(TIME_STAMP) as TIME_STAMP,
+                    max(READING) as READING,
+                    max(UNITS) as UNITS,
+                    max(created_time) as created_time
+                FROM temp_sentryx_read_base
+                GROUP BY org_id, device_id
+            ) AS source
+            ON source.org_id = target.org_id
+                AND source.device_id = target.device_id
+            WHEN MATCHED THEN
+                UPDATE SET
+                    target.created_time = source.created_time,
+                    target.TIME_STAMP = source.TIME_STAMP,
+                    target.READING = source.READING,
+                    target.UNITS = source.UNITS
+            WHEN NOT MATCHED THEN
+                INSERT (
+                    org_id, 
+                    device_id, 
+                    TIME_STAMP,
+                    READING,
+                    UNITS,
+                    created_time)
+                        VALUES (
+                        source.org_id, 
+                        source.device_id, 
+                        source.TIME_STAMP,
+                        source.READING,
+                        source.UNITS,
+                        source.created_time)
+        """
+        conn.cursor().execute(merge_sql)
