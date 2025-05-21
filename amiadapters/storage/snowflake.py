@@ -186,7 +186,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         # Calculate nth percentile of number of readings per day
         # We will use that as a threshold for what we consider "already backfilled"
         percentile_query = """
-        SELECT PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY num_readings) AS percentile_75
+        SELECT PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY num_readings) AS nth_percentile
         FROM (select count(*) as num_readings FROM readings WHERE org_id = ? GROUP BY date(flowtime))
         """
         percentile_result = conn.cursor().execute(percentile_query, (org_id,))
@@ -194,7 +194,10 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         if len(percentile_rows) != 1:
             threshold = 0
         else:
-            threshold = percentile_rows[0][0]
+            threshold = float(percentile_rows[0][0])
+
+        # Lower threshold by 10% to allow dates with legitimately lower volume to be considered backfilled
+        threshold = 0.9 * threshold
 
         # Find the oldest day in the range that we've already backfilled
         query = """
