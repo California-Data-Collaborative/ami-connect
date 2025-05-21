@@ -35,3 +35,8 @@ variable "ami_connect_tag" {
   type        = string
   default     = "ami-connect"
 }
+
+variable "alert_emails" {
+  description = "List of emails to subscribe to the Airflow SNS topic for Aiflow alerts"
+  type        = list(string)
+}

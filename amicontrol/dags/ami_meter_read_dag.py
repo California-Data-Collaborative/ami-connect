@@ -2,6 +2,7 @@ from datetime import datetime
 
 from airflow.decorators import dag, task
 from airflow.models.param import Param
+from airflow.providers.amazon.aws.notifications.sns import SnsNotifier
 
 from amiadapters.base import BaseAMIAdapter
 from amiadapters.config import (
@@ -11,7 +12,14 @@ from amiadapters.config import (
 )
 
 
-def ami_control_dag_factory(dag_id, schedule, params, adapter, backfill_params=None):
+def ami_control_dag_factory(
+    dag_id,
+    schedule,
+    params,
+    adapter,
+    dag_failure_sns_notification,
+    backfill_params=None,
+):
     """
     Factory for AMI control meter read DAGs that run on different schedules:
     - The regular run, which refreshes recent data
@@ -26,6 +34,7 @@ def ami_control_dag_factory(dag_id, schedule, params, adapter, backfill_params=N
         catchup=False,
         start_date=datetime(2024, 1, 1),
         tags=["ami"],
+        on_failure_callback=dag_failure_sns_notification,
     )
     def ami_control_dag():
 
@@ -87,6 +96,15 @@ config = AMIAdapterConfiguration.from_yaml(find_config_yaml(), find_secrets_yaml
 utility_adapters = config.adapters()
 backfills = config.backfills()
 
+# TODO get arn from config
+sns_notifier = SnsNotifier(
+    target_arn="arn:aws:sns:us-west-2:179953071571:ami-connect-airflow-alerts",
+    message="The DAG {{ dag.dag_id }} failed",
+    aws_conn_id="aws_default",
+    subject="AMI Connect DAG Failure",
+    region_name="us-west-2",
+)
+
 # Create DAGs for each configured utility
 for adapter in utility_adapters:
     # Manual runs
@@ -103,12 +121,20 @@ for adapter in utility_adapters:
         ),
     }
     ami_control_dag_factory(
-        f"{adapter.org_id}-ami-meter-read-dag-manual", None, standard_params, adapter
+        f"{adapter.org_id}-ami-meter-read-dag-manual",
+        None,
+        standard_params,
+        adapter,
+        sns_notifier,
     )
 
     # Standard run that fetches most recent meter read data
     ami_control_dag_factory(
-        f"{adapter.org_id}-ami-meter-read-dag-standard", "0 12 * * *", {}, adapter
+        f"{adapter.org_id}-ami-meter-read-dag-standard",
+        "0 12 * * *",
+        {},
+        adapter,
+        sns_notifier,
     )
 
 # Create DAGs for configured backfill runs
@@ -121,5 +147,6 @@ for backfill in backfills:
         backfill.schedule,
         {},
         matching_adapters[0],
+        sns_notifier,
         backfill_params=backfill,
     )

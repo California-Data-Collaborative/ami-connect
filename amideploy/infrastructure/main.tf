@@ -168,6 +168,43 @@ resource "aws_instance" "ami_connect_airflow_server" {
   }
 }
 
+resource "aws_sns_topic" "ami_connect_airflow_alerts" {
+  name = "ami-connect-airflow-alerts"
+}
+
+output "airflow_alerts_sns_topic" {
+  value     = aws_sns_topic.ami_connect_airflow_alerts.arn
+  sensitive = false
+}
+
+resource "aws_sns_topic_subscription" "email" {
+  for_each = toset(var.alert_emails)
+
+  topic_arn = aws_sns_topic.ami_connect_airflow_alerts.arn
+  protocol  = "email"
+  endpoint  = each.value
+}
+
+resource "aws_iam_policy" "airflow_sns_publish" {
+  name        = "AirflowSnsPublishPolicy"
+  description = "Allows Airflow to publish messages to the SNS topic"
+  policy      = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = "sns:Publish"
+        Resource = aws_sns_topic.ami_connect_airflow_alerts.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "airflow_attach_sns" {
+  role       = aws_iam_role.ami_connect_pipeline.name
+  policy_arn = aws_iam_policy.airflow_sns_publish.arn
+}
+
 resource "aws_eip" "ami_connect_airflow_server_ip" {
   instance = aws_instance.ami_connect_airflow_server.id
 
