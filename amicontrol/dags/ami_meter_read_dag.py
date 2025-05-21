@@ -11,7 +11,14 @@ from amiadapters.config import (
 )
 
 
-def ami_control_dag_factory(dag_id, schedule, params, adapter, backfill_params=None):
+def ami_control_dag_factory(
+    dag_id,
+    schedule,
+    params,
+    adapter,
+    on_failure_sns_notifier,
+    backfill_params=None,
+):
     """
     Factory for AMI control meter read DAGs that run on different schedules:
     - The regular run, which refreshes recent data
@@ -26,6 +33,7 @@ def ami_control_dag_factory(dag_id, schedule, params, adapter, backfill_params=N
         catchup=False,
         start_date=datetime(2024, 1, 1),
         tags=["ami"],
+        on_failure_callback=on_failure_sns_notifier,
     )
     def ami_control_dag():
 
@@ -86,6 +94,7 @@ def ami_control_dag_factory(dag_id, schedule, params, adapter, backfill_params=N
 config = AMIAdapterConfiguration.from_yaml(find_config_yaml(), find_secrets_yaml())
 utility_adapters = config.adapters()
 backfills = config.backfills()
+on_failure_sns_notifier = config.on_failure_sns_notifier()
 
 # Create DAGs for each configured utility
 for adapter in utility_adapters:
@@ -103,12 +112,20 @@ for adapter in utility_adapters:
         ),
     }
     ami_control_dag_factory(
-        f"{adapter.org_id}-ami-meter-read-dag-manual", None, standard_params, adapter
+        f"{adapter.org_id}-ami-meter-read-dag-manual",
+        None,
+        standard_params,
+        adapter,
+        on_failure_sns_notifier,
     )
 
     # Standard run that fetches most recent meter read data
     ami_control_dag_factory(
-        f"{adapter.org_id}-ami-meter-read-dag-standard", "0 12 * * *", {}, adapter
+        f"{adapter.org_id}-ami-meter-read-dag-standard",
+        "0 12 * * *",
+        {},
+        adapter,
+        on_failure_sns_notifier,
     )
 
 # Create DAGs for configured backfill runs
@@ -121,5 +138,6 @@ for backfill in backfills:
         backfill.schedule,
         {},
         matching_adapters[0],
+        on_failure_sns_notifier,
         backfill_params=backfill,
     )
