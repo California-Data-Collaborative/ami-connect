@@ -2,18 +2,20 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Union
 import pathlib
+
+from airflow.providers.amazon.aws.notifications.sns import SnsNotifier
 from pytz import timezone, UTC
 from pytz.tzinfo import DstTzInfo
-import yaml
-
 import snowflake.connector
+import yaml
 
 
 class AMIAdapterConfiguration:
 
-    def __init__(self, sources, backfills=None):
+    def __init__(self, sources, backfills=None, notifications=None):
         self._sources = sources
         self._backfills = backfills if backfills is not None else []
+        self._notifications = notifications
 
     @classmethod
     def from_yaml(cls, config_file: str, secrets_file: str):
@@ -148,7 +150,19 @@ class AMIAdapterConfiguration:
                 )
             )
 
-        return AMIAdapterConfiguration(sources=sources, backfills=backfills)
+        # Notifications
+        notification_config = config_yaml.get("notifications", {})
+        on_failure_sns_arn = notification_config.get("dag_failure", {}).get("sns_arn")
+        if on_failure_sns_arn:
+            notifications = ConfiguredNotifications(
+                on_failure_sns_arn=on_failure_sns_arn
+            )
+        else:
+            notifications = None
+
+        return AMIAdapterConfiguration(
+            sources=sources, backfills=backfills, notifications=notifications
+        )
 
     def adapters(self):
         """
@@ -189,6 +203,20 @@ class AMIAdapterConfiguration:
 
     def backfills(self) -> List:
         return self._backfills
+
+    def on_failure_sns_notifier(self):
+        if (
+            self._notifications is not None
+            and self._notifications.on_failure_sns_arn is not None
+        ):
+            return SnsNotifier(
+                target_arn=self._notifications.on_failure_sns_arn,
+                message="The DAG {{ dag.dag_id }} failed",
+                aws_conn_id="aws_default",
+                subject="AMI Connect DAG Failure",
+                region_name="us-west-2",
+            )
+        return None
 
     def __repr__(self):
         return f"sources=[{", ".join(str(s) for s in self._sources)}]"
@@ -290,6 +318,15 @@ class ConfiguredS3TaskOutputController:
                 "ConfiguredS3TaskOutputController must have s3_bucket_name"
             )
         return s3_bucket_name
+
+
+@dataclass
+class ConfiguredNotifications:
+    """
+    Configuration for sending notifications on DAG/task state change, or other
+    """
+
+    on_failure_sns_arn: str  # SNS Topic ARN for notifications when DAGs fail
 
 
 @dataclass

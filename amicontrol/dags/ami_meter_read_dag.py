@@ -2,7 +2,6 @@ from datetime import datetime
 
 from airflow.decorators import dag, task
 from airflow.models.param import Param
-from airflow.providers.amazon.aws.notifications.sns import SnsNotifier
 
 from amiadapters.base import BaseAMIAdapter
 from amiadapters.config import (
@@ -17,7 +16,7 @@ def ami_control_dag_factory(
     schedule,
     params,
     adapter,
-    dag_failure_sns_notification,
+    on_failure_sns_notifier,
     backfill_params=None,
 ):
     """
@@ -34,7 +33,7 @@ def ami_control_dag_factory(
         catchup=False,
         start_date=datetime(2024, 1, 1),
         tags=["ami"],
-        on_failure_callback=dag_failure_sns_notification,
+        on_failure_callback=on_failure_sns_notifier,
     )
     def ami_control_dag():
 
@@ -95,15 +94,7 @@ def ami_control_dag_factory(
 config = AMIAdapterConfiguration.from_yaml(find_config_yaml(), find_secrets_yaml())
 utility_adapters = config.adapters()
 backfills = config.backfills()
-
-# TODO get arn from config
-sns_notifier = SnsNotifier(
-    target_arn="arn:aws:sns:us-west-2:179953071571:ami-connect-airflow-alerts",
-    message="The DAG {{ dag.dag_id }} failed",
-    aws_conn_id="aws_default",
-    subject="AMI Connect DAG Failure",
-    region_name="us-west-2",
-)
+on_failure_sns_notifier = config.on_failure_sns_notifier()
 
 # Create DAGs for each configured utility
 for adapter in utility_adapters:
@@ -125,7 +116,7 @@ for adapter in utility_adapters:
         None,
         standard_params,
         adapter,
-        sns_notifier,
+        on_failure_sns_notifier,
     )
 
     # Standard run that fetches most recent meter read data
@@ -134,7 +125,7 @@ for adapter in utility_adapters:
         "0 12 * * *",
         {},
         adapter,
-        sns_notifier,
+        on_failure_sns_notifier,
     )
 
 # Create DAGs for configured backfill runs
@@ -147,6 +138,6 @@ for backfill in backfills:
         backfill.schedule,
         {},
         matching_adapters[0],
-        sns_notifier,
+        on_failure_sns_notifier,
         backfill_params=backfill,
     )

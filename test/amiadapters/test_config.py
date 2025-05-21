@@ -2,6 +2,7 @@ from datetime import datetime
 import pathlib
 from unittest.mock import patch
 
+from airflow.providers.amazon.aws.notifications.sns import SnsNotifier
 import pytz
 
 from amiadapters.beacon import Beacon360Adapter
@@ -45,6 +46,8 @@ class TestConfig(BaseTestCase):
         self.assertEqual("my_schema", sink.secrets.schema)
 
         self.assertEqual([], config._backfills)
+
+        self.assertIsNone(config.on_failure_sns_notifier())
 
     def test_can_instantiate_beacon_via_yaml(self):
         config = AMIAdapterConfiguration.from_yaml(
@@ -130,6 +133,15 @@ class TestConfig(BaseTestCase):
         self.assertEqual(2, len(adapters))
         self.assertIn(SentryxAdapter, map(lambda a: type(a), adapters))
         self.assertIn(Beacon360Adapter, map(lambda a: type(a), adapters))
+
+    def test_can_create_on_failure_notifier(self):
+        config = AMIAdapterConfiguration.from_yaml(
+            self.get_fixture_path("beacon-360-config.yaml"),
+            self.get_fixture_path("beacon-360-secrets.yaml"),
+        )
+        notifier = config.on_failure_sns_notifier()
+        self.assertIsInstance(notifier, SnsNotifier)
+        self.assertEqual("my-sns-arn", notifier.target_arn)
 
 
 class TestFindConfigAndSecrets(BaseTestCase):
