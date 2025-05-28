@@ -1,0 +1,18 @@
+sources:
+- type: aclara
+  org_id: my_utility
+  timezone: America/Los_Angeles
+  sftp_host: example.com
+  sftp_remote_data_directory: ./data
+  sftp_local_download_directory: ./output
+  sftp_local_known_hosts_file: ./known-hosts
+  sinks:
+  - my_snowflake_instance
+
+sinks:
+- type: snowflake
+  id: my_snowflake_instance
+
+task_output:
+  type: s3
+  bucket: my-bucket

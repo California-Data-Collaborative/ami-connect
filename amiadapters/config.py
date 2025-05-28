@@ -87,6 +87,11 @@ class AMIAdapterConfiguration:
             # Parse secrets for data source
             this_source_secrets = secrets_yaml.get("sources", {}).get(org_id)
             match type:
+                case ConfiguredAMISourceType.ACLARA:
+                    secrets = AclaraSecrets(
+                        this_source_secrets.get("sftp_user"),
+                        this_source_secrets.get("sftp_password"),
+                    )
                 case ConfiguredAMISourceType.BEACON_360:
                     secrets = Beacon360Secrets(
                         this_source_secrets.get("beacon_360_user"),
@@ -108,6 +113,13 @@ class AMIAdapterConfiguration:
                     raise ValueError(f"Unrecognized sink {sink_id} for source {org_id}")
                 sinks.append(sink)
 
+            configured_sftp = ConfiguredSftp(
+                source.get("sftp_host"),
+                source.get("sftp_remote_data_directory"),
+                source.get("sftp_local_download_directory"),
+                source.get("sftp_local_known_hosts_file"),
+            )
+
             configured_source = ConfiguredAMISource(
                 type,
                 org_id,
@@ -115,6 +127,7 @@ class AMIAdapterConfiguration:
                 source.get("use_raw_data_cache"),
                 task_output_controller,
                 source.get("utility_name"),
+                configured_sftp,
                 secrets,
                 sinks,
             )
@@ -170,12 +183,25 @@ class AMIAdapterConfiguration:
         Reads configuration to see which adapters to run and where to store the data.
         """
         # Circular import, TODO fix
+        from amiadapters.aclara import AclaraAdapter
         from amiadapters.beacon import Beacon360Adapter
         from amiadapters.sentryx import SentryxAdapter
 
         adapters = []
         for source in self._sources:
             match source.type:
+                case ConfiguredAMISourceType.ACLARA:
+                    adapters.append(
+                        AclaraAdapter(
+                            source.org_id,
+                            source.timezone,
+                            source.configured_sftp,
+                            source.secrets.sftp_user,
+                            source.secrets.sftp_password,
+                            source.task_output_controller,
+                            source.storage_sinks,
+                        )
+                    )
                 case ConfiguredAMISourceType.BEACON_360:
                     adapters.append(
                         Beacon360Adapter(
@@ -343,6 +369,12 @@ class Backfill:
 
 
 @dataclass
+class AclaraSecrets:
+    sftp_user: str
+    sftp_password: str
+
+
+@dataclass
 class Beacon360Secrets:
     user: str
     password: str
@@ -353,7 +385,16 @@ class SentryxSecrets:
     api_key: str
 
 
+@dataclass
+class ConfiguredSftp:
+    host: str
+    remote_data_directory: str
+    local_download_directory: str
+    local_known_hosts_file: str
+
+
 class ConfiguredAMISourceType:
+    ACLARA = "aclara"
     BEACON_360 = "beacon_360"
     SENTRYX = "sentryx"
 
@@ -375,6 +416,7 @@ class ConfiguredAMISource:
             ConfiguredLocalTaskOutputController, ConfiguredS3TaskOutputController
         ],
         utility_name: str,
+        configured_sftp: ConfiguredSftp,
         secrets: Union[Beacon360Secrets, SentryxSecrets],
         sinks: List[ConfiguredStorageSink],
     ):
@@ -386,11 +428,13 @@ class ConfiguredAMISource:
             task_output_controller
         )
         self.utility_name = utility_name
+        self.configured_sftp = self._configured_sftp(configured_sftp)
         self.secrets = self._secrets(secrets)
         self.storage_sinks = self._sinks(sinks)
 
     def _type(self, type: str) -> str:
         if type in {
+            ConfiguredAMISourceType.ACLARA,
             ConfiguredAMISourceType.BEACON_360,
             ConfiguredAMISourceType.SENTRYX,
         }:
@@ -417,7 +461,30 @@ class ConfiguredAMISource:
             raise ValueError("AMI Source must have task_output_controller")
         return task_output_controller
 
-    def _secrets(self, secrets: str) -> Union[Beacon360Secrets]:
+    def _configured_sftp(self, configured_sftp: ConfiguredSftp) -> ConfiguredSftp:
+        if self.type == ConfiguredAMISourceType.ACLARA:
+            if any(
+                i is None
+                for i in [
+                    configured_sftp.host,
+                    configured_sftp.local_download_directory,
+                    configured_sftp.local_known_hosts_file,
+                    configured_sftp.remote_data_directory,
+                ]
+            ):
+                raise ValueError(
+                    f"Invalid SFTP config for source with type {self.type}"
+                )
+        return configured_sftp
+
+    def _secrets(self, secrets: str) -> Union[Beacon360Secrets, SentryxSecrets]:
+        if secrets is None:
+            return None
+
+        if self.type == ConfiguredAMISourceType.ACLARA and isinstance(
+            secrets, AclaraSecrets
+        ):
+            return secrets
         if self.type == ConfiguredAMISourceType.BEACON_360 and isinstance(
             secrets, Beacon360Secrets
         ):
@@ -432,10 +499,11 @@ class ConfiguredAMISource:
         """
         Validate that this type of sink is compatible with this data source type.
         """
-        if self.type == ConfiguredAMISourceType.BEACON_360:
-            if all(s.type == ConfiguredStorageSinkType.SNOWFLAKE for s in sinks):
-                return sinks
-        elif self.type == ConfiguredAMISourceType.SENTRYX:
+        if self.type in {
+            ConfiguredAMISourceType.ACLARA,
+            ConfiguredAMISourceType.BEACON_360,
+            ConfiguredAMISourceType.SENTRYX,
+        }:
             if all(s.type == ConfiguredStorageSinkType.SNOWFLAKE for s in sinks):
                 return sinks
         raise ValueError(f"Invalid sink type(s) for source type {self.type}")

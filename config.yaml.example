@@ -6,6 +6,15 @@ sources:
   use_raw_data_cache: False
   sinks:
   - my_snowflake_instance
+- type: aclara
+  org_id: my_aclara_utility
+  timezone: America/Los_Angeles
+  sftp_host: example.com
+  sftp_remote_data_directory: ./data
+  sftp_local_download_directory: ./output
+  sftp_local_known_hosts_file: ./known-hosts
+  sinks:
+  - cadc_snowflake
 
 sinks:
 - type: snowflake
@@ -16,6 +25,10 @@ task_output:
   bucket: my-s3-bucket-name-from-terraform
   # Only used for local development, likely the name of the profile you use for terraform
   dev_profile: my-local-aws-profile
+
+notifications:
+  dag_failure:
+    sns_arn: my-arn-from-terraform-output
 
 # Optionally specify DAGs for backfills between start_date and end_date
 backfills:

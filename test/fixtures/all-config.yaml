@@ -1,3 +1,4 @@
+# Should have one source for each type
 sources:
 - type: beacon_360
   org_id: my_beacon_utility
@@ -9,6 +10,15 @@ sources:
   org_id: my_sentryx_utility
   timezone: America/Los_Angeles
   use_raw_data_cache: False
+  sinks:
+  - my_snowflake_instance
+- type: aclara
+  org_id: my_aclara_utility
+  timezone: America/Los_Angeles
+  sftp_host: example.com
+  sftp_remote_data_directory: ./data
+  sftp_local_download_directory: ./output
+  sftp_local_known_hosts_file: ./known-hosts
   sinks:
   - my_snowflake_instance
 
