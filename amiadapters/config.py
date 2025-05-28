@@ -170,12 +170,22 @@ class AMIAdapterConfiguration:
         Reads configuration to see which adapters to run and where to store the data.
         """
         # Circular import, TODO fix
+        from amiadapters.aclara import AclaraAdapter
         from amiadapters.beacon import Beacon360Adapter
         from amiadapters.sentryx import SentryxAdapter
 
         adapters = []
         for source in self._sources:
             match source.type:
+                case ConfiguredAMISourceType.ACLARA:
+                    adapters.append(
+                        AclaraAdapter(
+                            source.org_id,
+                            source.timezone,
+                            source.task_output_controller,
+                            source.storage_sinks,
+                        )
+                    )
                 case ConfiguredAMISourceType.BEACON_360:
                     adapters.append(
                         Beacon360Adapter(
@@ -354,6 +364,7 @@ class SentryxSecrets:
 
 
 class ConfiguredAMISourceType:
+    ACLARA = "aclara"
     BEACON_360 = "beacon_360"
     SENTRYX = "sentryx"
 
@@ -391,6 +402,7 @@ class ConfiguredAMISource:
 
     def _type(self, type: str) -> str:
         if type in {
+            ConfiguredAMISourceType.ACLARA,
             ConfiguredAMISourceType.BEACON_360,
             ConfiguredAMISourceType.SENTRYX,
         }:
@@ -417,7 +429,10 @@ class ConfiguredAMISource:
             raise ValueError("AMI Source must have task_output_controller")
         return task_output_controller
 
-    def _secrets(self, secrets: str) -> Union[Beacon360Secrets]:
+    def _secrets(self, secrets: str) -> Union[Beacon360Secrets, SentryxSecrets]:
+        if secrets is None:
+            return None
+
         if self.type == ConfiguredAMISourceType.BEACON_360 and isinstance(
             secrets, Beacon360Secrets
         ):
@@ -432,10 +447,11 @@ class ConfiguredAMISource:
         """
         Validate that this type of sink is compatible with this data source type.
         """
-        if self.type == ConfiguredAMISourceType.BEACON_360:
-            if all(s.type == ConfiguredStorageSinkType.SNOWFLAKE for s in sinks):
-                return sinks
-        elif self.type == ConfiguredAMISourceType.SENTRYX:
+        if self.type in {
+            ConfiguredAMISourceType.ACLARA,
+            ConfiguredAMISourceType.BEACON_360,
+            ConfiguredAMISourceType.SENTRYX,
+        }:
             if all(s.type == ConfiguredStorageSinkType.SNOWFLAKE for s in sinks):
                 return sinks
         raise ValueError(f"Invalid sink type(s) for source type {self.type}")

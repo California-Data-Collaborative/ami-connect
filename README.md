@@ -105,3 +105,15 @@ Re-run the command to start the application:
 airflow standalone
 ```
 Watch for the `admin` user and its password in `stdout`. Use those credentials to login. You should see our DAGs!
+
+## How to add a new Adapter
+
+Adapters integrate an AMI data source with our pipeline. In general, when you create one, you'll need to define
+how it extracts data from the AMI data source, how it transforms that data into our generalized format, and (optionally) how it stores raw extracted data into storage sinks.
+
+Steps:
+1. In a new python file within `amiadapters`, create a new implementation of the `BaseAMIAdapter` abstract class.
+2. define extract
+3. define transform
+4. define raw load, including SQL and anything else for setup
+5. Add to configuration
