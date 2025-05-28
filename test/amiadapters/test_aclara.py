@@ -5,7 +5,7 @@ import pytz
 from unittest.mock import MagicMock, mock_open, patch
 
 from amiadapters.models import DataclassJSONEncoder
-from amiadapters.config import ConfiguredLocalTaskOutputController
+from amiadapters.config import ConfiguredLocalTaskOutputController, ConfiguredSftp
 from amiadapters.aclara import AclaraAdapter, AclaraMeterAndRead, files_for_date_range
 
 from test.base_test_case import BaseTestCase
@@ -17,12 +17,14 @@ class TestAclaraAdapter(BaseTestCase):
         self.adapter = AclaraAdapter(
             org_id="this-org",
             org_timezone=pytz.timezone("Europe/Rome"),
-            sftp_host="example.com",
+            configured_sftp=ConfiguredSftp(
+                host="example.com",
+                remote_data_directory="/remote",
+                local_download_directory="/tmp/downloads",
+                local_known_hosts_file="/tmp/known",
+            ),
             sftp_user="user",
             sftp_password="pw",
-            sftp_meter_and_reads_folder="/remote",
-            local_download_directory="/tmp/downloads",
-            local_known_hosts_file="/tmp/known",
             configured_task_output_controller=ConfiguredLocalTaskOutputController(
                 "/tmp/output"
             ),

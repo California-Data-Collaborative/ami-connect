@@ -5,6 +5,7 @@ from unittest.mock import patch
 from airflow.providers.amazon.aws.notifications.sns import SnsNotifier
 import pytz
 
+from amiadapters.aclara import AclaraAdapter
 from amiadapters.beacon import Beacon360Adapter
 from amiadapters.config import (
     AMIAdapterConfiguration,
@@ -12,7 +13,6 @@ from amiadapters.config import (
     find_secrets_yaml,
 )
 from amiadapters.sentryx import SentryxAdapter
-
 from test.base_test_case import BaseTestCase
 
 
@@ -76,32 +76,23 @@ class TestConfig(BaseTestCase):
         self.assertEqual("my_database", sink.secrets.database)
         self.assertEqual("my_schema", sink.secrets.schema)
 
-    def test_can_instantiate_beacon_via_yaml(self):
+    def test_can_instantiate_aclara_via_yaml(self):
         config = AMIAdapterConfiguration.from_yaml(
-            self.get_fixture_path("beacon-360-config.yaml"),
-            self.get_fixture_path("beacon-360-secrets.yaml"),
+            self.get_fixture_path("aclara-config.yaml"),
+            self.get_fixture_path("aclara-secrets.yaml"),
         )
         self.assertEqual(1, len(config._sources))
         source = config._sources[0]
-        self.assertEqual("beacon_360", source.type)
+        self.assertEqual("aclara", source.type)
         self.assertEqual("my_utility", source.org_id)
         self.assertEqual("America/Los_Angeles", str(source.timezone))
-        self.assertEqual(True, source.use_raw_data_cache)
         self.assertEqual("my-bucket", source.task_output_controller.s3_bucket_name)
-        self.assertEqual("my_user", source.secrets.user)
-        self.assertEqual("my_password", source.secrets.password)
-
-        self.assertEqual(1, len(source.storage_sinks))
-        sink = source.storage_sinks[0]
-        self.assertEqual("snowflake", sink.type)
-        self.assertEqual("my_snowflake_instance", sink.id)
-        self.assertEqual("my_account", sink.secrets.account)
-        self.assertEqual("my_user", sink.secrets.user)
-        self.assertEqual("my_password", sink.secrets.password)
-        self.assertEqual("my_role", sink.secrets.role)
-        self.assertEqual("my_warehouse", sink.secrets.warehouse)
-        self.assertEqual("my_database", sink.secrets.database)
-        self.assertEqual("my_schema", sink.secrets.schema)
+        self.assertEqual("example.com", source.configured_sftp.host)
+        self.assertEqual("./data", source.configured_sftp.remote_data_directory)
+        self.assertEqual("./output", source.configured_sftp.local_download_directory)
+        self.assertEqual("./known-hosts", source.configured_sftp.local_known_hosts_file)
+        self.assertEqual("my_user", source.secrets.sftp_user)
+        self.assertEqual("my_password", source.secrets.sftp_password)
 
     def test_can_instantiate_backfills_from_yaml(self):
         config = AMIAdapterConfiguration.from_yaml(
@@ -130,7 +121,8 @@ class TestConfig(BaseTestCase):
         )
         adapters = config.adapters()
 
-        self.assertEqual(2, len(adapters))
+        self.assertEqual(3, len(adapters))
+        self.assertIn(AclaraAdapter, map(lambda a: type(a), adapters))
         self.assertIn(SentryxAdapter, map(lambda a: type(a), adapters))
         self.assertIn(Beacon360Adapter, map(lambda a: type(a), adapters))
 

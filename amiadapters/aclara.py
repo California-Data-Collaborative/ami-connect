@@ -10,7 +10,7 @@ import paramiko
 import pytz
 
 from amiadapters.base import BaseAMIAdapter
-from amiadapters.config import ConfiguredStorageSink, ConfiguredStorageSinkType
+from amiadapters.config import ConfiguredSftp, ConfiguredStorageSink, ConfiguredStorageSinkType
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
 from amiadapters.storage.snowflake import SnowflakeStorageSink
@@ -59,21 +59,18 @@ class AclaraAdapter(BaseAMIAdapter):
         self,
         org_id,
         org_timezone,
-        sftp_host,
+        configured_sftp: ConfiguredSftp,
         sftp_user,
         sftp_password,
-        sftp_meter_and_reads_folder,
-        local_download_directory,
-        local_known_hosts_file,
         configured_task_output_controller,
         configured_sinks,
     ):
-        self.sftp_host = sftp_host
+        self.sftp_host = configured_sftp.host
         self.sftp_user = sftp_user
         self.sftp_password = sftp_password
-        self.sftp_meter_and_reads_folder = sftp_meter_and_reads_folder
-        self.local_download_directory = local_download_directory
-        self.local_known_hosts_file = local_known_hosts_file
+        self.sftp_meter_and_reads_folder = configured_sftp.remote_data_directory
+        self.local_download_directory = configured_sftp.local_download_directory
+        self.local_known_hosts_file = configured_sftp.local_known_hosts_file
         task_output_controller = self.create_task_output_controller(
             configured_task_output_controller, org_id
         )
