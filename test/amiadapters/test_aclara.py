@@ -1,13 +1,13 @@
 from datetime import datetime
 from io import StringIO
 import json
-import pytz
 from unittest.mock import MagicMock, mock_open, patch
+
+import pytz
 
 from amiadapters.models import DataclassJSONEncoder
 from amiadapters.config import ConfiguredLocalTaskOutputController, ConfiguredSftp
 from amiadapters.aclara import AclaraAdapter, AclaraMeterAndRead, files_for_date_range
-
 from test.base_test_case import BaseTestCase
 
 
@@ -110,7 +110,7 @@ class TestAclaraAdapter(BaseTestCase):
             "AccountNumber,MeterSN,MTUID,Port,AccountType,Address1,City,State,Zip,"
             "RawRead,ScaledRead,ReadingTime,LocalTime,Active,Scalar,MeterTypeID,Vendor,Model,Description,ReadInterval\n"
             "123,456789,MTU001,1,Residential,123 Main St,Anytown,CA,90210,"
-            "1000,120.5,2025-05-25 16:00:00.000,2025-05-25 09:00:00.000,1,1.0,5,VendorA,ModelX,Desc,15\n"
+            "1000,120.5,2025-05-25 16:00:00.000,2025-05-25 09:00:00.000,1,1.0,5,VendorA,ModelX,Badger M25/LP HRE LCD 5/8x3/4in 9D 0.001CuFt,15\n"
         )
         # Simulate the content of the opened file
         mock_file.return_value = StringIO(mock_csv_content)
@@ -139,7 +139,7 @@ class TestAclaraAdapter(BaseTestCase):
             MeterTypeID="5",
             Vendor="VendorA",
             Model="ModelX",
-            Description="Desc",
+            Description="Badger M25/LP HRE LCD 5/8x3/4in 9D 0.001CuFt",
             ReadInterval="15",
         )
         expected_json = json.dumps(expected_obj, cls=DataclassJSONEncoder)
@@ -165,8 +165,11 @@ class TestAclaraAdapter(BaseTestCase):
         read = reads[0]
 
         self.assertEqual(meter.org_id, "this-org")
-        self.assertEqual(read.device_id, "2")
-        self.assertEqual(read.register_value, 23497071)
+        self.assertEqual(meter.meter_id, "1")
+        self.assertEqual(meter.endpoint_id, "2")
+        self.assertEqual(meter.meter_size, "0.625x0.75")
+        self.assertEqual(read.device_id, "1")
+        self.assertEqual(read.register_value, 23497.071)
 
     def test_skips_detector_check_account_type(self):
         input_data = [self.meter_and_read_factory(account_type="DETECTOR CHECK")]
@@ -174,6 +177,46 @@ class TestAclaraAdapter(BaseTestCase):
         meters, reads = self.adapter._transform_meters_and_reads(input_data)
         self.assertEqual(len(meters), 0)
         self.assertEqual(len(reads), 0)
+
+    def test_parse_meter_size_from_description(self):
+        cases = [
+            ('Sensus W2000 6" 8D 1CuFt', "6"),
+            ("Badger HRE LCD T450 3in 7D 1CuFt", "3"),
+            ('Badger Ultrasonic 4" 9D 0.01CuFt', "4"),
+            ("Elster evoQ4 3in 8D 1CuFt", "3"),
+            ("Elster evoQ4 6in 8D 1CuFt", "6"),
+            ("M35 Badger HR-E LCD 3/4in 9D 0.001Cu.Ft.", "0.75"),
+            ('SENSUS OMNI C2 3" 7D 1CuFt', "3"),
+            ("Elster evoQ4 4in 8D 1CuFt", "4"),
+            ("Badger HR E-Series 1.5in 9D 0.01Cu.Ft. DD", "1.5"),
+            ("M170 Badger HR-E LCD 2in 9D 0.01Cu.Ft.", "2"),
+            ("M120 Badger HR-E LCD 1.5in 9D 0.01Cu.Ft.", "1.5"),
+            ('Badger G2 3" 9D .01 Cu.Ft.', "3"),
+            ("SENSUS OMNI C2 1.5  7D 1CuFt", "1.5"),
+            ("Badger HR E-Series 3/4in 9D 0.001Cu.Ft. DD", "0.75"),
+            ("M70 Badger HR-E LCD 1in 9D 0.001Cu.Ft.", "1"),
+            ('SENSUS OMNI C2 2"  7D 1CuFt', "2"),
+            ('SENSUS OMNI T2 2" 7D 1CuFt', "2"),
+            ("Sensus SRII/aS E-Register 3/4 6D 1CuFt", "0.75"),
+            ("Badger HR E-Series 1in 9D 0.001Cu.Ft. DD", "1"),
+            ("Badger HR E-Series 2in 9D 0.01CuFt", "2"),
+            ("Badger HR-E LCD LP/M25 5/8x3/4in 9D 0.001Cu.Ft. DD", "0.625x0.75"),
+            ("Badger M170 HRE LCD 2in 9D 0.01CuFt", "2"),
+            ("Badger HR E-Series 1.5 Inch 9D 0.01CuFt", "1.5"),
+            ("Badger M120 HRE LCD 1.5in 9D 0.01CuFt", "1.5"),
+            ("Badger HR E-Series 5/8in 9D 0.001Cu.Ft. DD", "0.625"),
+            ("Badger HRE E-Series 3/4in 9D 0.001CuFt", "0.75"),
+            ("Sensus SRII/aS E-Register 5/8x3/4 6D 1CuFt", "0.625x0.75"),
+            ("Badger M35 HRE LCD 3/4in 9D 0.001CuFt", "0.75"),
+            ("Badger M40/M55/M70 HRE LCD 1in 9D 0.001CuFt", "1"),
+            ("Badger HRE E-Series 1in 9D 0.001CuFt", "1"),
+            ("Sensus SRII/aS E-Register 1 6D 1CuFt", "1"),
+            ("Badger HRE E-Series 5/8in 9D 0.001CuFt", "0.625"),
+            ("Badger M25/LP HRE LCD 5/8x3/4in 9D 0.001CuFt", "0.625x0.75"),
+        ]
+        for description, expected in cases:
+            result = self.adapter.parse_meter_size_from_description(description)
+            self.assertEqual(expected, result, f"Invalid mapping for: {description}")
 
 
 class TestFilesForDateRange(BaseTestCase):
