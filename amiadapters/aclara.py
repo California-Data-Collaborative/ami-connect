@@ -9,7 +9,7 @@ from typing import Generator, List, Tuple
 import paramiko
 import pytz
 
-from amiadapters.base import BaseAMIAdapter
+from amiadapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
 from amiadapters.config import (
     ConfiguredSftp,
     ConfiguredStorageSink,
@@ -214,7 +214,7 @@ class AclaraAdapter(BaseAMIAdapter):
             if meter_and_read.AccountType == "DETECTOR CHECK":
                 continue
 
-            meter_id = meter_and_read.MTUID
+            meter_id = meter_and_read.MeterSN
 
             meter = GeneralMeter(
                 org_id=self.org_id,
@@ -222,9 +222,11 @@ class AclaraAdapter(BaseAMIAdapter):
                 account_id=account_id,
                 location_id=None,
                 meter_id=meter_id,
-                endpoint_id=meter_and_read.MeterSN,
+                endpoint_id=meter_and_read.MTUID,
                 meter_install_date=None,
-                meter_size=None,
+                meter_size=self.parse_meter_size_from_description(
+                    meter_and_read.Description
+                ),
                 meter_manufacturer=meter_and_read.Vendor,
                 multiplier=meter_and_read.Scalar,
                 location_address=meter_and_read.Address1,
@@ -242,14 +244,73 @@ class AclaraAdapter(BaseAMIAdapter):
                 account_id=account_id,
                 location_id=None,
                 flowtime=flowtime,
-                register_value=float(meter_and_read.RawRead),
-                register_unit=None,
+                register_value=float(meter_and_read.ScaledRead),
+                register_unit=GeneralMeterUnitOfMeasure.CUBIC_FEET,
                 interval_value=None,
                 interval_unit=None,
             )
             transformed_reads.append(read)
 
         return transformed_meters, transformed_reads
+
+    def parse_meter_size_from_description(self, description: str) -> str:
+        """
+        Aclara does not give us meter size, so we try to parse it from the Description field.
+        Sample of descriptions and their frequencies (the left most number) across a few days in May 2025:
+
+        36 Sensus W2000 6" 8D 1CuFt
+        72 Badger HRE LCD T450 3in 7D 1CuFt
+        72 Badger Ultrasonic 4" 9D 0.01CuFt
+        72 Elster evoQ4 3in 8D 1CuFt
+        72 Elster evoQ4 6in 8D 1CuFt
+        72 M35 Badger HR-E LCD 3/4in 9D 0.001Cu.Ft.
+        72 SENSUS OMNI C2 3" 7D 1CuFt
+        78 Elster evoQ4 4in 8D 1CuFt
+        138 Badger HR E-Series 1.5in 9D 0.01Cu.Ft. DD
+        144 M170 Badger HR-E LCD 2in 9D 0.01Cu.Ft.
+        210 M120 Badger HR-E LCD 1.5in 9D 0.01Cu.Ft.
+        216 Badger G2 3" 9D .01 Cu.Ft.
+        216 SENSUS OMNI C2 1.5  7D 1CuFt
+        282 Badger HR E-Series 3/4in 9D 0.001Cu.Ft. DD
+        438 M70 Badger HR-E LCD 1in 9D 0.001Cu.Ft.
+        576 SENSUS OMNI C2 2"  7D 1CuFt
+        930 SENSUS OMNI T2 2" 7D 1CuFt
+        1278 Sensus SRII/aS E-Register 3/4 6D 1CuFt
+        1506 Badger HR E-Series 1in 9D 0.001Cu.Ft. DD
+        1509 Badger HR E-Series 2in 9D 0.01CuFt
+        2238 Badger HR-E LCD LP/M25 5/8x3/4in 9D 0.001Cu.Ft. DD
+        2598 Badger M170 HRE LCD 2in 9D 0.01CuFt
+        2611 Badger HR E-Series 1.5 Inch 9D 0.01CuFt
+        2794 Badger M120 HRE LCD 1.5in 9D 0.01CuFt
+        3204 Badger HR E-Series 5/8in 9D 0.001Cu.Ft. DD
+        3263 Badger HRE E-Series 3/4in 9D 0.001CuFt
+        5640 Sensus SRII/aS E-Register 5/8x3/4 6D 1CuFt
+        11610 Badger M35 HRE LCD 3/4in 9D 0.001CuFt
+        11832 Badger M40/M55/M70 HRE LCD 1in 9D 0.001CuFt
+        15119 Badger HRE E-Series 1in 9D 0.001CuFt
+        39258 Sensus SRII/aS E-Register 1 6D 1CuFt
+        44435 Badger HRE E-Series 5/8in 9D 0.001CuFt
+        403428 Badger M25/LP HRE LCD 5/8x3/4in 9D 0.001CuFt
+        """
+        parts = description.strip().split(" ")
+        if len(parts) > 4:
+            mapped = self.map_meter_size(parts[4])
+            if mapped is not None:
+                return mapped
+        if len(parts) > 5:
+            mapped = self.map_meter_size(parts[5])
+            if mapped is not None:
+                return mapped
+        if len(parts) > 3:
+            mapped = self.map_meter_size(parts[3])
+            if mapped is not None:
+                return mapped
+        if len(parts) > 2:
+            mapped = self.map_meter_size(parts[2])
+            if mapped is not None:
+                return mapped
+        logger.info(f"Could not find meter size in description: {description}")
+        return None
 
 
 def files_for_date_range(
