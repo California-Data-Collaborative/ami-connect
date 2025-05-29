@@ -34,7 +34,7 @@ class TestAclaraAdapter(BaseTestCase):
         self.range_end = datetime(2024, 1, 3, 0, 0)
 
     def meter_and_read_factory(
-        self, account_type: str = "Residential"
+        self, account_type: str = "Residential", scaled_read: str = "023497.071"
     ) -> AclaraMeterAndRead:
         return AclaraMeterAndRead(
             AccountNumber="17305709",
@@ -47,7 +47,7 @@ class TestAclaraAdapter(BaseTestCase):
             State="CA",
             Zip="00000",
             RawRead="23497071",
-            ScaledRead="023497.071",
+            ScaledRead=scaled_read,
             ReadingTime="2025-05-25 16:00:00.000",
             LocalTime="2025-05-25 09:00:00.000",
             Active="1",
@@ -170,6 +170,17 @@ class TestAclaraAdapter(BaseTestCase):
         self.assertEqual(meter.meter_size, "0.625x0.75")
         self.assertEqual(read.device_id, "1")
         self.assertEqual(read.register_value, 23497.071)
+
+    def test_transforms_scaled_read_with_value_ERROR(self):
+        input_data = [self.meter_and_read_factory(scaled_read="ERROR")]
+
+        meters, reads = self.adapter._transform_meters_and_reads(input_data)
+
+        self.assertEqual(len(meters), 1)
+        self.assertEqual(len(reads), 1)
+
+        read = reads[0]
+        self.assertIsNone(read.register_value)
 
     def test_skips_detector_check_account_type(self):
         input_data = [self.meter_and_read_factory(account_type="DETECTOR CHECK")]

@@ -237,6 +237,11 @@ class AclaraAdapter(BaseAMIAdapter):
             transformed_meters.add(meter)
 
             flowtime = self.datetime_from_iso_str(meter_and_read.ReadingTime, pytz.UTC)
+            register_value = (
+                float(meter_and_read.ScaledRead)
+                if meter_and_read.ScaledRead != "ERROR"
+                else None
+            )
 
             read = GeneralMeterRead(
                 org_id=self.org_id,
@@ -244,7 +249,7 @@ class AclaraAdapter(BaseAMIAdapter):
                 account_id=account_id,
                 location_id=None,
                 flowtime=flowtime,
-                register_value=float(meter_and_read.ScaledRead),
+                register_value=register_value,
                 register_unit=GeneralMeterUnitOfMeasure.CUBIC_FEET,
                 interval_value=None,
                 interval_unit=None,
