@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, time
 from typing import List
 import pytz
 
@@ -218,6 +218,8 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             ),
         )
         rows = [i for i in result]
-        if len(rows) != 1 or rows[0][0] is None:
+        if rows is None or len(rows) != 1 or rows[0][0] is None:
             return max_date
-        return rows[0][0]
+
+        result = rows[0][0]
+        return datetime.combine(result, time(0, 0))

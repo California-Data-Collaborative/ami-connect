@@ -333,8 +333,8 @@ def files_for_date_range(
             date = datetime.strptime(date_str, "%m%d%Y")
             if extract_range_start <= date <= extract_range_end:
                 result.append(filename)
-        except Exception:
-            logger.info(f"Skipping file {filename} because failed to parse date")
+        except Exception as e:
+            logger.info(f"Skipping file {filename} because failed to determine if date is in range: {str(e)}")
     return result
 
 
