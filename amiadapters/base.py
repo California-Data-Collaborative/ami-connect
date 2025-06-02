@@ -5,12 +5,15 @@ from typing import List, Tuple
 from pytz import timezone
 from pytz.tzinfo import DstTzInfo
 
-from amiadapters.config import Backfill
-from amiadapters.outputs.base import BaseTaskOutputController
+from amiadapters.config import (
+    Backfill,
+    ConfiguredStorageSink,
+    ConfiguredStorageSinkType,
+)
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
 from amiadapters.storage.base import BaseAMIStorageSink
-from amiadapters.storage.snowflake import SnowflakeStorageSink
+from amiadapters.storage.snowflake import SnowflakeStorageSink, RawSnowflakeLoader
 
 
 class BaseAMIAdapter(ABC):
@@ -24,13 +27,26 @@ class BaseAMIAdapter(ABC):
         self,
         org_id: str,
         org_timezone: DstTzInfo,
-        task_output_controller: BaseTaskOutputController,
-        storage_sinks: List[BaseAMIStorageSink] = None,
+        configured_task_output_controller,
+        configured_sinks: List[ConfiguredStorageSink] = None,
+        raw_snowflake_loader: RawSnowflakeLoader = None,
     ):
+        """
+        The code takes a shortcut: raw_snowflake_loader is used for any Snowflake sink. We may
+        want to improve this someday because it is not very generic, but it works for now.
+        """
         self.org_id = org_id
         self.org_timezone = org_timezone
-        self.output_controller = task_output_controller
-        self.storage_sinks = storage_sinks if storage_sinks is not None else []
+        self.output_controller = self._create_task_output_controller(
+            configured_task_output_controller, org_id
+        )
+        self.storage_sinks = self._create_storage_sinks(
+            configured_sinks,
+            self.output_controller,
+            self.org_id,
+            self.org_timezone,
+            raw_snowflake_loader,
+        )
 
     @abstractmethod
     def name(self) -> str:
@@ -163,7 +179,7 @@ class BaseAMIAdapter(ABC):
             )
 
     @staticmethod
-    def create_task_output_controller(configured_task_output_controller, org_id):
+    def _create_task_output_controller(configured_task_output_controller, org_id):
         """
         Create a task output controller from the config object.
         """
@@ -188,6 +204,29 @@ class BaseAMIAdapter(ABC):
         raise ValueError(
             f"Task output configuration with invalid type {configured_task_output_controller.type}"
         )
+
+    @staticmethod
+    def _create_storage_sinks(
+        configured_sinks: List[ConfiguredStorageSink],
+        output_controller,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        raw_snowflake_loader: RawSnowflakeLoader,
+    ) -> List[BaseAMIStorageSink]:
+        result = []
+        configured_sinks = configured_sinks if configured_sinks else []
+        for sink in configured_sinks:
+            if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
+                result.append(
+                    SnowflakeStorageSink(
+                        output_controller,
+                        org_id,
+                        org_timezone,
+                        sink,
+                        raw_snowflake_loader,
+                    )
+                )
+        return result
 
 
 class GeneralMeterUnitOfMeasure:

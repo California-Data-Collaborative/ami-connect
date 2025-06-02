@@ -5,6 +5,10 @@ from amiadapters.outputs.base import BaseTaskOutputController
 
 
 class BaseAMIStorageSink(ABC):
+    """
+    A storage sink is any place the AMI Connect pipeline
+    outputs data. Examples: Snowflake, local storage.
+    """
 
     def __init__(
         self,

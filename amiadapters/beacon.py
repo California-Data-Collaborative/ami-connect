@@ -5,18 +5,19 @@ from io import StringIO
 import json
 import logging
 import os
-from pytz.tzinfo import DstTzInfo
-import requests
 import time
 from typing import Generator, List, Tuple
+
+from pytz.tzinfo import DstTzInfo
+import requests
 
 from amiadapters.base import (
     BaseAMIAdapter,
 )
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
-from amiadapters.config import ConfiguredStorageSink, ConfiguredStorageSinkType
+from amiadapters.config import ConfiguredStorageSinkType
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
-from amiadapters.storage.snowflake import SnowflakeStorageSink
+from amiadapters.storage.snowflake import RawSnowflakeLoader, SnowflakeStorageSink
 
 logger = logging.getLogger(__name__)
 
@@ -105,22 +106,13 @@ class Beacon360Adapter(BaseAMIAdapter):
         self.password = api_password
         self.use_cache = use_cache
         self.cache_output_folder = cache_output_folder
-        task_output_controller = self.create_task_output_controller(
-            configured_task_output_controller, org_id
+        super().__init__(
+            org_id,
+            org_timezone,
+            configured_task_output_controller,
+            configured_sinks,
+            BeaconRawSnowflakeLoader(),
         )
-        # Must create storage sinks here because it's Beacon-specific
-        storage_sinks = []
-        for sink in configured_sinks:
-            if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
-                storage_sinks.append(
-                    BeaconSnowflakeStorageSink(
-                        task_output_controller,
-                        org_id,
-                        org_timezone,
-                        sink,
-                    )
-                )
-        super().__init__(org_id, org_timezone, task_output_controller, storage_sinks)
 
     def name(self) -> str:
         return f"beacon-360-{self.org_id}"
@@ -386,34 +378,24 @@ class Beacon360Adapter(BaseAMIAdapter):
         )
 
 
-class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
-    """
-    Beacon 360 implementation of Snowflake AMI Storage Sink. In addition to parent class's storage of generalized
-    data, this stores raw meters and reads into a Snowflake table.
-    """
+class BeaconRawSnowflakeLoader(RawSnowflakeLoader):
 
-    def __init__(
+    def load(
         self,
-        output_controller: BaseTaskOutputController,
+        run_id: str,
         org_id: str,
-        org_timezone: str,
-        sink_config: ConfiguredStorageSink,
+        org_timezone: DstTzInfo,
+        output_controller: BaseTaskOutputController,
+        snowflake_conn,
     ):
-        super().__init__(output_controller, sink_config)
-        self.org_id = org_id
-        self.org_timezone = org_timezone
-
-    def store_raw(self, run_id):
-        extract_outputs = self.output_controller.read_extract_outputs(run_id)
+        extract_outputs = output_controller.read_extract_outputs(run_id)
         text = extract_outputs.from_file("meters_and_reads.json")
         raw_meters_with_reads = [
             Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
         ]
 
-        conn = self.sink_config.connection()
-
         create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_beacon_360_base LIKE beacon_360_base;"
-        conn.cursor().execute(create_temp_table_sql)
+        snowflake_conn.cursor().execute(create_temp_table_sql)
 
         columns = ", ".join(REQUESTED_COLUMNS)
         qmarks = "?, " * (len(REQUESTED_COLUMNS) - 1) + "?"
@@ -421,15 +403,15 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
             INSERT INTO temp_beacon_360_base (org_id, device_id, created_time, {columns}) 
                 VALUES (?, ?, ?, {qmarks})
         """
-        created_time = datetime.now(tz=self.org_timezone)
+        created_time = datetime.now(tz=org_timezone)
         rows = [
             tuple(
-                [self.org_id, i.Meter_ID, created_time]
+                [org_id, i.Meter_ID, created_time]
                 + [i.__getattribute__(name) for name in REQUESTED_COLUMNS]
             )
             for i in raw_meters_with_reads
         ]
-        conn.cursor().executemany(insert_temp_data_sql, rows)
+        snowflake_conn.cursor().executemany(insert_temp_data_sql, rows)
 
         merge_sql = f"""
             MERGE INTO beacon_360_base AS target
@@ -455,4 +437,4 @@ class BeaconSnowflakeStorageSink(SnowflakeStorageSink):
                 INSERT (org_id, device_id, {", ".join(name for name in REQUESTED_COLUMNS)}, created_time) 
                         VALUES (source.org_id, source.device_id, {", ".join(f"source.{name}" for name in REQUESTED_COLUMNS)}, source.created_time)
         """
-        conn.cursor().execute(merge_sql)
+        snowflake_conn.cursor().execute(merge_sql)

@@ -1,6 +1,9 @@
+from abc import ABC, abstractmethod
 from datetime import datetime, time
 from typing import List
+
 import pytz
+from pytz.tzinfo import DstTzInfo
 
 from amiadapters.models import GeneralMeterRead
 from amiadapters.models import GeneralMeter
@@ -9,18 +12,55 @@ from amiadapters.outputs.base import BaseTaskOutputController
 from amiadapters.storage.base import BaseAMIStorageSink
 
 
+class RawSnowflakeLoader(ABC):
+    """
+    An adapter must define how it stores raw data in Snowflake because, by nature,
+    raw data schemas are specific to the adapter. This abstract class
+    allows an adapter to define its implementation, then pass it up to
+    the Snowflake sink abstractions during instantiation.
+    """
+
+    @abstractmethod
+    def load(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        output_controller: BaseTaskOutputController,
+        snowflake_conn,
+    ):
+        """
+        Using a Snowflake connection and output controller, get the raw
+        data and store it in Snowflake.
+        """
+        pass
+
+
 class SnowflakeStorageSink(BaseAMIStorageSink):
     """
-    AMI Storage Sink for Snowflake database. Implementors must specify how to store
-    raw data in Snowflake.
+    AMI Storage Sink for Snowflake database.
     """
 
     def __init__(
         self,
         output_controller: BaseTaskOutputController,
+        org_id: str,
+        org_timezone: DstTzInfo,
         sink_config: ConfiguredStorageSink,
+        raw_loader: RawSnowflakeLoader,
     ):
+        self.org_id = org_id
+        self.org_timezone = org_timezone
+        self.raw_loader = raw_loader
         super().__init__(output_controller, sink_config)
+
+    def store_raw(self, run_id):
+        if self.raw_loader is None:
+            return
+        conn = self.sink_config.connection()
+        return self.raw_loader.load(
+            run_id, self.org_id, self.org_timezone, self.output_controller, conn
+        )
 
     def store_transformed(self, run_id):
         meters = self.output_controller.read_transformed_meters(run_id)
@@ -196,8 +236,8 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         else:
             threshold = float(percentile_rows[0][0])
 
-        # Lower threshold by 10% to allow dates with legitimately lower volume to be considered backfilled
-        threshold = 0.9 * threshold
+        # Lower threshold by x% to allow dates with legitimately lower volume to be considered backfilled
+        threshold = 0.5 * threshold
 
         # Find the oldest day in the range that we've already backfilled
         query = """
