@@ -4,6 +4,7 @@ import logging
 import json
 from typing import List, Tuple
 
+from pytz.tzinfo import DstTzInfo
 import requests
 
 from amiadapters.models import (
@@ -12,9 +13,8 @@ from amiadapters.models import (
     GeneralMeterRead,
 )
 from amiadapters.base import BaseAMIAdapter
-from amiadapters.config import ConfiguredStorageSink, ConfiguredStorageSinkType
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
-from amiadapters.storage.snowflake import SnowflakeStorageSink
+from amiadapters.storage.snowflake import RawSnowflakeLoader
 
 logger = logging.getLogger(__name__)
 
@@ -163,23 +163,13 @@ class SentryxAdapter(BaseAMIAdapter):
         # This is used to create URLs for the Sentryx API. It must match the name used to generate API credentials.
         # It defaults to the org_id.
         self.utility_name = utility_name if utility_name is not None else org_id
-
-        task_output_controller = self.create_task_output_controller(
-            configured_task_output_controller, org_id
+        super().__init__(
+            org_id,
+            org_timezone,
+            configured_task_output_controller,
+            configured_sinks,
+            SentryxRawSnowflakeLoader(),
         )
-        # Must create storage sinks here because it's Sentryx-specific
-        storage_sinks = []
-        for sink in configured_sinks:
-            if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
-                storage_sinks.append(
-                    SentryxSnowflakeStorageSink(
-                        task_output_controller,
-                        org_id,
-                        org_timezone,
-                        sink,
-                    )
-                )
-        super().__init__(org_id, org_timezone, task_output_controller, storage_sinks)
 
     def name(self) -> str:
         return f"sentryx-api-{self.org_id}"
@@ -382,25 +372,20 @@ class SentryxAdapter(BaseAMIAdapter):
         return list(meters_by_id.values()), meter_reads
 
 
-class SentryxSnowflakeStorageSink(SnowflakeStorageSink):
+class SentryxRawSnowflakeLoader(RawSnowflakeLoader):
     """
-    Sentryx implementation of Snowflake AMI Storage Sink. In addition to parent class's storage of generalized
-    data, this stores raw meters and reads into a Snowflake table.
+    Sentryx implementation of raw storage in Snowflake.
     """
 
-    def __init__(
+    def load(
         self,
-        output_controller: BaseTaskOutputController,
+        run_id: str,
         org_id: str,
-        org_timezone: str,
-        sink_config: ConfiguredStorageSink,
+        org_timezone: DstTzInfo,
+        output_controller: BaseTaskOutputController,
+        snowflake_conn,
     ):
-        super().__init__(output_controller, sink_config)
-        self.org_id = org_id
-        self.org_timezone = org_timezone
-
-    def store_raw(self, run_id):
-        extract_outputs = self.output_controller.read_extract_outputs(run_id)
+        extract_outputs = output_controller.read_extract_outputs(run_id)
         raw_meter_text = extract_outputs.from_file("meters.json")
         raw_meters = [
             SentryxMeter(**json.loads(d)) for d in raw_meter_text.strip().split("\n")
@@ -412,15 +397,15 @@ class SentryxSnowflakeStorageSink(SnowflakeStorageSink):
             for d in raw_meters_with_reads_text.strip().split("\n")
         ]
 
-        created_time = datetime.now(tz=self.org_timezone)
+        created_time = datetime.now(tz=org_timezone)
 
-        conn = self.sink_config.connection()
-
-        self._store_raw_meters(conn, created_time, raw_meters)
-        self._store_raw_meter_reads(conn, created_time, raw_meters_with_reads)
+        self._store_raw_meters(snowflake_conn, org_id, created_time, raw_meters)
+        self._store_raw_meter_reads(
+            snowflake_conn, org_id, created_time, raw_meters_with_reads
+        )
 
     def _store_raw_meters(
-        self, conn, created_time: datetime, raw_meters: List[SentryxMeter]
+        self, conn, org_id: str, created_time: datetime, raw_meters: List[SentryxMeter]
     ):
         create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_sentryx_meter_base LIKE sentryx_meter_base;"
         conn.cursor().execute(create_temp_table_sql)
@@ -447,7 +432,7 @@ class SentryxSnowflakeStorageSink(SnowflakeStorageSink):
         rows = [
             tuple(
                 [
-                    self.org_id,
+                    org_id,
                     i.device_id,
                     created_time,
                     i.device_status,
@@ -542,6 +527,7 @@ class SentryxSnowflakeStorageSink(SnowflakeStorageSink):
     def _store_raw_meter_reads(
         self,
         conn,
+        org_id: str,
         created_time: datetime,
         raw_meters_with_reads: List[SentryxMeterWithReads],
     ):
@@ -562,7 +548,7 @@ class SentryxSnowflakeStorageSink(SnowflakeStorageSink):
         rows = [
             tuple(
                 [
-                    self.org_id,
+                    org_id,
                     meter.device_id,
                     created_time,
                     reading.time_stamp,

@@ -12,12 +12,9 @@ import pytz
 from amiadapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
 from amiadapters.config import (
     ConfiguredSftp,
-    ConfiguredStorageSink,
-    ConfiguredStorageSinkType,
 )
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
-from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
-from amiadapters.storage.snowflake import SnowflakeStorageSink
+from amiadapters.outputs.base import ExtractOutput
 
 logger = logging.getLogger(__name__)
 
@@ -75,22 +72,13 @@ class AclaraAdapter(BaseAMIAdapter):
         self.sftp_meter_and_reads_folder = configured_sftp.remote_data_directory
         self.local_download_directory = configured_sftp.local_download_directory
         self.local_known_hosts_file = configured_sftp.local_known_hosts_file
-        task_output_controller = self.create_task_output_controller(
-            configured_task_output_controller, org_id
+        super().__init__(
+            org_id,
+            org_timezone,
+            configured_task_output_controller,
+            configured_sinks,
+            None,
         )
-        # Must create storage sinks here because they're Aclara-specific
-        storage_sinks = []
-        for sink in configured_sinks:
-            if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
-                storage_sinks.append(
-                    AclaraSnowflakeStorageSink(
-                        task_output_controller,
-                        org_id,
-                        org_timezone,
-                        sink,
-                    )
-                )
-        super().__init__(org_id, org_timezone, task_output_controller, storage_sinks)
 
     def name(self) -> str:
         return f"aclara-{self.org_id}"
@@ -338,24 +326,3 @@ def files_for_date_range(
                 f"Skipping file {filename} because failed to determine if date is in range: {str(e)}"
             )
     return result
-
-
-class AclaraSnowflakeStorageSink(SnowflakeStorageSink):
-    """
-    Aclara implementation of Snowflake AMI Storage Sink. In addition to parent class's storage of generalized
-    data, this stores raw meters and reads into a Snowflake table.
-    """
-
-    def __init__(
-        self,
-        output_controller: BaseTaskOutputController,
-        org_id: str,
-        org_timezone: str,
-        sink_config: ConfiguredStorageSink,
-    ):
-        super().__init__(output_controller, sink_config)
-        self.org_id = org_id
-        self.org_timezone = org_timezone
-
-    def store_raw(self, run_id):
-        pass

@@ -1,20 +1,40 @@
 import datetime
+import json
 import re
 from unittest.mock import Mock
 
 import pytz
 
-from amiadapters.models import GeneralMeterRead
-from amiadapters.models import GeneralMeter
-from amiadapters.beacon import BeaconSnowflakeStorageSink
+from amiadapters.beacon import BeaconRawSnowflakeLoader, Beacon360MeterAndRead
+from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
+from amiadapters.outputs.base import ExtractOutput
+from amiadapters.storage.snowflake import SnowflakeStorageSink
 from test.base_test_case import BaseTestCase
+from test.amiadapters.test_beacon import beacon_meter_and_read_factory
 
 
 class TestSnowflakeStorageSink(BaseTestCase):
 
     def setUp(self):
-        self.snowflake_sink = BeaconSnowflakeStorageSink(
-            None, "org-id", pytz.timezone("Africa/Algiers"), None
+        self.conn = Mock()
+        self.mock_cursor = Mock()
+        self.conn.cursor.return_value = self.mock_cursor
+        sink_config = Mock()
+        sink_config.connection.return_value = self.conn
+        self.output_controller = Mock()
+        self.output_controller.read_extract_outputs.return_value = ExtractOutput(
+            {
+                "meters_and_reads.json": json.dumps(
+                    beacon_meter_and_read_factory(), cls=DataclassJSONEncoder
+                )
+            }
+        )
+        self.snowflake_sink = SnowflakeStorageSink(
+            self.output_controller,
+            "org-id",
+            pytz.timezone("Africa/Algiers"),
+            sink_config,
+            BeaconRawSnowflakeLoader(),
         )
 
     def test_upsert_meters(self):
@@ -39,13 +59,9 @@ class TestSnowflakeStorageSink(BaseTestCase):
             ),
         ]
 
-        conn = Mock()
-        mock_cursor = Mock()
-        conn.cursor.return_value = mock_cursor
-
         self.snowflake_sink._upsert_meters(
             meters,
-            conn,
+            self.conn,
             row_active_from=datetime.datetime.fromisoformat(
                 "2025-04-22T21:01:37.605366+00:00"
             ),
@@ -87,7 +103,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
                         source.multiplier, source.location_address, source.location_city, source.location_state, source.location_zip,
                         '2025-04-22T21:01:37.605366+00:00');
         """
-        called_query = mock_cursor.execute.call_args[0][0]
+        called_query = self.mock_cursor.execute.call_args[0][0]
 
         # Normalize both queries before comparing
         self.assertEqual(
@@ -125,11 +141,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
             ),
         ]
 
-        conn = Mock()
-        mock_cursor = Mock()
-        conn.cursor.return_value = mock_cursor
-
-        self.snowflake_sink._upsert_reads(reads, conn)
+        self.snowflake_sink._upsert_reads(reads, self.conn)
 
         expected_merge_sql = """
             MERGE INTO readings AS target
@@ -158,7 +170,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
                         VALUES (source.org_id, source.device_id, source.account_id, source.location_id, source.flowtime, 
                     source.register_value, source.register_unit, source.interval_value, source.interval_unit)
         """
-        called_query = mock_cursor.execute.call_args[0][0]
+        called_query = self.mock_cursor.execute.call_args[0][0]
 
         # Normalize both queries before comparing
         self.assertEqual(
@@ -171,3 +183,16 @@ class TestSnowflakeStorageSink(BaseTestCase):
         normalized = re.sub(r"\s+", " ", sql)
         # Trim leading and trailing whitespace
         return normalized.strip()
+
+    def test_store_raw(self):
+        self.snowflake_sink.store_raw(
+            "run-id",
+        )
+        self.assertEqual(2, self.mock_cursor.execute.call_count)
+
+    def test_store_raw__skips_when_no_raw_loader(self):
+        self.snowflake_sink.raw_loader = None
+        self.snowflake_sink.store_raw(
+            "run-id",
+        )
+        self.assertEqual(0, self.mock_cursor.execute.call_count)

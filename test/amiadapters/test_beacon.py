@@ -3,14 +3,15 @@ import json
 import pytz
 from unittest import mock
 
-from amiadapters.config import ConfiguredLocalTaskOutputController
-from amiadapters.models import GeneralMeterRead
-from amiadapters.models import GeneralMeter
 from amiadapters.beacon import (
     Beacon360Adapter,
     Beacon360MeterAndRead,
+    BeaconRawSnowflakeLoader,
     REQUESTED_COLUMNS,
 )
+from amiadapters.config import ConfiguredLocalTaskOutputController
+from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
+from amiadapters.outputs.base import ExtractOutput
 
 from test.base_test_case import (
     BaseTestCase,
@@ -526,3 +527,32 @@ class TestBeacon360Adapter(BaseTestCase):
 
         expected_reads = []
         self.assertListEqual(expected_reads, transformed_reads)
+
+
+class TestBeaconRawSnowflakeLoader(BaseTestCase):
+
+    def setUp(self):
+        self.conn = mock.Mock()
+        self.mock_cursor = mock.Mock()
+        self.conn.cursor.return_value = self.mock_cursor
+        meter_and_read = beacon_meter_and_read_factory()
+        self.output_controller = mock.Mock()
+        self.output_controller.read_extract_outputs.return_value = ExtractOutput(
+            {
+                "meters_and_reads.json": json.dumps(
+                    meter_and_read, cls=DataclassJSONEncoder
+                )
+            }
+        )
+
+    def test_load(self):
+        loader = BeaconRawSnowflakeLoader()
+        loader.load(
+            "run-id",
+            "org-id",
+            pytz.timezone("Europe/Rome"),
+            self.output_controller,
+            self.conn,
+        )
+        self.assertEqual(2, self.mock_cursor.execute.call_count)
+        self.assertEqual(1, self.mock_cursor.executemany.call_count)
