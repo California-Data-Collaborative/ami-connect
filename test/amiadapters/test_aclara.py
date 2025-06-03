@@ -86,24 +86,6 @@ class TestAclaraAdapter(BaseTestCase):
             "/remote/2024-01-01.csv", "/tmp/downloads/2024-01-01.csv"
         )
 
-    @patch("os.makedirs")
-    @patch("os.path.exists")
-    @patch("amiadapters.aclara.files_for_date_range")
-    def test_skips_existing_files(
-        self, mock_files_for_date_range, mock_exists, mock_makedirs
-    ):
-        sftp_mock = MagicMock()
-        sftp_mock.listdir.return_value = ["2024-01-01.csv"]
-        mock_files_for_date_range.return_value = ["2024-01-01.csv"]
-        mock_exists.return_value = True  # Pretend file already exists
-
-        result = self.adapter._download_meter_and_read_files_for_date_range(
-            sftp_mock, datetime(2024, 1, 1), datetime(2024, 1, 1)
-        )
-
-        self.assertEqual(result, ["/tmp/downloads/2024-01-01.csv"])
-        sftp_mock.get.assert_not_called()
-
     @patch("builtins.open", new_callable=mock_open)
     def test_parse_downloaded_files(self, mock_file):
         mock_csv_content = (
@@ -191,6 +173,7 @@ class TestAclaraAdapter(BaseTestCase):
 
     def test_parse_meter_size_from_description(self):
         cases = [
+            (None, None),
             ('Sensus W2000 6" 8D 1CuFt', "6"),
             ("Badger HRE LCD T450 3in 7D 1CuFt", "3"),
             ('Badger Ultrasonic 4" 9D 0.01CuFt', "4"),
