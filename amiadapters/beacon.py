@@ -335,7 +335,7 @@ class Beacon360Adapter(BaseAMIAdapter):
                 meter_install_date=self.datetime_from_iso_str(
                     meter_and_read.Meter_Install_Date, self.org_timezone
                 ),
-                meter_size=meter_and_read.Meter_Size,
+                meter_size=self.map_meter_size(meter_and_read.Meter_Size_Desc),
                 meter_manufacturer=meter_and_read.Meter_Manufacturer,
                 multiplier=None,
                 location_address=meter_and_read.Location_Address_Line1,
