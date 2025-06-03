@@ -89,26 +89,34 @@ class AclaraAdapter(BaseAMIAdapter):
         logging.info(
             f"Connecting to Aclara SFTP for data between {extract_range_start} and {extract_range_end}"
         )
-
-        with paramiko.SSHClient() as ssh:
-            ssh.load_host_keys(self.local_known_hosts_file)
-            ssh.connect(
-                self.sftp_host,
-                username=self.sftp_user,
-                password=self.sftp_password,
-                look_for_keys=False,
-                allow_agent=False,
-            )
-            with ssh.open_sftp() as sftp:
-                downloaded_files = self._download_meter_and_read_files_for_date_range(
-                    sftp, extract_range_start, extract_range_end
+        downloaded_files = []
+        try:
+            with paramiko.SSHClient() as ssh:
+                ssh.load_host_keys(self.local_known_hosts_file)
+                ssh.connect(
+                    self.sftp_host,
+                    username=self.sftp_user,
+                    password=self.sftp_password,
+                    look_for_keys=False,
+                    allow_agent=False,
                 )
+                with ssh.open_sftp() as sftp:
+                    downloaded_files = (
+                        self._download_meter_and_read_files_for_date_range(
+                            sftp, extract_range_start, extract_range_end
+                        )
+                    )
 
-        meters_and_reads = self._parse_downloaded_files(downloaded_files)
+            meters_and_reads = self._parse_downloaded_files(downloaded_files)
+            output = "\n".join(meters_and_reads)
+        finally:
+            for f in downloaded_files:
+                logger.info(f"Cleaning up downloaded file {f}")
+                os.remove(f)
 
         self.output_controller.write_extract_outputs(
             run_id,
-            ExtractOutput({"meters_and_reads.json": "\n".join(meters_and_reads)}),
+            ExtractOutput({"meters_and_reads.json": output}),
         )
 
     def _download_meter_and_read_files_for_date_range(
@@ -127,18 +135,11 @@ class AclaraAdapter(BaseAMIAdapter):
         os.makedirs(self.local_download_directory, exist_ok=True)
         for file in files_to_download:
             local_csv = f"{self.local_download_directory}/{file}"
-
-            # TODO clean up local files
             downloaded_files.append(local_csv)
-            if not os.path.exists(local_csv):
-                logging.info(
-                    f"Downloading {file} from FTP at {self.sftp_host} to {local_csv}"
-                )
-                sftp.get(self.sftp_meter_and_reads_folder + "/" + file, local_csv)
-            else:
-                logging.info(
-                    f"File {file} already downloaded at {local_csv}, will be included in output"
-                )
+            logging.info(
+                f"Downloading {file} from FTP at {self.sftp_host} to {local_csv}"
+            )
+            sftp.get(self.sftp_meter_and_reads_folder + "/" + file, local_csv)
         return downloaded_files
 
     def _parse_downloaded_files(self, files: List[str]) -> Generator[str, None, None]:
@@ -285,6 +286,8 @@ class AclaraAdapter(BaseAMIAdapter):
         44435 Badger HRE E-Series 5/8in 9D 0.001CuFt
         403428 Badger M25/LP HRE LCD 5/8x3/4in 9D 0.001CuFt
         """
+        if description is None:
+            return None
         parts = description.strip().split(" ")
         if len(parts) > 4:
             mapped = self.map_meter_size(parts[4])
