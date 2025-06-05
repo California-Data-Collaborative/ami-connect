@@ -496,6 +496,23 @@ class TestBeacon360Adapter(BaseTestCase):
         ]
         self.assertListEqual(expected_reads, transformed_reads)
 
+    def test_transform_meters_and_reads__two_entries_for_same_meter(self):
+        raw_meters_with_reads = [
+            beacon_meter_and_read_factory(),
+            # Second entry is the same meter but with new install date
+            # We should only keep one of the entries
+            beacon_meter_and_read_factory(meter_install_date="2017-02-02 23:59"),
+        ]
+        transformed_meters, transformed_reads = (
+            self.adapter._transform_meters_and_reads(raw_meters_with_reads)
+        )
+        self.assertEqual(1, len(transformed_meters))
+        self.assertEqual(
+            datetime.datetime.fromisoformat("2017-02-02 23:59"),
+            transformed_meters[0].meter_install_date,
+        )
+        self.assertEqual(1, len(transformed_reads))
+
     def test_transform_meters_and_reads__ignores_reads_when_date_missing(self):
         raw_meters_with_reads = [
             beacon_meter_and_read_factory(flow_time=None),
