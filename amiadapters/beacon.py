@@ -323,14 +323,14 @@ class Beacon360Adapter(BaseAMIAdapter):
         for meter_and_read in raw_meters_with_reads:
             account_id = meter_and_read.Account_ID
             location_id = meter_and_read.Location_ID
-            meter_id = meter_and_read.Meter_ID
+            device_id = meter_and_read.Endpoint_SN
 
             meter = GeneralMeter(
                 org_id=self.org_id,
-                device_id=meter_id,
+                device_id=device_id,
                 account_id=account_id,
                 location_id=location_id,
-                meter_id=meter_id,
+                meter_id=meter_and_read.Meter_ID,
                 endpoint_id=meter_and_read.Endpoint_SN,
                 meter_install_date=self.datetime_from_iso_str(
                     meter_and_read.Meter_Install_Date, self.org_timezone
@@ -350,13 +350,13 @@ class Beacon360Adapter(BaseAMIAdapter):
             )
             if flowtime is None:
                 logger.info(
-                    f"Skipping read with no flowtime for account={account_id} location={location_id} meter={meter_id}"
+                    f"Skipping read with no flowtime for account={account_id} location={location_id} device={device_id}"
                 )
                 continue
 
             read = GeneralMeterRead(
                 org_id=self.org_id,
-                device_id=meter_id,
+                device_id=device_id,
                 account_id=account_id,
                 location_id=location_id,
                 flowtime=flowtime,
