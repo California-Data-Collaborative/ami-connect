@@ -71,19 +71,26 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         self._upsert_meters(meters, conn)
         self._upsert_reads(reads, conn)
 
-    def _upsert_meters(self, meters: List[GeneralMeter], conn, row_active_from=None):
+    def _upsert_meters(
+        self,
+        meters: List[GeneralMeter],
+        conn,
+        row_active_from=None,
+        table_name="meters",
+    ):
         self._verify_no_duplicate_meters(meters)
 
         if row_active_from is None:
             row_active_from = datetime.now(tz=pytz.UTC)
 
+        temp_table_name = f"temp_{table_name}"
         create_temp_table_sql = (
-            "CREATE OR REPLACE TEMPORARY TABLE TEMP_METERS LIKE METERS;"
+            f"CREATE OR REPLACE TEMPORARY TABLE {temp_table_name} LIKE {table_name};"
         )
         conn.cursor().execute(create_temp_table_sql)
 
-        insert_to_temp_table_sql = """
-            INSERT INTO temp_meters (
+        insert_to_temp_table_sql = f"""
+            INSERT INTO {temp_table_name} (
                 org_id, device_id, account_id, location_id, meter_id, 
                 endpoint_id, meter_install_date, meter_size, meter_manufacturer, 
                 multiplier, location_address, location_city, location_state, location_zip,
@@ -94,21 +101,40 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         rows = [self._meter_tuple(m, row_active_from) for m in meters]
         conn.cursor().executemany(insert_to_temp_table_sql, rows)
 
+        # heya = f"""
+        # SELECT CONCAT(tm.org_id, '|', tm.device_id) as merge_key, tm.*
+        #             FROM {temp_table_name} tm
+
+        #             UNION ALL
+
+        #             SELECT NULL as merge_key, tm2.*
+        #             FROM {temp_table_name} tm2
+        #             JOIN {table_name} m2 ON tm2.org_id = m2.org_id AND tm2.device_id = m2.device_id
+        #             WHERE m2.row_active_until IS NULL AND
+        #                 CONCAT(tm2.account_id, '|', tm2.location_id, '|', tm2.meter_id, '|', tm2.endpoint_id, '|', tm2.meter_install_date, '|', tm2.meter_size, '|', tm2.meter_manufacturer, '|', tm2.multiplier, '|', tm2.location_address, '|', tm2.location_city, '|', tm2.location_state, '|', tm2.location_zip, '|')
+        #                 <>
+        #             CONCAT(m2.account_id, '|', m2.location_id, '|', m2.meter_id, '|', m2.endpoint_id, '|', m2.meter_install_date, '|', m2.meter_size, '|', m2.meter_manufacturer, '|', m2.multiplier, '|', m2.location_address, '|', m2.location_city, '|', m2.location_state, '|', m2.location_zip, '|')
+        # """
+        # conn.cursor().execute(heya)
+        # result = [i for i in conn.fetchall()]
+        # print(result)
+        # import pdb; pdb.set_trace()
+
         # We use a Type 2 Slowly Changing Dimension pattern for our meters table
         # Our implementation follows a pattern in this blog post: https://medium.com/@amit-jsr/implementing-scd2-in-snowflake-slowly-changing-dimension-type-2-7ff793647150
         # It's extremely important that the source table has no duplicates on the "merge_key"!
         # Also, if new columns are added, be careful to update this query in each place column names are referenced.
         merge_sql = f"""
-            MERGE INTO meters AS target
+            MERGE INTO {table_name} AS target
             USING(
                 SELECT CONCAT(tm.org_id, '|', tm.device_id) as merge_key, tm.*
-                FROM temp_meters tm
+                FROM {temp_table_name} tm
                 
                 UNION ALL
                 
                 SELECT NULL as merge_key, tm2.*
-                FROM temp_meters tm2
-                JOIN meters m2 ON tm2.org_id = m2.org_id AND tm2.device_id = m2.device_id
+                FROM {temp_table_name} tm2
+                JOIN {table_name} m2 ON tm2.org_id = m2.org_id AND tm2.device_id = m2.device_id
                 WHERE m2.row_active_until IS NULL AND
                     ARRAY_CONSTRUCT(tm2.account_id, tm2.location_id, tm2.meter_id, tm2.endpoint_id, tm2.meter_install_date, tm2.meter_size, tm2.meter_manufacturer, tm2.multiplier, tm2.location_address, tm2.location_city, tm2.location_state, tm2.location_zip)
                     <>
@@ -202,6 +228,26 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     source.register_value, source.register_unit, source.interval_value, source.interval_unit)
         """
         conn.cursor().execute(merge_sql)
+
+    def _verify_no_duplicate_meters(self, meters: List[GeneralMeter]):
+        seen = set()
+        for meter in meters:
+            key = (meter.org_id, meter.device_id)
+            if key in seen:
+                raise ValueError(
+                    f"Encountered duplicate meter in data for Snowflake: {key}"
+                )
+            seen.add(key)
+
+    def _verify_no_duplicate_reads(self, reads: List[GeneralMeterRead]):
+        seen = set()
+        for read in reads:
+            key = (read.org_id, read.device_id, read.flowtime)
+            if key in seen:
+                raise ValueError(
+                    f"Encountered duplicate read in data for Snowflake: {key}"
+                )
+            seen.add(key)
 
     def _meter_read_tuple(self, read: GeneralMeterRead):
         result = [

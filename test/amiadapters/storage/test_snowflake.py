@@ -141,7 +141,6 @@ class TestSnowflakeStorageSink(BaseTestCase):
             )
 
     def test_upsert_reads(self):
-
         reads = [
             GeneralMeterRead(
                 org_id="this-utility",
