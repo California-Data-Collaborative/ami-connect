@@ -73,7 +73,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
 
     def _upsert_meters(self, meters: List[GeneralMeter], conn, row_active_from=None):
         self._verify_no_duplicate_meters(meters)
-        
+
         if row_active_from is None:
             row_active_from = datetime.now(tz=pytz.UTC)
 

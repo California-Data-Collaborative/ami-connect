@@ -109,7 +109,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
         self.assertEqual(
             self.normalize_sql(called_query), self.normalize_sql(expected_merge_sql)
         )
-    
+
     def test_upsert_meters__fail_on_duplicate_meter(self):
         meter = GeneralMeter(
             org_id="this-utility",
@@ -206,7 +206,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
         self.assertEqual(
             self.normalize_sql(called_query), self.normalize_sql(expected_merge_sql)
         )
-    
+
     def test_upsert_reads__fail_on_duplicate_meter(self):
         read = GeneralMeterRead(
             org_id="this-utility",

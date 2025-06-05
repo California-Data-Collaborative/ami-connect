@@ -335,8 +335,12 @@ class TestBeacon360Adapter(BaseTestCase):
         result = [Beacon360MeterAndRead(**json.loads(d)) for d in result]
 
         expected = [
-            beacon_meter_and_read_factory(flow_time="2024-08-01 00:59", endpoint_id="130615549"),
-            beacon_meter_and_read_factory(flow_time="2024-08-01 01:59", endpoint_id="130615549"),
+            beacon_meter_and_read_factory(
+                flow_time="2024-08-01 00:59", endpoint_id="130615549"
+            ),
+            beacon_meter_and_read_factory(
+                flow_time="2024-08-01 01:59", endpoint_id="130615549"
+            ),
         ]
 
         self.assertEqual(expected, result)
@@ -499,7 +503,7 @@ class TestBeacon360Adapter(BaseTestCase):
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)
-    
+
     def test_transform_meters_and_reads__two_entries_for_same_meter(self):
         raw_meters_with_reads = [
             beacon_meter_and_read_factory(),
@@ -512,7 +516,7 @@ class TestBeacon360Adapter(BaseTestCase):
         )
         self.assertEqual(1, len(transformed_meters))
         self.assertEqual(
-            datetime.datetime.fromisoformat("2017-02-02 23:59"),
+            datetime.datetime(2017, 2, 2, 23, 59, tzinfo=pytz.timezone("Europe/Rome")),
             transformed_meters[0].meter_install_date,
         )
         self.assertEqual(1, len(transformed_reads))
