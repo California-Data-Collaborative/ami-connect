@@ -118,9 +118,15 @@ class Beacon360Adapter(BaseAMIAdapter):
         return f"beacon-360-{self.org_id}"
 
     def extract(
-        self, run_id: str, extract_range_start: datetime, extract_range_end: datetime
+        self,
+        run_id: str,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+        meter_ids: List[str] = None,
     ):
-        report = self._fetch_range_report(extract_range_start, extract_range_end)
+        report = self._fetch_range_report(
+            extract_range_start, extract_range_end, meter_ids=meter_ids
+        )
         logger.info("Fetched report")
         self.output_controller.write_extract_outputs(
             run_id,
@@ -137,7 +143,10 @@ class Beacon360Adapter(BaseAMIAdapter):
             yield json.dumps(meter_and_read, cls=DataclassJSONEncoder)
 
     def _fetch_range_report(
-        self, extract_range_start: datetime, extract_range_end: datetime
+        self,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+        meter_ids: List[str] = None,
     ) -> str:
         """
         Return range report as CSV string, first line with headers.
@@ -165,6 +174,8 @@ class Beacon360Adapter(BaseAMIAdapter):
             "Header_Columns": ",".join(REQUESTED_COLUMNS),
             "Has_Endpoint": True,
         }
+        if meter_ids:
+            params["Meter_ID"] = ",".join(meter_ids)
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
@@ -172,6 +183,8 @@ class Beacon360Adapter(BaseAMIAdapter):
         logger.info(
             f"Requesting report for meter reads between {params['Start_Date']} and {params['End_Date']} at {params['Resolution']} resolution"
         )
+        if "Meter_ID" in params:
+            logger.info(f"Filtering to Meter_IDs: {params["Meter_ID"]}")
         generate_report_response = requests.post(
             url="https://api.beaconama.net/v2/eds/range",
             headers=headers,
