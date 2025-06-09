@@ -242,7 +242,9 @@ class TestBeacon360Adapter(BaseTestCase):
     def test_fetch_range_report__can_filter_to_meter_ids(
         self, mock_sleep, mock_post, mock_get
     ):
-        self.adapter._fetch_range_report(self.range_start, self.range_end, meter_ids=["m1", "m2"])
+        self.adapter._fetch_range_report(
+            self.range_start, self.range_end, meter_ids=["m1", "m2"]
+        )
 
         self.assertEqual(1, len(mock_post.call_args_list))
         generate_report_request = mock_post.call_args_list[0]

@@ -118,9 +118,15 @@ class Beacon360Adapter(BaseAMIAdapter):
         return f"beacon-360-{self.org_id}"
 
     def extract(
-        self, run_id: str, extract_range_start: datetime, extract_range_end: datetime, meter_ids: List[str] = None
+        self,
+        run_id: str,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+        meter_ids: List[str] = None,
     ):
-        report = self._fetch_range_report(extract_range_start, extract_range_end, meter_ids=meter_ids)
+        report = self._fetch_range_report(
+            extract_range_start, extract_range_end, meter_ids=meter_ids
+        )
         logger.info("Fetched report")
         self.output_controller.write_extract_outputs(
             run_id,
@@ -137,7 +143,10 @@ class Beacon360Adapter(BaseAMIAdapter):
             yield json.dumps(meter_and_read, cls=DataclassJSONEncoder)
 
     def _fetch_range_report(
-        self, extract_range_start: datetime, extract_range_end: datetime, meter_ids: List[str] = None
+        self,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+        meter_ids: List[str] = None,
     ) -> str:
         """
         Return range report as CSV string, first line with headers.
