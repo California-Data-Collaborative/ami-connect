@@ -107,7 +107,6 @@ class TestConfig(BaseTestCase):
         self.assertEqual(datetime(2025, 2, 1, tzinfo=pytz.UTC), backfills[0].end_date)
         self.assertEqual(3, backfills[0].interval_days)
         self.assertEqual("15 * * * *", backfills[0].schedule)
-        self.assertEqual(["m1", "m2"], backfills[0].meter_ids)
 
         self.assertEqual(
             datetime(2024, 10, 22, tzinfo=pytz.UTC), backfills[1].start_date

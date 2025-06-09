@@ -243,7 +243,7 @@ class TestBeacon360Adapter(BaseTestCase):
         self, mock_sleep, mock_post, mock_get
     ):
         self.adapter._fetch_range_report(
-            self.range_start, self.range_end, meter_ids=["m1", "m2"]
+            self.range_start, self.range_end, device_ids=["m1", "m2"]
         )
 
         self.assertEqual(1, len(mock_post.call_args_list))
