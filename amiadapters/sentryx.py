@@ -175,7 +175,11 @@ class SentryxAdapter(BaseAMIAdapter):
         return f"sentryx-api-{self.org_id}"
 
     def extract(
-        self, run_id: str, extract_range_start: datetime, extract_range_end: datetime
+        self,
+        run_id: str,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+        device_ids: List[str] = None,
     ):
         logger.info(
             f"Extracting {self.org_id} data from {extract_range_start} to {extract_range_end}"
