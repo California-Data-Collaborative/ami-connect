@@ -188,30 +188,30 @@ class TestBeacon360Adapter(BaseTestCase):
         self.assertEqual(self.report_csv, result)
 
         self.assertEqual(1, len(mock_post.call_args_list))
-        generater_report_request = mock_post.call_args_list[0]
+        generate_report_request = mock_post.call_args_list[0]
         self.assertEqual(
             "https://api.beaconama.net/v2/eds/range",
-            generater_report_request.kwargs["url"],
+            generate_report_request.kwargs["url"],
         )
         self.assertEqual(
             ",".join(REQUESTED_COLUMNS),
-            generater_report_request.kwargs["params"]["Header_Columns"],
+            generate_report_request.kwargs["params"]["Header_Columns"],
         )
         self.assertEqual(
             self.range_start,
-            generater_report_request.kwargs["params"]["Start_Date"],
+            generate_report_request.kwargs["params"]["Start_Date"],
         )
         self.assertEqual(
             self.range_end,
-            generater_report_request.kwargs["params"]["End_Date"],
+            generate_report_request.kwargs["params"]["End_Date"],
         )
-        self.assertTrue(generater_report_request.kwargs["params"]["Has_Endpoint"])
+        self.assertTrue(generate_report_request.kwargs["params"]["Has_Endpoint"])
         self.assertEqual(
-            "hourly", generater_report_request.kwargs["params"]["Resolution"]
+            "hourly", generate_report_request.kwargs["params"]["Resolution"]
         )
         self.assertEqual(
             {"Content-Type": "application/x-www-form-urlencoded"},
-            generater_report_request.kwargs["headers"],
+            generate_report_request.kwargs["headers"],
         )
 
         self.assertEqual(3, len(mock_get.call_args_list))
@@ -229,6 +229,27 @@ class TestBeacon360Adapter(BaseTestCase):
         )
 
         self.assertEqual(1, mock_sleep.call_count)
+
+    @mock.patch(
+        "requests.get",
+        side_effect=[
+            mocked_get_range_report_status_finished(),
+            mocked_get_report_from_link(text=report_csv),
+        ],
+    )
+    @mock.patch("requests.post", side_effect=[mocked_create_range_report()])
+    @mock.patch("time.sleep")
+    def test_fetch_range_report__can_filter_to_meter_ids(
+        self, mock_sleep, mock_post, mock_get
+    ):
+        self.adapter._fetch_range_report(self.range_start, self.range_end, meter_ids=["m1", "m2"])
+
+        self.assertEqual(1, len(mock_post.call_args_list))
+        generate_report_request = mock_post.call_args_list[0]
+        self.assertEqual(
+            "m1,m2",
+            generate_report_request.kwargs["params"]["Meter_ID"],
+        )
 
     @mock.patch(
         "requests.get",

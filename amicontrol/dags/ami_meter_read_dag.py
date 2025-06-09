@@ -49,7 +49,7 @@ def ami_control_dag_factory(
                 start_from_params, end_from_params, backfill_params=backfill_params
             )
 
-            adapter.extract(run_id, start, end)
+            adapter.extract(run_id, start, end, meter_ids=backfill_params.meter_ids)
 
         @task()
         def transform(adapter: BaseAMIAdapter, **context):
