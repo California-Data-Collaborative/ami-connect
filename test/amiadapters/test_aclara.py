@@ -152,6 +152,17 @@ class TestAclaraAdapter(BaseTestCase):
         self.assertEqual(meter.meter_size, "0.625x0.75")
         self.assertEqual(read.device_id, "1")
         self.assertEqual(read.register_value, 23497.071)
+    
+    def test_deduplicates_during_transform(self):
+        input_data = [
+            self.meter_and_read_factory(),
+            self.meter_and_read_factory()
+        ]
+
+        meters, reads = self.adapter._transform_meters_and_reads(input_data)
+
+        self.assertEqual(len(meters), 1)
+        self.assertEqual(len(reads), 1)
 
     def test_transforms_scaled_read_with_value_ERROR(self):
         input_data = [self.meter_and_read_factory(scaled_read="ERROR")]
