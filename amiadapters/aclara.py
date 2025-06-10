@@ -198,8 +198,8 @@ class AclaraAdapter(BaseAMIAdapter):
                    Description='Badger M25/LP HRE LCD 5/8x3/4in 9D 0.001CuFt',
                    ReadInterval='60')
         """
-        transformed_meters = set()
-        transformed_reads = []
+        transformed_meters_by_device_id = {}
+        transformed_reads_by_key = {}
 
         for meter_and_read in raw_meters_with_reads:
             account_id = meter_and_read.AccountNumber
@@ -207,14 +207,14 @@ class AclaraAdapter(BaseAMIAdapter):
             if meter_and_read.AccountType == "DETECTOR CHECK":
                 continue
 
-            meter_id = meter_and_read.MeterSN
+            device_id = meter_and_read.MeterSN
 
             meter = GeneralMeter(
                 org_id=self.org_id,
-                device_id=meter_id,
+                device_id=meter_and_read.MeterSN,
                 account_id=account_id,
                 location_id=None,
-                meter_id=meter_id,
+                meter_id=meter_and_read.MeterSN,
                 endpoint_id=meter_and_read.MTUID,
                 meter_install_date=None,
                 meter_size=self.parse_meter_size_from_description(
@@ -227,7 +227,7 @@ class AclaraAdapter(BaseAMIAdapter):
                 location_state=meter_and_read.State,
                 location_zip=meter_and_read.Zip,
             )
-            transformed_meters.add(meter)
+            transformed_meters_by_device_id[device_id] = meter
 
             flowtime = self.datetime_from_iso_str(meter_and_read.ReadingTime, pytz.UTC)
             register_value = (
@@ -238,7 +238,7 @@ class AclaraAdapter(BaseAMIAdapter):
 
             read = GeneralMeterRead(
                 org_id=self.org_id,
-                device_id=meter_id,
+                device_id=device_id,
                 account_id=account_id,
                 location_id=None,
                 flowtime=flowtime,
@@ -247,9 +247,13 @@ class AclaraAdapter(BaseAMIAdapter):
                 interval_value=None,
                 interval_unit=None,
             )
-            transformed_reads.append(read)
+            # Reads are unique by org_id, device_id, and flowtime. This ensures we do not include duplicates in our output.
+            key = f"{read.device_id}-{read.flowtime}"
+            transformed_reads_by_key[key] = read
 
-        return transformed_meters, transformed_reads
+        return list(transformed_meters_by_device_id.values()), list(
+            transformed_reads_by_key.values()
+        )
 
     def parse_meter_size_from_description(self, description: str) -> str:
         """
