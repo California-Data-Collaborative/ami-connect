@@ -110,6 +110,36 @@ class TestSnowflakeStorageSink(BaseTestCase):
             self.normalize_sql(called_query), self.normalize_sql(expected_merge_sql)
         )
 
+    def test_upsert_meters__fail_on_duplicate_meter(self):
+        meter = GeneralMeter(
+            org_id="this-utility",
+            device_id="1",
+            account_id="101",
+            location_id=None,
+            meter_id="1",
+            endpoint_id=None,
+            meter_install_date=datetime.datetime(
+                2022, 2, 8, 22, 10, 43, tzinfo=pytz.timezone("Africa/Algiers")
+            ),
+            meter_size="0.375",
+            meter_manufacturer="manufacturer",
+            multiplier=None,
+            location_address="my street",
+            location_city="my town",
+            location_state="CA",
+            location_zip="12312",
+        )
+
+        with self.assertRaises(ValueError):
+            self.snowflake_sink._upsert_meters(
+                # Same meter twice
+                [meter, meter],
+                self.conn,
+                row_active_from=datetime.datetime.fromisoformat(
+                    "2025-04-22T21:01:37.605366+00:00"
+                ),
+            )
+
     def test_upsert_reads(self):
 
         reads = [
@@ -176,6 +206,28 @@ class TestSnowflakeStorageSink(BaseTestCase):
         self.assertEqual(
             self.normalize_sql(called_query), self.normalize_sql(expected_merge_sql)
         )
+
+    def test_upsert_reads__fail_on_duplicate_meter(self):
+        read = GeneralMeterRead(
+            org_id="this-utility",
+            device_id="1",
+            account_id="101",
+            location_id=None,
+            flowtime=datetime.datetime(
+                2024, 7, 7, 1, 0, tzinfo=pytz.timezone("Africa/Algiers")
+            ),
+            register_value=116233.61,
+            register_unit="CF",
+            interval_value=None,
+            interval_unit=None,
+        )
+
+        with self.assertRaises(ValueError):
+            self.snowflake_sink._upsert_reads(
+                # Same read twice
+                [read, read],
+                self.conn,
+            )
 
     def normalize_sql(self, sql):
         """Normalize SQL by removing extra whitespace"""

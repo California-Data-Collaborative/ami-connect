@@ -11,13 +11,10 @@ from typing import Generator, List, Tuple
 from pytz.tzinfo import DstTzInfo
 import requests
 
-from amiadapters.base import (
-    BaseAMIAdapter,
-)
+from amiadapters.base import BaseAMIAdapter
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
-from amiadapters.config import ConfiguredStorageSinkType
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
-from amiadapters.storage.snowflake import RawSnowflakeLoader, SnowflakeStorageSink
+from amiadapters.storage.snowflake import RawSnowflakeLoader
 
 logger = logging.getLogger(__name__)
 
@@ -331,19 +328,19 @@ class Beacon360Adapter(BaseAMIAdapter):
     def _transform_meters_and_reads(
         self, raw_meters_with_reads: List[Beacon360MeterAndRead]
     ) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
-        transformed_meters = set()
-        transformed_reads = []
+        transformed_meters_by_device_id = {}
+        transformed_reads_by_key = {}
         for meter_and_read in raw_meters_with_reads:
             account_id = meter_and_read.Account_ID
             location_id = meter_and_read.Location_ID
-            meter_id = meter_and_read.Meter_ID
+            device_id = meter_and_read.Endpoint_SN
 
             meter = GeneralMeter(
                 org_id=self.org_id,
-                device_id=meter_id,
+                device_id=device_id,
                 account_id=account_id,
                 location_id=location_id,
-                meter_id=meter_id,
+                meter_id=meter_and_read.Meter_ID,
                 endpoint_id=meter_and_read.Endpoint_SN,
                 meter_install_date=self.datetime_from_iso_str(
                     meter_and_read.Meter_Install_Date, self.org_timezone
@@ -356,20 +353,21 @@ class Beacon360Adapter(BaseAMIAdapter):
                 location_state=meter_and_read.Location_State,
                 location_zip=meter_and_read.Location_ZIP,
             )
-            transformed_meters.add(meter)
+
+            transformed_meters_by_device_id[device_id] = meter
 
             flowtime = self.datetime_from_iso_str(
                 meter_and_read.Read_Time, self.org_timezone
             )
             if flowtime is None:
                 logger.info(
-                    f"Skipping read with no flowtime for account={account_id} location={location_id} meter={meter_id}"
+                    f"Skipping read with no flowtime for account={account_id} location={location_id} device={device_id}"
                 )
                 continue
 
             read = GeneralMeterRead(
                 org_id=self.org_id,
-                device_id=meter_id,
+                device_id=device_id,
                 account_id=account_id,
                 location_id=location_id,
                 flowtime=flowtime,
@@ -378,9 +376,13 @@ class Beacon360Adapter(BaseAMIAdapter):
                 interval_value=None,
                 interval_unit=None,
             )
-            transformed_reads.append(read)
+            # Reads are unique by org_id, device_id, and flowtime. This ensures we do not include duplicates in our output.
+            key = f"{read.device_id}-{read.flowtime}"
+            transformed_reads_by_key[key] = read
 
-        return transformed_meters, transformed_reads
+        return list(transformed_meters_by_device_id.values()), list(
+            transformed_reads_by_key.values()
+        )
 
     def _cached_report_file(
         self, extract_range_start: datetime, extract_range_end: datetime
