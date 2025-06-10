@@ -421,7 +421,7 @@ class BeaconRawSnowflakeLoader(RawSnowflakeLoader):
         created_time = datetime.now(tz=org_timezone)
         rows = [
             tuple(
-                [org_id, i.Meter_ID, created_time]
+                [org_id, i.Endpoint_SN, created_time]
                 + [i.__getattribute__(name) for name in REQUESTED_COLUMNS]
             )
             for i in raw_meters_with_reads
