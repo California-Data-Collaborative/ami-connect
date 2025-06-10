@@ -72,6 +72,8 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         self._upsert_reads(reads, conn)
 
     def _upsert_meters(self, meters: List[GeneralMeter], conn, row_active_from=None):
+        self._verify_no_duplicate_meters(meters)
+
         if row_active_from is None:
             row_active_from = datetime.now(tz=pytz.UTC)
 
@@ -155,6 +157,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         return tuple(result)
 
     def _upsert_reads(self, reads: List[GeneralMeterRead], conn):
+        self._verify_no_duplicate_reads(reads)
 
         create_temp_table_sql = (
             "CREATE OR REPLACE TEMPORARY TABLE temp_readings LIKE readings;"
@@ -213,6 +216,26 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             read.interval_unit,
         ]
         return tuple(result)
+
+    def _verify_no_duplicate_meters(self, meters: List[GeneralMeter]):
+        seen = set()
+        for meter in meters:
+            key = (meter.org_id, meter.device_id)
+            if key in seen:
+                raise ValueError(
+                    f"Encountered duplicate meter in data for Snowflake: {key}"
+                )
+            seen.add(key)
+
+    def _verify_no_duplicate_reads(self, reads: List[GeneralMeterRead]):
+        seen = set()
+        for read in reads:
+            key = (read.org_id, read.device_id, read.flowtime)
+            if key in seen:
+                raise ValueError(
+                    f"Encountered duplicate read in data for Snowflake: {key}"
+                )
+            seen.add(key)
 
     def calculate_end_of_backfill_range(
         self, org_id: str, min_date: datetime, max_date: datetime

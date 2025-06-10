@@ -68,12 +68,13 @@ def mocked_get_consumption_response_last_page(*args, **kwargs):
 def beacon_meter_and_read_factory(
     account_id: str = "303022",
     meter_id: str = "1470158170",
+    endpoint_id: str = "22",
     flow_time: str = "2024-08-01 00:59",
     meter_install_date: str = "",
 ) -> Beacon360MeterAndRead:
     return Beacon360MeterAndRead(
         Account_ID=account_id,
-        Endpoint_SN="130615549",
+        Endpoint_SN=endpoint_id,
         Estimated_Flag="0",
         Flow="0.0",
         Flow_Time=flow_time,
@@ -93,7 +94,7 @@ def beacon_meter_and_read_factory(
         Meter_Size="0.625",
         Meter_Size_Desc='5/8"',
         Meter_Size_Unit="INCHES",
-        Meter_SN=meter_id,
+        Meter_SN="",
         Raw_Read="022760",
         Read="227.6",
         Read_Time=flow_time,
@@ -126,6 +127,7 @@ class TestBeacon360Adapter(BaseTestCase):
     report_csv = BaseTestCase.load_fixture("beacon-360-report.csv")
 
     def setUp(self):
+        self.maxDiff = None
         self.adapter = Beacon360Adapter(
             api_user="user",
             api_password="pass",
@@ -356,8 +358,12 @@ class TestBeacon360Adapter(BaseTestCase):
         result = [Beacon360MeterAndRead(**json.loads(d)) for d in result]
 
         expected = [
-            beacon_meter_and_read_factory(flow_time="2024-08-01 00:59"),
-            beacon_meter_and_read_factory(flow_time="2024-08-01 01:59"),
+            beacon_meter_and_read_factory(
+                flow_time="2024-08-01 00:59", endpoint_id="130615549"
+            ),
+            beacon_meter_and_read_factory(
+                flow_time="2024-08-01 01:59", endpoint_id="130615549"
+            ),
         ]
 
         self.assertEqual(expected, result)
@@ -379,11 +385,11 @@ class TestBeacon360Adapter(BaseTestCase):
         expected_meters = [
             GeneralMeter(
                 org_id="this-org",
-                device_id="1470158170",
+                device_id="22",
                 account_id="303022",
                 location_id="303022",
                 meter_id="1470158170",
-                endpoint_id="130615549",
+                endpoint_id="22",
                 meter_install_date=datetime.datetime(
                     2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
                 ),
@@ -401,7 +407,7 @@ class TestBeacon360Adapter(BaseTestCase):
         expected_reads = [
             GeneralMeterRead(
                 org_id="this-org",
-                device_id="1470158170",
+                device_id="22",
                 account_id="303022",
                 location_id="303022",
                 flowtime=datetime.datetime(
@@ -414,7 +420,7 @@ class TestBeacon360Adapter(BaseTestCase):
             ),
             GeneralMeterRead(
                 org_id="this-org",
-                device_id="1470158170",
+                device_id="22",
                 account_id="303022",
                 location_id="303022",
                 flowtime=datetime.datetime(
@@ -433,12 +439,14 @@ class TestBeacon360Adapter(BaseTestCase):
             beacon_meter_and_read_factory(
                 account_id="1",
                 meter_id="10101",
+                endpoint_id="130615549",
                 flow_time="2024-08-01 00:59",
                 meter_install_date="2016-01-01 23:59",
             ),
             beacon_meter_and_read_factory(
                 account_id="303022",
                 meter_id="1470158170",
+                endpoint_id="999",
                 flow_time="2024-08-01 01:59",
                 meter_install_date="2016-01-01 23:59",
             ),
@@ -452,7 +460,7 @@ class TestBeacon360Adapter(BaseTestCase):
         expected_meters = [
             GeneralMeter(
                 org_id="this-org",
-                device_id="10101",
+                device_id="130615549",
                 account_id="1",
                 location_id="1",
                 meter_id="10101",
@@ -470,11 +478,11 @@ class TestBeacon360Adapter(BaseTestCase):
             ),
             GeneralMeter(
                 org_id="this-org",
-                device_id="1470158170",
+                device_id="999",
                 account_id="303022",
                 location_id="303022",
                 meter_id="1470158170",
-                endpoint_id="130615549",
+                endpoint_id="999",
                 meter_install_date=datetime.datetime(
                     2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
                 ),
@@ -492,7 +500,7 @@ class TestBeacon360Adapter(BaseTestCase):
         expected_reads = [
             GeneralMeterRead(
                 org_id="this-org",
-                device_id="10101",
+                device_id="130615549",
                 account_id="1",
                 location_id="1",
                 flowtime=datetime.datetime(
@@ -505,7 +513,7 @@ class TestBeacon360Adapter(BaseTestCase):
             ),
             GeneralMeterRead(
                 org_id="this-org",
-                device_id="1470158170",
+                device_id="999",
                 account_id="303022",
                 location_id="303022",
                 flowtime=datetime.datetime(
@@ -519,6 +527,23 @@ class TestBeacon360Adapter(BaseTestCase):
         ]
         self.assertListEqual(expected_reads, transformed_reads)
 
+    def test_transform_meters_and_reads__two_entries_for_same_meter(self):
+        raw_meters_with_reads = [
+            beacon_meter_and_read_factory(),
+            # Second entry is the same meter but with new install date
+            # We should only keep one of the entries
+            beacon_meter_and_read_factory(meter_install_date="2017-02-02 23:59"),
+        ]
+        transformed_meters, transformed_reads = (
+            self.adapter._transform_meters_and_reads(raw_meters_with_reads)
+        )
+        self.assertEqual(1, len(transformed_meters))
+        self.assertEqual(
+            datetime.datetime(2017, 2, 2, 23, 59, tzinfo=pytz.timezone("Europe/Rome")),
+            transformed_meters[0].meter_install_date,
+        )
+        self.assertEqual(1, len(transformed_reads))
+
     def test_transform_meters_and_reads__ignores_reads_when_date_missing(self):
         raw_meters_with_reads = [
             beacon_meter_and_read_factory(flow_time=None),
@@ -531,11 +556,11 @@ class TestBeacon360Adapter(BaseTestCase):
         expected_meters = [
             GeneralMeter(
                 org_id="this-org",
-                device_id="1470158170",
+                device_id="22",
                 account_id="303022",
                 location_id="303022",
                 meter_id="1470158170",
-                endpoint_id="130615549",
+                endpoint_id="22",
                 meter_install_date=None,
                 meter_size="0.625",
                 meter_manufacturer="BADGER",
