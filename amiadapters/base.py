@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
+import logging
 from typing import List, Tuple
 
 from pytz import timezone
@@ -14,6 +15,8 @@ from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
 from amiadapters.storage.base import BaseAMIStorageSink
 from amiadapters.storage.snowflake import SnowflakeStorageSink, RawSnowflakeLoader
+
+logger = logging.getLogger(__name__)
 
 
 class BaseAMIAdapter(ABC):
@@ -163,7 +166,10 @@ class BaseAMIAdapter(ABC):
             "5/8x3/4": "0.625x0.75",
             "5/8x3/4in": "0.625x0.75",
         }
-        return mapping.get(size)
+        result = mapping.get(size)
+        if result is None:
+            logging.info(f"Unable to map meter size: {size}")
+        return result
 
     def map_unit_of_measure(self, unit_of_measure: str) -> str:
         """
@@ -175,7 +181,10 @@ class BaseAMIAdapter(ABC):
             "CCF": GeneralMeterUnitOfMeasure.HUNDRED_CUBIC_FEET,
             "Gallon": GeneralMeterUnitOfMeasure.GALLON,
         }
-        return mapping.get(unit_of_measure)
+        result = mapping.get(unit_of_measure)
+        if result is None:
+            logging.info(f"Unable to map unit of measure: {unit_of_measure}")
+        return result
 
     def _validate_extract_range(
         self, extract_range_start: datetime, extract_range_end: datetime
