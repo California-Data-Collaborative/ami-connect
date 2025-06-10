@@ -49,7 +49,13 @@ def ami_control_dag_factory(
                 start_from_params, end_from_params, backfill_params=backfill_params
             )
 
-            adapter.extract(run_id, start, end, meter_ids=backfill_params.meter_ids)
+            device_ids = (
+                context["params"]["device_ids"].split(",")
+                if "device_ids" in context["params"]
+                else None
+            )
+
+            adapter.extract(run_id, start, end, device_ids=device_ids)
 
         @task()
         def transform(adapter: BaseAMIAdapter, **context):
@@ -108,6 +114,11 @@ for adapter in utility_adapters:
         "extract_range_end": Param(
             type="string",
             description="End of date range for which we'll extract meter read data",
+            default="",
+        ),
+        "device_ids": Param(
+            type="string",
+            description="Comma separated list of device_ids for which we'll extract meter read data",
             default="",
         ),
     }

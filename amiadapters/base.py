@@ -54,14 +54,19 @@ class BaseAMIAdapter(ABC):
 
     @abstractmethod
     def extract(
-        self, run_id: str, extract_range_start: datetime, extract_range_end: datetime
+        self,
+        run_id: str,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+        device_ids: List[str] = None,
     ):
         """
         Extract data from an AMI data source.
 
         :run_id: identifier for this run of the pipeline, is used to store intermediate output files
-        :extract_range_start datetime: start of meter read datetime range for which we'll extract data
-        :extract_range_end datetime:   end of meter read datetime range for which we'll extract data
+        :extract_range_start datetime:  start of meter read datetime range for which we'll extract data
+        :extract_range_end datetime:    end of meter read datetime range for which we'll extract data
+        :device_ids optional list[str]: list of devices for which we'll extract
         """
         pass
 

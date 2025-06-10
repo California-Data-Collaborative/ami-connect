@@ -142,7 +142,6 @@ class AMIAdapterConfiguration:
             end_date = backfill_config.get("end_date")
             interval_days = backfill_config.get("interval_days")
             schedule = backfill_config.get("schedule")
-            meter_ids = backfill_config.get("meter_ids")
             if any(
                 i is None
                 for i in [org_id, start_date, end_date, interval_days, schedule]
@@ -161,7 +160,6 @@ class AMIAdapterConfiguration:
                     ),
                     interval_days=interval_days,
                     schedule=schedule,
-                    meter_ids=meter_ids,
                 )
             )
 
@@ -368,7 +366,6 @@ class Backfill:
     end_date: datetime
     interval_days: str  # Number of days to backfill in one run
     schedule: str  # crontab-formatted string specifying run schedule
-    meter_ids: Optional[List[str]] = None
 
 
 @dataclass
