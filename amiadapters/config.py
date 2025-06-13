@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional, Union
+from enum import Enum
+from typing import List, Union
 import pathlib
 
 from airflow.providers.amazon.aws.notifications.sns import SnsNotifier
@@ -87,17 +88,19 @@ class AMIAdapterConfiguration:
             # Parse secrets for data source
             this_source_secrets = secrets_yaml.get("sources", {}).get(org_id)
             match type:
-                case ConfiguredAMISourceType.ACLARA:
+                case ConfiguredAMISourceType.ACLARA.value.type:
                     secrets = AclaraSecrets(
                         this_source_secrets.get("sftp_user"),
                         this_source_secrets.get("sftp_password"),
                     )
-                case ConfiguredAMISourceType.BEACON_360:
+                case ConfiguredAMISourceType.BEACON_360.value.type:
                     secrets = Beacon360Secrets(
                         this_source_secrets.get("beacon_360_user"),
                         this_source_secrets.get("beacon_360_password"),
                     )
-                case ConfiguredAMISourceType.SENTRYX:
+                case ConfiguredAMISourceType.METERSENSE.value.type:
+                    secrets = MetersenseSecrets()
+                case ConfiguredAMISourceType.SENTRYX.value.type:
                     secrets = SentryxSecrets(
                         this_source_secrets.get("sentryx_api_key"),
                     )
@@ -185,12 +188,13 @@ class AMIAdapterConfiguration:
         # Circular import, TODO fix
         from amiadapters.aclara import AclaraAdapter
         from amiadapters.beacon import Beacon360Adapter
+        from amiadapters.metersense import MetersenseAdapter
         from amiadapters.sentryx import SentryxAdapter
 
         adapters = []
         for source in self._sources:
             match source.type:
-                case ConfiguredAMISourceType.ACLARA:
+                case ConfiguredAMISourceType.ACLARA.value.type:
                     adapters.append(
                         AclaraAdapter(
                             source.org_id,
@@ -202,7 +206,7 @@ class AMIAdapterConfiguration:
                             source.storage_sinks,
                         )
                     )
-                case ConfiguredAMISourceType.BEACON_360:
+                case ConfiguredAMISourceType.BEACON_360.value.type:
                     adapters.append(
                         Beacon360Adapter(
                             source.secrets.user,
@@ -214,7 +218,16 @@ class AMIAdapterConfiguration:
                             source.storage_sinks,
                         )
                     )
-                case ConfiguredAMISourceType.SENTRYX:
+                case ConfiguredAMISourceType.METERSENSE.value.type:
+                    adapters.append(
+                        MetersenseAdapter(
+                            source.org_id,
+                            source.timezone,
+                            source.task_output_controller,
+                            source.storage_sinks,
+                        )
+                    )
+                case ConfiguredAMISourceType.SENTRYX.value.type:
                     adapters.append(
                         SentryxAdapter(
                             source.secrets.api_key,
@@ -381,6 +394,11 @@ class Beacon360Secrets:
 
 
 @dataclass
+class MetersenseSecrets:
+    pass
+
+
+@dataclass
 class SentryxSecrets:
     api_key: str
 
@@ -393,10 +411,78 @@ class ConfiguredSftp:
     local_known_hosts_file: str
 
 
-class ConfiguredAMISourceType:
-    ACLARA = "aclara"
-    BEACON_360 = "beacon_360"
-    SENTRYX = "sentryx"
+class SourceSchema:
+    """
+    Definition of a source, its secrets configuration and which types of storage
+    sink can be used with it.
+    """
+
+    def __init__(
+        self,
+        type: str,
+        secret_type: Union[
+            AclaraSecrets, Beacon360Secrets, MetersenseSecrets, SentryxSecrets
+        ],
+        valid_sink_types: List[ConfiguredStorageSinkType],
+    ):
+        self.type = type
+        self.secret_type = secret_type
+        self.valid_sink_types = valid_sink_types
+
+
+class ConfiguredAMISourceType(Enum):
+    """
+    Define a source type for your adapter here. Tell the pipeline the name of your source type
+    so that it can match it to your configuration. Also tell it which secrets type to expect
+    and which storage sinks can be used. The pipeline will use this to validate configuration.
+    """
+
+    ACLARA = SourceSchema(
+        "aclara", AclaraSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
+    )
+    BEACON_360 = SourceSchema(
+        "beacon_360", Beacon360Secrets, [ConfiguredStorageSinkType.SNOWFLAKE]
+    )
+    METERSENSE = SourceSchema(
+        "metersense", MetersenseSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
+    )
+    SENTRYX = SourceSchema(
+        "sentryx", SentryxSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
+    )
+
+    @classmethod
+    def is_valid_type(cls, the_type: str) -> bool:
+        schemas = cls.__members__.values()
+        return the_type in set(s.value.type for s in schemas)
+
+    @classmethod
+    def is_valid_secret_for_type(
+        cls,
+        the_type: str,
+        secret_type: Union[
+            AclaraSecrets, Beacon360Secrets, MetersenseSecrets, SentryxSecrets
+        ],
+    ) -> bool:
+        matching_schema = cls._matching_schema_for_type(the_type)
+        return matching_schema.secret_type == secret_type
+
+    @classmethod
+    def are_valid_storage_sinks_for_type(
+        cls, the_type: str, sinks: List[ConfiguredStorageSink]
+    ) -> bool:
+        matching_schema = cls._matching_schema_for_type(the_type)
+        return all(s.type in matching_schema.valid_sink_types for s in sinks)
+
+    @classmethod
+    def _matching_schema_for_type(cls, the_type: str) -> SourceSchema:
+        matching_schemas = [
+            v.value for v in cls.__members__.values() if v.value.type == the_type
+        ]
+        if len(matching_schemas) != 1:
+            raise ValueError(
+                f"Invalid number of matching schemas for type {the_type}: {matching_schemas}"
+            )
+        return matching_schemas[0]
 
 
 class ConfiguredAMISource:
@@ -433,11 +519,7 @@ class ConfiguredAMISource:
         self.storage_sinks = self._sinks(sinks)
 
     def _type(self, type: str) -> str:
-        if type in {
-            ConfiguredAMISourceType.ACLARA,
-            ConfiguredAMISourceType.BEACON_360,
-            ConfiguredAMISourceType.SENTRYX,
-        }:
+        if ConfiguredAMISourceType.is_valid_type(type):
             return type
         raise ValueError(f"Unrecognized AMI source type: {type}")
 
@@ -462,7 +544,7 @@ class ConfiguredAMISource:
         return task_output_controller
 
     def _configured_sftp(self, configured_sftp: ConfiguredSftp) -> ConfiguredSftp:
-        if self.type == ConfiguredAMISourceType.ACLARA:
+        if self.type == ConfiguredAMISourceType.ACLARA.value.type:
             if any(
                 i is None
                 for i in [
@@ -477,35 +559,21 @@ class ConfiguredAMISource:
                 )
         return configured_sftp
 
-    def _secrets(self, secrets: str) -> Union[Beacon360Secrets, SentryxSecrets]:
+    def _secrets(self, secrets: str):
         if secrets is None:
             return None
 
-        if self.type == ConfiguredAMISourceType.ACLARA and isinstance(
-            secrets, AclaraSecrets
-        ):
+        if ConfiguredAMISourceType.is_valid_secret_for_type(self.type, type(secrets)):
             return secrets
-        if self.type == ConfiguredAMISourceType.BEACON_360 and isinstance(
-            secrets, Beacon360Secrets
-        ):
-            return secrets
-        elif self.type == ConfiguredAMISourceType.SENTRYX and isinstance(
-            secrets, SentryxSecrets
-        ):
-            return secrets
+
         raise ValueError(f"Invalid secrets type for source type {self.type}")
 
     def _sinks(self, sinks: List[ConfiguredStorageSink]) -> List[ConfiguredStorageSink]:
         """
         Validate that this type of sink is compatible with this data source type.
         """
-        if self.type in {
-            ConfiguredAMISourceType.ACLARA,
-            ConfiguredAMISourceType.BEACON_360,
-            ConfiguredAMISourceType.SENTRYX,
-        }:
-            if all(s.type == ConfiguredStorageSinkType.SNOWFLAKE for s in sinks):
-                return sinks
+        if ConfiguredAMISourceType.are_valid_storage_sinks_for_type(self.type, sinks):
+            return sinks
         raise ValueError(f"Invalid sink type(s) for source type {self.type}")
 
     def __repr__(self):
