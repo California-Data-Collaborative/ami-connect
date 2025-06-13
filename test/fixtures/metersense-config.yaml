@@ -1,0 +1,14 @@
+sources:
+- type: metersense
+  org_id: my_utility
+  timezone: America/Los_Angeles
+  sinks:
+  - my_snowflake_instance
+
+sinks:
+- type: snowflake
+  id: my_snowflake_instance
+
+task_output:
+  type: local
+  output_folder: outputs
