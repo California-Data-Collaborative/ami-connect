@@ -128,6 +128,8 @@ class MetersenseRegisterRead:
 class MetersenseAdapter(BaseAMIAdapter):
     """
     AMI Adapter that retrieves Xylem/Sensus data from a Metersense Oracle database.
+    The Oracle database is only accessible through an SSH tunnel. This code assumes the tunnel
+    infrastructure exists and connects to Oracle through SSH to an intermediate server.
     """
 
     def __init__(
@@ -135,9 +137,35 @@ class MetersenseAdapter(BaseAMIAdapter):
         org_id,
         org_timezone,
         configured_task_output_controller,
+        ssh_tunnel_server_host,
+        ssh_tunnel_username,
+        ssh_tunnel_key_path,
+        database_host,
+        database_port,
+        database_db_name,
+        database_user,
+        database_password,
         configured_sinks=None,
         raw_snowflake_loader=None,
     ):
+        """
+        ssh_tunnel_server_host = hostname or IP of intermediate server
+        ssh_tunnel_username = SSH username for intermediate server
+        ssh_tunnel_key_path = path to local SSH private key for authentication to intermediate server (the intermediate server must know your public key already!)
+        database_host = hostname or IP of the Oracle database
+        database_port = port of Oracle database
+        database_db_name = database name of Oracle database
+        database_user = username for Oracle database
+        database_password = password for Oracle database
+        """
+        self.ssh_tunnel_server_host = ssh_tunnel_server_host
+        self.ssh_tunnel_username = ssh_tunnel_username
+        self.ssh_tunnel_key_path = ssh_tunnel_key_path
+        self.database_host = database_host
+        self.database_port = database_port
+        self.database_db_name = database_db_name
+        self.database_user = database_user
+        self.database_password = database_password
         super().__init__(
             org_id,
             org_timezone,
@@ -156,31 +184,17 @@ class MetersenseAdapter(BaseAMIAdapter):
         extract_range_end: datetime,
         device_ids: List[str] = None,
     ):
-        ssh_tunnel_server_ip = "airflow-new.californiadatacollaborative.org"
-        ssh_username = "ubuntu"
-        database_port = 1521
-        database_host = "172.24.132.26"
-        database_name = "PRODODS"
-        database_user = "chris_ro"
-        database_password = "cadcr0u5erwx"
-        ssh_key_path = "/Users/matthewdowell/.ssh/id_ed25519"
-
         # with sshtunnel.open_tunnel(
-        #     (ssh_tunnel_server_ip),
-        #     ssh_username=ssh_username,
-        #     ssh_pkey=ssh_key_path,
-        #     remote_bind_address=(database_host, database_port),
-        #     local_bind_address=('0.0.0.0', database_port)
-        # ) as tunnel:
-        #     # client = paramiko.SSHClient()
-        #     # client.load_system_host_keys()
-        #     # client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        #     # client.connect('127.0.0.1', 10022)
-        #     # # do some operations with client session
-        #     # client.close()
+        #     (self.ssh_tunnel_server_host),
+        #     ssh_username=self.ssh_tunnel_username,
+        #     ssh_pkey=self.ssh_tunnel_key_path,
+        #     remote_bind_address=(self.database_host, self.database_port),
+        #     # Locally, bind to localhost and arbitrary port. Use same host and port later when connecting to Oracle.
+        #     local_bind_address=('0.0.0.0', 10209)
+        # ) as _:
         #     logging.info("Created SSH tunnel")
         #     connection = oracledb.connect(
-        #         user=database_user, password=database_password, dsn=f"0.0.0.0:{database_port}/{database_name}"
+        #         user=self.database_user, password=self.database_password, dsn=f"0.0.0.0:10209/{self.database_db_name}"
         #     )
 
         #     logger.info("Successfully connected to Oracle Database")
