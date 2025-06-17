@@ -87,6 +87,8 @@ class AMIAdapterConfiguration:
 
             # Parse secrets for data source
             this_source_secrets = secrets_yaml.get("sources", {}).get(org_id)
+            if this_source_secrets is None:
+                raise ValueError(f"No secrets found for org_id: {org_id}")
             match type:
                 case ConfiguredAMISourceType.ACLARA.value.type:
                     secrets = AclaraSecrets(
@@ -99,7 +101,12 @@ class AMIAdapterConfiguration:
                         this_source_secrets.get("beacon_360_password"),
                     )
                 case ConfiguredAMISourceType.METERSENSE.value.type:
-                    secrets = MetersenseSecrets()
+                    secrets = MetersenseSecrets(
+                        this_source_secrets.get("ssh_tunnel_username"),
+                        this_source_secrets.get("database_db_name"),
+                        this_source_secrets.get("database_user"),
+                        this_source_secrets.get("database_password"),
+                    )
                 case ConfiguredAMISourceType.SENTRYX.value.type:
                     secrets = SentryxSecrets(
                         this_source_secrets.get("sentryx_api_key"),
@@ -116,11 +123,20 @@ class AMIAdapterConfiguration:
                     raise ValueError(f"Unrecognized sink {sink_id} for source {org_id}")
                 sinks.append(sink)
 
+            # Only certain source types, like ACLARA
             configured_sftp = ConfiguredSftp(
                 source.get("sftp_host"),
                 source.get("sftp_remote_data_directory"),
                 source.get("sftp_local_download_directory"),
                 source.get("sftp_local_known_hosts_file"),
+            )
+
+            # Only certain source types, like METERSENSE
+            configured_ssh_tunnel_to_database = ConfiguredSSHTunnelToDatabase(
+                ssh_tunnel_server_host=source.get("ssh_tunnel_server_host"),
+                ssh_tunnel_key_path=source.get("ssh_tunnel_key_path"),
+                database_host=source.get("database_host"),
+                database_port=source.get("database_port"),
             )
 
             configured_source = ConfiguredAMISource(
@@ -131,6 +147,7 @@ class AMIAdapterConfiguration:
                 task_output_controller,
                 source.get("utility_name"),
                 configured_sftp,
+                configured_ssh_tunnel_to_database,
                 secrets,
                 sinks,
             )
@@ -224,7 +241,15 @@ class AMIAdapterConfiguration:
                             source.org_id,
                             source.timezone,
                             source.task_output_controller,
-                            source.storage_sinks,
+                            ssh_tunnel_server_host="tunnel-ip",
+                            ssh_tunnel_username="ubuntu",
+                            ssh_tunnel_key_path="/key",
+                            database_host="db-host",
+                            database_port=1521,
+                            database_db_name="db-name",
+                            database_user="dbu",
+                            database_password="dbp",
+                            configured_sinks=source.storage_sinks,
                         )
                     )
                 case ConfiguredAMISourceType.SENTRYX.value.type:
@@ -395,7 +420,10 @@ class Beacon360Secrets:
 
 @dataclass
 class MetersenseSecrets:
-    pass
+    ssh_tunnel_username: str
+    database_db_name: str
+    database_user: str
+    database_password: str
 
 
 @dataclass
@@ -409,6 +437,14 @@ class ConfiguredSftp:
     remote_data_directory: str
     local_download_directory: str
     local_known_hosts_file: str
+
+
+@dataclass
+class ConfiguredSSHTunnelToDatabase:
+    ssh_tunnel_server_host: str
+    ssh_tunnel_key_path: str
+    database_host: str
+    database_port: str
 
 
 class SourceSchema:
@@ -488,6 +524,10 @@ class ConfiguredAMISourceType(Enum):
 class ConfiguredAMISource:
     """
     Configures a single utility's AMI data source and its storage sinks.
+
+    As of this writing, instead of doing a polymorphic type for each source,
+    we're just dumping all source-specific configuration into this class. E.g. "utility_name"
+    is only used by one source type, but we throw it in here with the rest of the kitchen sink.
     """
 
     DEFAULT_TIMEZONE = "America/LosAngeles"
@@ -503,6 +543,7 @@ class ConfiguredAMISource:
         ],
         utility_name: str,
         configured_sftp: ConfiguredSftp,
+        configured_ssh_tunnel_to_database: ConfiguredSSHTunnelToDatabase,
         secrets: Union[Beacon360Secrets, SentryxSecrets],
         sinks: List[ConfiguredStorageSink],
     ):
@@ -515,6 +556,9 @@ class ConfiguredAMISource:
         )
         self.utility_name = utility_name
         self.configured_sftp = self._configured_sftp(configured_sftp)
+        self.configured_ssh_tunnel_to_database = (
+            self._configured_ssh_tunnel_to_database(configured_ssh_tunnel_to_database)
+        )
         self.secrets = self._secrets(secrets)
         self.storage_sinks = self._sinks(sinks)
 
@@ -558,6 +602,24 @@ class ConfiguredAMISource:
                     f"Invalid SFTP config for source with type {self.type}"
                 )
         return configured_sftp
+
+    def _configured_ssh_tunnel_to_database(
+        self, configured_ssh_tunnel_to_database: ConfiguredSSHTunnelToDatabase
+    ) -> ConfiguredSSHTunnelToDatabase:
+        if self.type == ConfiguredAMISourceType.METERSENSE.value.type:
+            if any(
+                i is None
+                for i in [
+                    configured_ssh_tunnel_to_database.ssh_tunnel_server_host,
+                    configured_ssh_tunnel_to_database.ssh_tunnel_key_path,
+                    configured_ssh_tunnel_to_database.database_host,
+                    configured_ssh_tunnel_to_database.database_port,
+                ]
+            ):
+                raise ValueError(
+                    f"Invalid SSHTunnelToDatabase config for source with type {self.type}"
+                )
+        return configured_ssh_tunnel_to_database
 
     def _secrets(self, secrets: str):
         if secrets is None:

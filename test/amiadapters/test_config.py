@@ -105,6 +105,20 @@ class TestConfig(BaseTestCase):
         self.assertEqual("metersense", source.type)
         self.assertEqual("my_utility", source.org_id)
         self.assertEqual("America/Los_Angeles", str(source.timezone))
+        self.assertEqual(
+            "tunnel-ip", source.configured_ssh_tunnel_to_database.ssh_tunnel_server_host
+        )
+        self.assertEqual("ubuntu", source.secrets.ssh_tunnel_username)
+        self.assertEqual(
+            "/key", source.configured_ssh_tunnel_to_database.ssh_tunnel_key_path
+        )
+        self.assertEqual(
+            "db-host", source.configured_ssh_tunnel_to_database.database_host
+        )
+        self.assertEqual(1521, source.configured_ssh_tunnel_to_database.database_port)
+        self.assertEqual("db-name", source.secrets.database_db_name)
+        self.assertEqual("dbu", source.secrets.database_user)
+        self.assertEqual("dbp", source.secrets.database_password)
 
     def test_can_instantiate_backfills_from_yaml(self):
         config = AMIAdapterConfiguration.from_yaml(
