@@ -21,6 +21,11 @@ sources:
   sftp_local_known_hosts_file: ./known-hosts
   sinks:
   - my_snowflake_instance
+- type: metersense
+  org_id: my_metersense_utility
+  timezone: America/Los_Angeles
+  sinks:
+  - my_snowflake_instance
 
 sinks:
 - type: snowflake

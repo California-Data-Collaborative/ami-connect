@@ -113,7 +113,7 @@ how it extracts data from the AMI data source, how it transforms that data into 
 
 Steps:
 1. In a new python file within `amiadapters`, create a new implementation of the `BaseAMIAdapter` abstract class.
-2. define extract
-3. define transform
-4. define raw load, including SQL and anything else for setup
-5. Add to configuration
+2. Define an extract function that retrieves AMI data from a source and outputs it using an output controller. This function shouldn't alter the data much - its output should stay as close to the source data to reduce risk of error and to give us a historical record of the source data via our stored intermediate outputs.
+3. Define a transform function that takes the data from extract and transforms it into our generic data models, then outputs it using an output controller.
+4. If you're loading the raw data into a storage sink, you should define that step using something like RawSnowflakeLoader.
+5. For the pipeline to run your adapter, the `AMIAdapterConfiguration.adapters()` function will need to be able to instantiate your adapter. This will require some code in `config.py`. You'll need to figure out what a block in the `sources` section of the config looks like for your adapter, then be able to parse that block, e.g. within `AMIAdapterConfiguration.from_yaml()`.

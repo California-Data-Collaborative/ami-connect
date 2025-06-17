@@ -12,6 +12,7 @@ from amiadapters.config import (
     find_config_yaml,
     find_secrets_yaml,
 )
+from amiadapters.metersense import MetersenseAdapter
 from amiadapters.sentryx import SentryxAdapter
 from test.base_test_case import BaseTestCase
 
@@ -94,6 +95,17 @@ class TestConfig(BaseTestCase):
         self.assertEqual("my_user", source.secrets.sftp_user)
         self.assertEqual("my_password", source.secrets.sftp_password)
 
+    def test_can_instantiate_metersense_via_yaml(self):
+        config = AMIAdapterConfiguration.from_yaml(
+            self.get_fixture_path("metersense-config.yaml"),
+            self.get_fixture_path("metersense-secrets.yaml"),
+        )
+        self.assertEqual(1, len(config._sources))
+        source = config._sources[0]
+        self.assertEqual("metersense", source.type)
+        self.assertEqual("my_utility", source.org_id)
+        self.assertEqual("America/Los_Angeles", str(source.timezone))
+
     def test_can_instantiate_backfills_from_yaml(self):
         config = AMIAdapterConfiguration.from_yaml(
             self.get_fixture_path("beacon-360-config.yaml"),
@@ -121,10 +133,11 @@ class TestConfig(BaseTestCase):
         )
         adapters = config.adapters()
 
-        self.assertEqual(3, len(adapters))
+        self.assertEqual(4, len(adapters))
         self.assertIn(AclaraAdapter, map(lambda a: type(a), adapters))
-        self.assertIn(SentryxAdapter, map(lambda a: type(a), adapters))
         self.assertIn(Beacon360Adapter, map(lambda a: type(a), adapters))
+        self.assertIn(MetersenseAdapter, map(lambda a: type(a), adapters))
+        self.assertIn(SentryxAdapter, map(lambda a: type(a), adapters))
 
     def test_can_create_on_failure_notifier(self):
         config = AMIAdapterConfiguration.from_yaml(
