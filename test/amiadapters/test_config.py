@@ -5,15 +5,15 @@ from unittest.mock import patch
 from airflow.providers.amazon.aws.notifications.sns import SnsNotifier
 import pytz
 
-from amiadapters.aclara import AclaraAdapter
-from amiadapters.beacon import Beacon360Adapter
+from amiadapters.adapters.aclara import AclaraAdapter
+from amiadapters.adapters.beacon import Beacon360Adapter
 from amiadapters.config import (
     AMIAdapterConfiguration,
     find_config_yaml,
     find_secrets_yaml,
 )
-from amiadapters.metersense import MetersenseAdapter
-from amiadapters.sentryx import SentryxAdapter
+from amiadapters.adapters.metersense import MetersenseAdapter
+from amiadapters.adapters.sentryx import SentryxAdapter
 from test.base_test_case import BaseTestCase
 
 

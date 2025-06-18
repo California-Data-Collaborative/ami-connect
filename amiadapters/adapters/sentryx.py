@@ -12,7 +12,7 @@ from amiadapters.models import (
     GeneralMeter,
     GeneralMeterRead,
 )
-from amiadapters.base import BaseAMIAdapter
+from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader
 

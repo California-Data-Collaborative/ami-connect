@@ -3,7 +3,7 @@ import json
 import pytz
 from unittest import mock
 
-from amiadapters.beacon import (
+from amiadapters.adapters.beacon import (
     Beacon360Adapter,
     Beacon360MeterAndRead,
     BeaconRawSnowflakeLoader,

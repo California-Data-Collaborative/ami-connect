@@ -5,7 +5,7 @@ from unittest import mock
 from amiadapters.config import ConfiguredLocalTaskOutputController
 from amiadapters.models import GeneralMeterRead
 from amiadapters.models import GeneralMeter
-from amiadapters.sentryx import (
+from amiadapters.adapters.sentryx import (
     SentryxAdapter,
     SentryxMeter,
     SentryxMeterRead,

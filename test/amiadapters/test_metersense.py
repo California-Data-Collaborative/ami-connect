@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import pytz
 
 from amiadapters.config import ConfiguredLocalTaskOutputController
-from amiadapters.metersense import (
+from amiadapters.adapters.metersense import (
     MetersenseAdapter,
     MetersenseIntervalRead,
     MetersenseMeterLocation,

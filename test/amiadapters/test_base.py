@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import pytz
 
-from amiadapters.base import ExtractRangeCalculator
-from amiadapters.beacon import Beacon360Adapter
+from amiadapters.adapters.base import ExtractRangeCalculator
+from amiadapters.adapters.beacon import Beacon360Adapter
 from amiadapters.config import Backfill, ConfiguredLocalTaskOutputController
 from amiadapters.storage.snowflake import SnowflakeStorageSink
 from test.base_test_case import BaseTestCase
@@ -99,7 +99,7 @@ class TestExtractRangeCalculator(BaseTestCase):
         sinks = [self.snowflake_sink]
         self.calculator = ExtractRangeCalculator(org_id="my_org", storage_sinks=sinks)
 
-    @patch("amiadapters.base.datetime")
+    @patch("amiadapters.adapters.base.datetime")
     def test_calculate_extract_range__both_dates_none(self, mock_datetime):
         # Set up mock for datetime.now()
         now = datetime(2025, 4, 22, 12, 0, 0)
