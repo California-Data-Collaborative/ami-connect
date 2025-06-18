@@ -184,191 +184,49 @@ class MetersenseAdapter(BaseAMIAdapter):
         extract_range_end: datetime,
         device_ids: List[str] = None,
     ):
-        # with sshtunnel.open_tunnel(
-        #     (self.ssh_tunnel_server_host),
-        #     ssh_username=self.ssh_tunnel_username,
-        #     ssh_pkey=self.ssh_tunnel_key_path,
-        #     remote_bind_address=(self.database_host, self.database_port),
-        #     # Locally, bind to localhost and arbitrary port. Use same host and port later when connecting to Oracle.
-        #     local_bind_address=('0.0.0.0', 10209)
-        # ) as _:
-        #     logging.info("Created SSH tunnel")
-        #     connection = oracledb.connect(
-        #         user=self.database_user, password=self.database_password, dsn=f"0.0.0.0:10209/{self.database_db_name}"
-        #     )
+        with sshtunnel.open_tunnel(
+            (self.ssh_tunnel_server_host),
+            ssh_username=self.ssh_tunnel_username,
+            ssh_pkey=self.ssh_tunnel_key_path,
+            remote_bind_address=(self.database_host, self.database_port),
+            # Locally, bind to localhost and arbitrary port. Use same host and port later when connecting to Oracle.
+            local_bind_address=("0.0.0.0", 10209),
+        ) as _:
+            logging.info("Created SSH tunnel")
+            connection = oracledb.connect(
+                user=self.database_user,
+                password=self.database_password,
+                dsn=f"0.0.0.0:10209/{self.database_db_name}",
+            )
 
-        #     logger.info("Successfully connected to Oracle Database")
+            logger.info("Successfully connected to Oracle Database")
 
-        #     cursor = connection.cursor()
-        # TODO Generate field names from dataclass?
-        # TODO Should timestamp filter account for backfill scenario, where account may have been active a long time ago?
-        # result = cursor.execute("""
-        #     SELECT
-        #         m.meter_id,
-        #         m.alt_meter_id,
-        #         m.meter_tp,
-        #         m.commodity_tp,
-        #         m.region_id,
-        #         m.interval_length,
-        #         m.regread_frequency,
-        #         m.channel1_raw_uom,
-        #         m.channel2_raw_uom,
-        #         m.channel3_raw_uom,
-        #         m.channel4_raw_uom,
-        #         m.channel5_raw_uom,
-        #         m.channel6_raw_uom,
-        #         m.channel7_raw_uom,
-        #         m.channel8_raw_uom,
-        #         m.channel1_multiplier,
-        #         m.channel2_multiplier,
-        #         m.channel3_multiplier,
-        #         m.channel4_multiplier,
-        #         m.channel5_multiplier,
-        #         m.channel6_multiplier,
-        #         m.channel7_multiplier,
-        #         m.channel8_multiplier,
-        #         m.channel1_final_uom,
-        #         m.channel2_final_uom,
-        #         m.channel3_final_uom,
-        #         m.channel4_final_uom,
-        #         m.channel5_final_uom,
-        #         m.channel6_final_uom,
-        #         m.channel7_final_uom,
-        #         m.channel8_final_uom,
-        #         m.first_data_ts,
-        #         m.last_data_ts,
-        #         m.ami_id,
-        #         m.power_status,
-        #         m.latitude,
-        #         m.longitude,
-        #         m.exclude_in_reports,
-        #         m.add_by,
-        #         m.add_dt,
-        #         m.change_by,
-        #         m.change_dt,
-        #         l.location_no,
-        #         l.alt_location_id,
-        #         l.location_class,
-        #         l.unit_no,
-        #         l.street_no,
-        #         l.street_pfx,
-        #         l.street_name,
-        #         l.street_sfx,
-        #         l.street_sfx_dir,
-        #         l.city,
-        #         l.state,
-        #         l.postal_cd,
-        #         l.billing_cycle,
-        #         l.add_by,
-        #         l.add_dt,
-        #         l.change_by,
-        #         l.change_dt,
-        #         l.latitude,
-        #         l.longitude,
-        #         a.service_id,
-        #         a.account_id,
-        #         a.location_no,
-        #         a.commodity_tp,
-        #         a.last_read_dt,
-        #         a.active_dt,
-        #         a.inactive_dt
-        #     FROM METERS m
-        #     LEFT JOIN meter_location_xref x ON m.meter_id = x.meter_id
-        #     LEFT JOIN locations l ON l.location_no = x.location_no
-        #     LEFT JOIN account_services a ON a.location_no = x.location_no
-        #     WHERE m.commodity_tp = 'W'
-        #     AND a.commodity_tp = 'W'
-        #     AND x.inactive_dt > SYSTIMESTAMP
-        #     AND a.inactive_dt > SYSTIMESTAMP
-        #     AND m.meter_id = '87195806'
-        #     ORDER BY m.meter_id, l.location_no, a.account_id, a.last_read_dt desc
-        #                         """)
-        # result = cursor.fetchall()
-        # rows = [i for i in result]
-        # logger.info(f"Fetched {len(rows)} meter metadata rows")
-        # columns = list(MetersenseMeterLocation.__dataclass_fields__.keys())
-        # meters = []
-        # for row in rows:
-        #     data = {}
-        #     for name, value in zip(columns, row):
-        #         if isinstance(value, datetime):
-        #             value = value.isoformat()
-        #         data[name] = value
-        #     meters.append(MetersenseMeterLocation(**data))
+            cursor = connection.cursor()
 
-        # TODO filter register_reads and interval_reads queries by start and end date
+            meters = self._extract_meters(cursor)
+            register_reads = self._extract_register_reads(
+                cursor, extract_range_start, extract_range_end
+            )
+            interval_reads = self._extract_interval_reads(
+                cursor, extract_range_start, extract_range_end
+            )
 
-        # register_reads_result = cursor.execute("""
-        #     SELECT
-        #         r.meter_id,
-        #         r.channel_id,
-        #         r.read_dtm,
-        #         r.read_value,
-        #         r.uom,
-        #         r.status,
-        #         r.read_version
-        #     FROM registerreads r
-        #     WHERE r.meter_id IN (SELECT DISTINCT meter_id FROM meters m where m.commodity_tp = 'W')
-        #     AND r.meter_id = '87195806'
-        # """)
-        # register_read_rows = [i for i in register_reads_result]
-        # logger.info(f"Fetched {len(register_read_rows)} register read rows")
-        # register_read_columns = list(MetersenseRegisterRead.__dataclass_fields__.keys())
-        # register_reads = []
-        # for row in register_read_rows:
-        #     data = {}
-        #     for name, value in zip(register_read_columns, row):
-        #         if isinstance(value, datetime):
-        #             value = value.isoformat()
-        #         data[name] = value
-        #     register_reads.append(MetersenseRegisterRead(**data))
-
-        # interval_reads_result = cursor.execute("""
-        #     SELECT
-        #         r.meter_id,
-        #         r.channel_id,
-        #         r.read_dt,
-        #         r.read_hr,
-        #         r.read_30min_int,
-        #         r.read_15min_int,
-        #         r.read_5min_int,
-        #         r.read_dtm,
-        #         r.read_value,
-        #         r.uom,
-        #         r.status,
-        #         r.read_version
-        #     FROM intervalreads r
-        #     WHERE r.meter_id IN (SELECT DISTINCT meter_id FROM meters m where m.commodity_tp = 'W')
-        #     AND r.meter_id = '87195806'
-        # """)
-        # interval_reads_rows = [i for i in interval_reads_result]
-        # logger.info(f"Fetched {len(interval_reads_rows)} interval read rows")
-        # interval_read_columns = list(MetersenseIntervalRead.__dataclass_fields__.keys())
-        # interval_reads = []
-        # for row in interval_reads_rows:
-        #     data = {}
-        #     for name, value in zip(interval_read_columns, row):
-        #         if isinstance(value, datetime):
-        #             value = value.isoformat()
-        #         data[name] = value
-        #     interval_reads.append(MetersenseIntervalRead(**data))
-
-        # TODO remove
-        with open("./output/metersense-cache-meter.json", "r") as f:
-            text = f.read()
-            meters = [
-                MetersenseMeterLocation(**json.loads(i)) for i in text.split("\n")
-            ]
-        with open("./output/metersense-cache-register-reads.json", "r") as f:
-            text = f.read()
-            register_reads = [
-                MetersenseRegisterRead(**json.loads(i)) for i in text.split("\n")
-            ]
-        with open("./output/metersense-cache-interval-reads.json", "r") as f:
-            text = f.read()
-            interval_reads = [
-                MetersenseIntervalRead(**json.loads(i)) for i in text.split("\n")
-            ]
+        # # TODO remove
+        # with open("./output/metersense-cache-meter.json", "r") as f:
+        #     text = f.read()
+        #     meters = [
+        #         MetersenseMeterLocation(**json.loads(i)) for i in text.split("\n")
+        #     ]
+        # with open("./output/metersense-cache-register-reads.json", "r") as f:
+        #     text = f.read()
+        #     register_reads = [
+        #         MetersenseRegisterRead(**json.loads(i)) for i in text.split("\n")
+        #     ]
+        # with open("./output/metersense-cache-interval-reads.json", "r") as f:
+        #     text = f.read()
+        #     interval_reads = [
+        #         MetersenseIntervalRead(**json.loads(i)) for i in text.split("\n")
+        #     ]
 
         self.output_controller.write_extract_outputs(
             run_id,
@@ -386,6 +244,182 @@ class MetersenseAdapter(BaseAMIAdapter):
                 }
             ),
         )
+
+    def _extract_meters(self, cursor) -> List[MetersenseMeterLocation]:
+        # TODO remove meter_id filter
+        result = cursor.execute(
+            """
+            SELECT
+                m.meter_id,
+                m.alt_meter_id,
+                m.meter_tp,
+                m.commodity_tp,
+                m.region_id,
+                m.interval_length,
+                m.regread_frequency,
+                m.channel1_raw_uom,
+                m.channel2_raw_uom,
+                m.channel3_raw_uom,
+                m.channel4_raw_uom,
+                m.channel5_raw_uom,
+                m.channel6_raw_uom,
+                m.channel7_raw_uom,
+                m.channel8_raw_uom,
+                m.channel1_multiplier,
+                m.channel2_multiplier,
+                m.channel3_multiplier,
+                m.channel4_multiplier,
+                m.channel5_multiplier,
+                m.channel6_multiplier,
+                m.channel7_multiplier,
+                m.channel8_multiplier,
+                m.channel1_final_uom,
+                m.channel2_final_uom,
+                m.channel3_final_uom,
+                m.channel4_final_uom,
+                m.channel5_final_uom,
+                m.channel6_final_uom,
+                m.channel7_final_uom,
+                m.channel8_final_uom,
+                m.first_data_ts,
+                m.last_data_ts,
+                m.ami_id,
+                m.power_status,
+                m.latitude,
+                m.longitude,
+                m.exclude_in_reports,
+                m.add_by,
+                m.add_dt,
+                m.change_by,
+                m.change_dt,
+                l.location_no,
+                l.alt_location_id,
+                l.location_class,
+                l.unit_no,
+                l.street_no,
+                l.street_pfx,
+                l.street_name,
+                l.street_sfx,
+                l.street_sfx_dir,
+                l.city,
+                l.state,
+                l.postal_cd,
+                l.billing_cycle,
+                l.add_by,
+                l.add_dt,
+                l.change_by,
+                l.change_dt,
+                l.latitude,
+                l.longitude,
+                a.service_id,
+                a.account_id,
+                a.location_no,
+                a.commodity_tp,
+                a.last_read_dt,
+                a.active_dt,
+                a.inactive_dt
+            FROM METERS m
+            LEFT JOIN meter_location_xref x ON m.meter_id = x.meter_id
+            LEFT JOIN locations l ON l.location_no = x.location_no
+            LEFT JOIN account_services a ON a.location_no = x.location_no
+            WHERE m.commodity_tp = 'W'
+            AND a.commodity_tp = 'W'
+            AND x.inactive_dt > SYSTIMESTAMP
+            AND a.inactive_dt > SYSTIMESTAMP
+            AND m.meter_id = '87195806'
+            ORDER BY m.meter_id, l.location_no, a.account_id, a.last_read_dt desc
+                                """
+        )
+        result = cursor.fetchall()
+        rows = [i for i in result]
+        logger.info(f"Fetched {len(rows)} meter metadata rows")
+        columns = list(MetersenseMeterLocation.__dataclass_fields__.keys())
+        meters = []
+        for row in rows:
+            data = {}
+            for name, value in zip(columns, row):
+                if isinstance(value, datetime):
+                    value = value.isoformat()
+                data[name] = value
+            meters.append(MetersenseMeterLocation(**data))
+        return meters
+
+    def _extract_register_reads(
+        self, cursor, extract_range_start: datetime, extract_range_end: datetime
+    ) -> List[MetersenseRegisterRead]:
+        # TODO remove meter_id filter
+        register_reads_result = cursor.execute(
+            """
+            SELECT
+                r.meter_id,
+                r.channel_id,
+                r.read_dtm,
+                r.read_value,
+                r.uom,
+                r.status,
+                r.read_version
+            FROM registerreads r
+            WHERE r.meter_id IN (SELECT DISTINCT meter_id FROM meters m where m.commodity_tp = 'W')
+            AND r.read_dtm > :range_start
+            AND r.read_dtm < :range_end
+            AND r.meter_id = '87195806'
+        """,
+            range_start=extract_range_start,
+            range_end=extract_range_end,
+        )
+        register_read_rows = [i for i in register_reads_result]
+        logger.info(f"Fetched {len(register_read_rows)} register read rows")
+        register_read_columns = list(MetersenseRegisterRead.__dataclass_fields__.keys())
+        register_reads = []
+        for row in register_read_rows:
+            data = {}
+            for name, value in zip(register_read_columns, row):
+                if isinstance(value, datetime):
+                    value = value.isoformat()
+                data[name] = value
+            register_reads.append(MetersenseRegisterRead(**data))
+        return register_reads
+
+    def _extract_interval_reads(
+        self, cursor, extract_range_start: datetime, extract_range_end: datetime
+    ) -> List[MetersenseIntervalRead]:
+        # TODO remove meter_id filter
+        interval_reads_result = cursor.execute(
+            """
+            SELECT
+                r.meter_id,
+                r.channel_id,
+                r.read_dt,
+                r.read_hr,
+                r.read_30min_int,
+                r.read_15min_int,
+                r.read_5min_int,
+                r.read_dtm,
+                r.read_value,
+                r.uom,
+                r.status,
+                r.read_version
+            FROM intervalreads r
+            WHERE r.meter_id IN (SELECT DISTINCT meter_id FROM meters m where m.commodity_tp = 'W')
+            AND r.read_dtm > :range_start
+            AND r.read_dtm < :range_end
+            AND r.meter_id = '87195806'
+        """,
+            range_start=extract_range_start,
+            range_end=extract_range_end,
+        )
+        interval_reads_rows = [i for i in interval_reads_result]
+        logger.info(f"Fetched {len(interval_reads_rows)} interval read rows")
+        interval_read_columns = list(MetersenseIntervalRead.__dataclass_fields__.keys())
+        interval_reads = []
+        for row in interval_reads_rows:
+            data = {}
+            for name, value in zip(interval_read_columns, row):
+                if isinstance(value, datetime):
+                    value = value.isoformat()
+                data[name] = value
+            interval_reads.append(MetersenseIntervalRead(**data))
+        return interval_reads
 
     def transform(self, run_id: str):
         extract_outputs = self.output_controller.read_extract_outputs(run_id)

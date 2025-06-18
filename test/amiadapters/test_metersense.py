@@ -1,4 +1,5 @@
 import datetime
+from unittest.mock import Mock
 
 import pytz
 
@@ -145,6 +146,178 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual("db-name", self.adapter.database_db_name)
         self.assertEqual("dbu", self.adapter.database_user)
         self.assertEqual("dbp", self.adapter.database_password)
+
+    def test_extract_meters_executes_expected_query_and_parses_results(self):
+        # Arrange
+        mock_cursor = Mock()
+        mock_execute_result = Mock()
+        mock_cursor.execute.return_value = mock_execute_result
+
+        # Mock a single row of results
+        mock_row = [
+            "87195806",
+            "ALT87195806",
+            "W-DISC34",
+            "W",
+            "California",
+            "60",
+            "1440",
+            "CF",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "0.01",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "CCF",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            datetime.datetime(2023, 2, 18, 0, 0),
+            datetime.datetime(2025, 6, 15, 0, 0),
+            "default",
+            "ON",
+            "33.8252339",
+            "118.1034094",
+            "N",
+            "ODS",
+            datetime.datetime(2023, 2, 17, 23, 12, 13),
+            "ODS",
+            datetime.datetime(2025, 6, 15, 2, 22, 7),
+            "6523400466",
+            "6523400466",
+            "SFD",
+            "",
+            "",
+            "",
+            "LOS COYOTES DIA",
+            "",
+            "",
+            "LONG BEACH",
+            "CA",
+            "90808-2409",
+            "",
+            "ODS",
+            datetime.datetime(2019, 10, 24, 11, 47, 48),
+            "ODS",
+            datetime.datetime(2025, 6, 10, 23, 13, 20),
+            "33.825194555",
+            "118.10331495",
+            "4453033580",
+            "445303358044515438576523400466",
+            "6523400466",
+            "W",
+            datetime.datetime(2023, 12, 25, 0, 0),
+            datetime.datetime(2021, 3, 1, 0, 0),
+            datetime.datetime(9999, 12, 31, 0, 0),
+        ]
+        mock_cursor.fetchall.return_value = [mock_row]
+
+        # Act
+        result = self.adapter._extract_meters(mock_cursor)
+
+        # Assert
+        mock_cursor.execute.assert_called_once()
+        mock_cursor.fetchall.assert_called_once()
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], MetersenseMeterLocation)
+        self.assertEqual(result[0].meter_id, "87195806")
+        self.assertEqual(result[0].last_read_dt, "2023-12-25T00:00:00")
+        self.assertEqual(result[0].channel1_multiplier, "0.01")
+        self.assertEqual(result[0].street_name, "LOS COYOTES DIA")
+        self.assertEqual(result[0].accounts_commodity_tp, "W")
+
+    def test_extract_interval_reads_executes_query_and_parses_rows(self):
+        # Arrange
+        mock_cursor = Mock()
+
+        # Define mock input range
+        start = datetime.datetime(2024, 1, 1, 0, 0)
+        end = datetime.datetime(2024, 1, 2, 0, 0)
+
+        # Define a mock row with all fields required by MetersenseIntervalRead
+        mock_row = [
+            "87195806",
+            "1",
+            "2024-01-01",
+            "23",
+            "1",
+            "0",
+            "0",
+            datetime.datetime(2024, 1, 1, 23, 0),
+            "0.003000",
+            "CCF",
+            "1",
+            "1",
+        ]
+        mock_cursor.execute.return_value = [mock_row]
+
+        # Act
+        result = self.adapter._extract_interval_reads(mock_cursor, start, end)
+
+        # Assert
+        mock_cursor.execute.assert_called_once()
+        args, kwargs = mock_cursor.execute.call_args
+        self.assertIn("FROM intervalreads r", args[0])
+        self.assertEqual(kwargs["range_start"], start)
+        self.assertEqual(kwargs["range_end"], end)
+
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], MetersenseIntervalRead)
+        self.assertEqual(result[0].meter_id, "87195806")
+        self.assertEqual(result[0].read_value, "0.003000")
+        self.assertEqual(result[0].read_dtm, "2024-01-01T23:00:00")
+        self.assertEqual(result[0].uom, "CCF")
+        self.assertEqual(result[0].read_version, "1")
+
+    def test_extract_register_reads_executes_query_and_parses_rows(self):
+        # Arrange
+        mock_cursor = Mock()
+        start = datetime.datetime(2024, 1, 1, 0, 0)
+        end = datetime.datetime(2024, 1, 2, 0, 0)
+
+        # Mocked row data matching MetersenseRegisterRead fields
+        mock_row = [
+            "87195806",
+            "1",
+            datetime.datetime(2024, 1, 1, 23, 0),
+            "171.697000",
+            "CCF",
+            "1",
+            "1",
+        ]
+        mock_cursor.execute.return_value = [mock_row]
+
+        # Act
+        result = self.adapter._extract_register_reads(mock_cursor, start, end)
+
+        # Assert
+        mock_cursor.execute.assert_called_once()
+        args, kwargs = mock_cursor.execute.call_args
+        self.assertIn("FROM registerreads r", args[0])
+        self.assertEqual(kwargs["range_start"], start)
+        self.assertEqual(kwargs["range_end"], end)
+
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], MetersenseRegisterRead)
+        self.assertEqual(result[0].meter_id, "87195806")
+        self.assertEqual(result[0].read_value, "171.697000")
+        self.assertEqual(result[0].read_dtm, "2024-01-01T23:00:00")
+        self.assertEqual(result[0].uom, "CCF")
+        self.assertEqual(result[0].status, "1")
 
     def test_transform_single_meter_and_reads(self):
         m = self._meter_location_factory()

@@ -26,7 +26,7 @@ def run_pipeline(
         start, end = adapter.calculate_extract_range(
             extract_range_start, extract_range_end, backfill_params=backfill
         )
-        logger.info(f"Extracting data for {adapter.name()}")
+        logger.info(f"Extracting data for {adapter.name()} from {start} to {end}")
         adapter.extract(run_id, start, end)
         logger.info(f"Extracted data for {adapter.name()}")
 
