@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 
+import requests
+
 from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
@@ -42,6 +44,7 @@ class SubecaAdapter(BaseAMIAdapter):
         logging.info(
             f"Retrieving Subeca data between {extract_range_start} and {extract_range_end}"
         )
+        requests.get
         output = ""
         return ExtractOutput({"meters_and_reads.json": output})
 
