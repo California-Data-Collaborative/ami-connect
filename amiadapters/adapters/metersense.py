@@ -182,7 +182,6 @@ class MetersenseAdapter(BaseAMIAdapter):
         run_id: str,
         extract_range_start: datetime,
         extract_range_end: datetime,
-        device_ids: List[str] = None,
     ):
         with sshtunnel.open_tunnel(
             (self.ssh_tunnel_server_host),

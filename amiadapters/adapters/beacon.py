@@ -119,10 +119,10 @@ class Beacon360Adapter(BaseAMIAdapter):
         run_id: str,
         extract_range_start: datetime,
         extract_range_end: datetime,
-        device_ids: List[str] = None,
     ):
         report = self._fetch_range_report(
-            extract_range_start, extract_range_end, device_ids=device_ids
+            extract_range_start,
+            extract_range_end,
         )
         logger.info("Fetched report")
         return ExtractOutput({"meters_and_reads.json": self._report_to_output(report)})
@@ -140,7 +140,6 @@ class Beacon360Adapter(BaseAMIAdapter):
         self,
         extract_range_start: datetime,
         extract_range_end: datetime,
-        device_ids: List[str] = None,
     ) -> str:
         """
         Return range report as CSV string, first line with headers.
@@ -168,8 +167,6 @@ class Beacon360Adapter(BaseAMIAdapter):
             "Header_Columns": ",".join(REQUESTED_COLUMNS),
             "Has_Endpoint": True,
         }
-        if device_ids:
-            params["Meter_ID"] = ",".join(device_ids)
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
 

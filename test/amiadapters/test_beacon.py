@@ -235,29 +235,6 @@ class TestBeacon360Adapter(BaseTestCase):
     @mock.patch(
         "requests.get",
         side_effect=[
-            mocked_get_range_report_status_finished(),
-            mocked_get_report_from_link(text=report_csv),
-        ],
-    )
-    @mock.patch("requests.post", side_effect=[mocked_create_range_report()])
-    @mock.patch("time.sleep")
-    def test_fetch_range_report__can_filter_to_meter_ids(
-        self, mock_sleep, mock_post, mock_get
-    ):
-        self.adapter._fetch_range_report(
-            self.range_start, self.range_end, device_ids=["m1", "m2"]
-        )
-
-        self.assertEqual(1, len(mock_post.call_args_list))
-        generate_report_request = mock_post.call_args_list[0]
-        self.assertEqual(
-            "m1,m2",
-            generate_report_request.kwargs["params"]["Meter_ID"],
-        )
-
-    @mock.patch(
-        "requests.get",
-        side_effect=[
             mocked_get_range_report_status_not_finished(),
             mocked_get_range_report_status_finished(),
             mocked_get_report_from_link(text=report_csv),

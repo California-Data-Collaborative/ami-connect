@@ -60,15 +60,12 @@ class BaseAMIAdapter(ABC):
         run_id: str,
         extract_range_start: datetime,
         extract_range_end: datetime,
-        device_ids: List[str] = None,
     ):
         """
         Public function for extract stage.
         """
         # Use adapter implementation to extract data
-        extracted_output = self._extract(
-            run_id, extract_range_start, extract_range_end, device_ids
-        )
+        extracted_output = self._extract(run_id, extract_range_start, extract_range_end)
         # Output to intermediate storage, e.g. S3 or local files
         self.output_controller.write_extract_outputs(run_id, extracted_output)
 
@@ -78,7 +75,6 @@ class BaseAMIAdapter(ABC):
         run_id: str,
         extract_range_start: datetime,
         extract_range_end: datetime,
-        device_ids: List[str] = None,
     ) -> ExtractOutput:
         """
         Extract data from an AMI data source as defined by the implementing adapter.
@@ -86,7 +82,6 @@ class BaseAMIAdapter(ABC):
         :run_id: identifier for this run of the pipeline, is used to store intermediate output files
         :extract_range_start datetime:  start of meter read datetime range for which we'll extract data
         :extract_range_end datetime:    end of meter read datetime range for which we'll extract data
-        :device_ids optional list[str]: list of devices for which we'll extract
         :return: ExtractOutput instance that defines name and contents of extracted outputs
         """
         pass
