@@ -7,7 +7,11 @@ import pytz
 
 from amiadapters.models import DataclassJSONEncoder
 from amiadapters.config import ConfiguredLocalTaskOutputController, ConfiguredSftp
-from amiadapters.adapters.aclara import AclaraAdapter, AclaraMeterAndRead, files_for_date_range
+from amiadapters.adapters.aclara import (
+    AclaraAdapter,
+    AclaraMeterAndRead,
+    files_for_date_range,
+)
 from test.base_test_case import BaseTestCase
 
 
