@@ -13,7 +13,7 @@ from pytz.tzinfo import DstTzInfo
 from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
 from amiadapters.config import ConfiguredSftp
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
-from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
+from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ class AclaraAdapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"aclara-{self.org_id}"
 
-    def extract(
+    def _extract(
         self,
         run_id: str,
         extract_range_start: datetime,
@@ -118,10 +118,7 @@ class AclaraAdapter(BaseAMIAdapter):
                 logger.info(f"Cleaning up downloaded file {f}")
                 os.remove(f)
 
-        self.output_controller.write_extract_outputs(
-            run_id,
-            ExtractOutput({"meters_and_reads.json": output}),
-        )
+        return ExtractOutput({"meters_and_reads.json": output})
 
     def _download_meter_and_read_files_for_date_range(
         self,
@@ -158,19 +155,12 @@ class AclaraAdapter(BaseAMIAdapter):
                     meter_and_read = AclaraMeterAndRead(**data)
                     yield json.dumps(meter_and_read, cls=DataclassJSONEncoder)
 
-    def transform(self, run_id: str):
-        extract_outputs = self.output_controller.read_extract_outputs(run_id)
+    def _transform(self, run_id: str, extract_outputs: ExtractOutput):
         text = extract_outputs.from_file("meters_and_reads.json")
         raw_meters_with_reads = [
             AclaraMeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
         ]
-
-        transformed_meters, transformed_reads = self._transform_meters_and_reads(
-            raw_meters_with_reads
-        )
-
-        self.output_controller.write_transformed_meters(run_id, transformed_meters)
-        self.output_controller.write_transformed_meter_reads(run_id, transformed_reads)
+        return self._transform_meters_and_reads(raw_meters_with_reads)
 
     def _transform_meters_and_reads(
         self, raw_meters_with_reads: List[AclaraMeterAndRead]
@@ -349,10 +339,9 @@ class AclaraRawSnowflakeLoader(RawSnowflakeLoader):
         run_id: str,
         org_id: str,
         org_timezone: DstTzInfo,
-        output_controller: BaseTaskOutputController,
+        extract_outputs: ExtractOutput,
         snowflake_conn,
     ):
-        extract_outputs = output_controller.read_extract_outputs(run_id)
         text = extract_outputs.from_file("meters_and_reads.json")
         raw_meters_with_reads = [
             AclaraMeterAndRead(**json.loads(d)) for d in text.strip().split("\n")

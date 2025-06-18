@@ -11,6 +11,7 @@ from amiadapters.config import (
     ConfiguredStorageSink,
     ConfiguredStorageSinkType,
 )
+from amiadapters.outputs.base import ExtractOutput
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
 from amiadapters.storage.base import BaseAMIStorageSink
@@ -45,7 +46,6 @@ class BaseAMIAdapter(ABC):
         )
         self.storage_sinks = self._create_storage_sinks(
             configured_sinks,
-            self.output_controller,
             self.org_id,
             self.org_timezone,
             raw_snowflake_loader,
@@ -55,8 +55,7 @@ class BaseAMIAdapter(ABC):
     def name(self) -> str:
         pass
 
-    @abstractmethod
-    def extract(
+    def extract_and_output(
         self,
         run_id: str,
         extract_range_start: datetime,
@@ -64,21 +63,50 @@ class BaseAMIAdapter(ABC):
         device_ids: List[str] = None,
     ):
         """
-        Extract data from an AMI data source.
+        Public function for extract stage.
+        """
+        # Use adapter implementation to extract data
+        extracted_output = self._extract(
+            run_id, extract_range_start, extract_range_end, device_ids
+        )
+        # Output to intermediate storage, e.g. S3 or local files
+        self.output_controller.write_extract_outputs(run_id, extracted_output)
+
+    @abstractmethod
+    def _extract(
+        self,
+        run_id: str,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+        device_ids: List[str] = None,
+    ) -> ExtractOutput:
+        """
+        Extract data from an AMI data source as defined by the implementing adapter.
 
         :run_id: identifier for this run of the pipeline, is used to store intermediate output files
         :extract_range_start datetime:  start of meter read datetime range for which we'll extract data
         :extract_range_end datetime:    end of meter read datetime range for which we'll extract data
         :device_ids optional list[str]: list of devices for which we'll extract
+        :return: ExtractOutput instance that defines name and contents of extracted outputs
         """
         pass
 
+    def transform_and_output(self, run_id: str):
+        """
+        Public function for transform stage.
+        """
+        extract_outputs = self.output_controller.read_extract_outputs(run_id)
+        transformed_meters, transformed_reads = self._transform(run_id, extract_outputs)
+        self.output_controller.write_transformed_meters(run_id, transformed_meters)
+        self.output_controller.write_transformed_meter_reads(run_id, transformed_reads)
+
     @abstractmethod
-    def transform(self, run_id: str):
+    def _transform(self, run_id: str, extract_outputs: ExtractOutput):
         """
         Transform data from an AMI data source into the generalized format.
 
-        :run_id: identifier for this run of the pipeline, is used to find and store intermediate output files
+        :run_id: identifier for this run of the pipeline
+        :extract_outputs: Data from the extract stage expected to be the same as the output of the extract stage.
         """
         pass
 
@@ -107,8 +135,9 @@ class BaseAMIAdapter(ABC):
 
         :run_id: identifier for this run of the pipeline, is used to find intermediate output files
         """
+        extract_outputs = self.output_controller.read_extract_outputs(run_id)
         for sink in self.storage_sinks:
-            sink.store_raw(run_id)
+            sink.store_raw(run_id, extract_outputs)
 
     def load_transformed(self, run_id: str):
         """
@@ -116,8 +145,10 @@ class BaseAMIAdapter(ABC):
 
         :run_id: identifier for this run of the pipeline, is used to find intermediate output files
         """
+        meters = self.output_controller.read_transformed_meters(run_id)
+        reads = self.output_controller.read_transformed_meter_reads(run_id)
         for sink in self.storage_sinks:
-            sink.store_transformed(run_id)
+            sink.store_transformed(run_id, meters, reads)
 
     def datetime_from_iso_str(
         self, datetime_str: str, org_timezone: DstTzInfo
@@ -228,7 +259,6 @@ class BaseAMIAdapter(ABC):
     @staticmethod
     def _create_storage_sinks(
         configured_sinks: List[ConfiguredStorageSink],
-        output_controller,
         org_id: str,
         org_timezone: DstTzInfo,
         raw_snowflake_loader: RawSnowflakeLoader,
@@ -239,7 +269,6 @@ class BaseAMIAdapter(ABC):
             if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
                 result.append(
                     SnowflakeStorageSink(
-                        output_controller,
                         org_id,
                         org_timezone,
                         sink,

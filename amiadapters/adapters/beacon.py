@@ -13,7 +13,7 @@ import requests
 
 from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
-from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
+from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader
 
 logger = logging.getLogger(__name__)
@@ -114,7 +114,7 @@ class Beacon360Adapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"beacon-360-{self.org_id}"
 
-    def extract(
+    def _extract(
         self,
         run_id: str,
         extract_range_start: datetime,
@@ -125,10 +125,7 @@ class Beacon360Adapter(BaseAMIAdapter):
             extract_range_start, extract_range_end, device_ids=device_ids
         )
         logger.info("Fetched report")
-        self.output_controller.write_extract_outputs(
-            run_id,
-            ExtractOutput({"meters_and_reads.json": self._report_to_output(report)}),
-        )
+        return ExtractOutput({"meters_and_reads.json": self._report_to_output(report)})
 
     def _report_to_output(self, report: str):
         return "\n".join(self._report_to_output_stream(report))
@@ -311,19 +308,12 @@ class Beacon360Adapter(BaseAMIAdapter):
             f.write(report)
         logger.info(f"Cached report contents at {cache_file}")
 
-    def transform(self, run_id: str):
-        extract_outputs = self.output_controller.read_extract_outputs(run_id)
+    def _transform(self, run_id: str, extract_outputs: ExtractOutput):
         text = extract_outputs.from_file("meters_and_reads.json")
         raw_meters_with_reads = [
             Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
         ]
-
-        transformed_meters, transformed_reads = self._transform_meters_and_reads(
-            raw_meters_with_reads
-        )
-
-        self.output_controller.write_transformed_meters(run_id, transformed_meters)
-        self.output_controller.write_transformed_meter_reads(run_id, transformed_reads)
+        return self._transform_meters_and_reads(raw_meters_with_reads)
 
     def _transform_meters_and_reads(
         self, raw_meters_with_reads: List[Beacon360MeterAndRead]
@@ -400,10 +390,9 @@ class BeaconRawSnowflakeLoader(RawSnowflakeLoader):
         run_id: str,
         org_id: str,
         org_timezone: DstTzInfo,
-        output_controller: BaseTaskOutputController,
+        extract_outputs: ExtractOutput,
         snowflake_conn,
     ):
-        extract_outputs = output_controller.read_extract_outputs(run_id)
         text = extract_outputs.from_file("meters_and_reads.json")
         raw_meters_with_reads = [
             Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")

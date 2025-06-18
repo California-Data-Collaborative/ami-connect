@@ -8,7 +8,7 @@ from pytz.tzinfo import DstTzInfo
 from amiadapters.models import GeneralMeterRead
 from amiadapters.models import GeneralMeter
 from amiadapters.config import ConfiguredStorageSink
-from amiadapters.outputs.base import BaseTaskOutputController
+from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
 from amiadapters.storage.base import BaseAMIStorageSink
 
 
@@ -26,7 +26,7 @@ class RawSnowflakeLoader(ABC):
         run_id: str,
         org_id: str,
         org_timezone: DstTzInfo,
-        output_controller: BaseTaskOutputController,
+        extract_outputs: ExtractOutput,
         snowflake_conn,
     ):
         """
@@ -43,7 +43,6 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
 
     def __init__(
         self,
-        output_controller: BaseTaskOutputController,
         org_id: str,
         org_timezone: DstTzInfo,
         sink_config: ConfiguredStorageSink,
@@ -52,22 +51,20 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         self.org_id = org_id
         self.org_timezone = org_timezone
         self.raw_loader = raw_loader
-        super().__init__(output_controller, sink_config)
+        super().__init__(sink_config)
 
-    def store_raw(self, run_id):
+    def store_raw(self, run_id: str, extract_outputs: ExtractOutput):
         if self.raw_loader is None:
             return
         conn = self.sink_config.connection()
         return self.raw_loader.load(
-            run_id, self.org_id, self.org_timezone, self.output_controller, conn
+            run_id, self.org_id, self.org_timezone, extract_outputs, conn
         )
 
-    def store_transformed(self, run_id):
-        meters = self.output_controller.read_transformed_meters(run_id)
-        reads = self.output_controller.read_transformed_meter_reads(run_id)
-
+    def store_transformed(
+        self, run_id: str, meters: List[GeneralMeter], reads: List[GeneralMeterRead]
+    ):
         conn = self.sink_config.connection()
-
         self._upsert_meters(meters, conn)
         self._upsert_reads(reads, conn)
 

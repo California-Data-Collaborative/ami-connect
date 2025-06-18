@@ -177,7 +177,7 @@ class MetersenseAdapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"metersense-{self.org_id}"
 
-    def extract(
+    def _extract(
         self,
         run_id: str,
         extract_range_start: datetime,
@@ -228,21 +228,18 @@ class MetersenseAdapter(BaseAMIAdapter):
         #         MetersenseIntervalRead(**json.loads(i)) for i in text.split("\n")
         #     ]
 
-        self.output_controller.write_extract_outputs(
-            run_id,
-            ExtractOutput(
-                {
-                    "meters.json": "\n".join(
-                        json.dumps(i, cls=DataclassJSONEncoder) for i in meters
-                    ),
-                    "interval_reads.json": "\n".join(
-                        json.dumps(i, cls=DataclassJSONEncoder) for i in interval_reads
-                    ),
-                    "register_reads.json": "\n".join(
-                        json.dumps(i, cls=DataclassJSONEncoder) for i in register_reads
-                    ),
-                }
-            ),
+        return ExtractOutput(
+            {
+                "meters.json": "\n".join(
+                    json.dumps(i, cls=DataclassJSONEncoder) for i in meters
+                ),
+                "interval_reads.json": "\n".join(
+                    json.dumps(i, cls=DataclassJSONEncoder) for i in interval_reads
+                ),
+                "register_reads.json": "\n".join(
+                    json.dumps(i, cls=DataclassJSONEncoder) for i in register_reads
+                ),
+            }
         )
 
     def _extract_meters(self, cursor) -> List[MetersenseMeterLocation]:
@@ -421,8 +418,7 @@ class MetersenseAdapter(BaseAMIAdapter):
             interval_reads.append(MetersenseIntervalRead(**data))
         return interval_reads
 
-    def transform(self, run_id: str):
-        extract_outputs = self.output_controller.read_extract_outputs(run_id)
+    def _transform(self, run_id: str, extract_outputs: ExtractOutput):
         raw_meters = [
             MetersenseMeterLocation(**json.loads(d))
             for d in extract_outputs.from_file("meters.json").strip().split("\n")
@@ -440,12 +436,9 @@ class MetersenseAdapter(BaseAMIAdapter):
             .split("\n")
         ]
 
-        transformed_meters, transformed_reads = self._transform_meters_and_reads(
+        return self._transform_meters_and_reads(
             raw_meters, raw_interval_reads, raw_register_reads
         )
-
-        self.output_controller.write_transformed_meters(run_id, transformed_meters)
-        self.output_controller.write_transformed_meter_reads(run_id, transformed_reads)
 
     def _transform_meters_and_reads(
         self,

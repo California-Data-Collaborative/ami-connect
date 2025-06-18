@@ -584,8 +584,7 @@ class TestBeaconRawSnowflakeLoader(BaseTestCase):
         self.mock_cursor = mock.Mock()
         self.conn.cursor.return_value = self.mock_cursor
         meter_and_read = beacon_meter_and_read_factory()
-        self.output_controller = mock.Mock()
-        self.output_controller.read_extract_outputs.return_value = ExtractOutput(
+        self.extract_outputs = ExtractOutput(
             {
                 "meters_and_reads.json": json.dumps(
                     meter_and_read, cls=DataclassJSONEncoder
@@ -599,7 +598,7 @@ class TestBeaconRawSnowflakeLoader(BaseTestCase):
             "run-id",
             "org-id",
             pytz.timezone("Europe/Rome"),
-            self.output_controller,
+            self.extract_outputs,
             self.conn,
         )
         self.assertEqual(2, self.mock_cursor.execute.call_count)
