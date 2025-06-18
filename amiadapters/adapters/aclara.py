@@ -88,7 +88,6 @@ class AclaraAdapter(BaseAMIAdapter):
         run_id: str,
         extract_range_start: datetime,
         extract_range_end: datetime,
-        device_ids: List[str] = None,
     ):
         logging.info(
             f"Connecting to Aclara SFTP for data between {extract_range_start} and {extract_range_end}"
