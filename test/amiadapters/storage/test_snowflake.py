@@ -21,8 +21,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
         self.conn.cursor.return_value = self.mock_cursor
         sink_config = Mock()
         sink_config.connection.return_value = self.conn
-        self.output_controller = Mock()
-        self.output_controller.read_extract_outputs.return_value = ExtractOutput(
+        self.extract_outputs = ExtractOutput(
             {
                 "meters_and_reads.json": json.dumps(
                     beacon_meter_and_read_factory(), cls=DataclassJSONEncoder
@@ -30,7 +29,6 @@ class TestSnowflakeStorageSink(BaseTestCase):
             }
         )
         self.snowflake_sink = SnowflakeStorageSink(
-            self.output_controller,
             "org-id",
             pytz.timezone("Africa/Algiers"),
             sink_config,
@@ -238,6 +236,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
     def test_store_raw(self):
         self.snowflake_sink.store_raw(
             "run-id",
+            self.extract_outputs,
         )
         self.assertEqual(2, self.mock_cursor.execute.call_count)
 
@@ -245,5 +244,6 @@ class TestSnowflakeStorageSink(BaseTestCase):
         self.snowflake_sink.raw_loader = None
         self.snowflake_sink.store_raw(
             "run-id",
+            self.extract_outputs,
         )
         self.assertEqual(0, self.mock_cursor.execute.call_count)

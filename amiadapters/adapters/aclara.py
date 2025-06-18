@@ -13,7 +13,7 @@ from pytz.tzinfo import DstTzInfo
 from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
 from amiadapters.config import ConfiguredSftp
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
-from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
+from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader
 
 logger = logging.getLogger(__name__)
@@ -339,10 +339,9 @@ class AclaraRawSnowflakeLoader(RawSnowflakeLoader):
         run_id: str,
         org_id: str,
         org_timezone: DstTzInfo,
-        output_controller: BaseTaskOutputController,
+        extract_outputs: ExtractOutput,
         snowflake_conn,
     ):
-        extract_outputs = output_controller.read_extract_outputs(run_id)
         text = extract_outputs.from_file("meters_and_reads.json")
         raw_meters_with_reads = [
             AclaraMeterAndRead(**json.loads(d)) for d in text.strip().split("\n")

@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
+from typing import List
 
 from amiadapters.config import ConfiguredStorageSink
-from amiadapters.outputs.base import BaseTaskOutputController
+from amiadapters.models import GeneralMeter, GeneralMeterRead
+from amiadapters.outputs.base import ExtractOutput
 
 
 class BaseAMIStorageSink(ABC):
@@ -12,16 +14,16 @@ class BaseAMIStorageSink(ABC):
 
     def __init__(
         self,
-        output_controller: BaseTaskOutputController,
         sink_config: ConfiguredStorageSink,
     ):
-        self.output_controller = output_controller
         self.sink_config = sink_config
 
     @abstractmethod
-    def store_raw(self, run_id: str):
+    def store_raw(self, run_id: str, extract_outputs: ExtractOutput):
         pass
 
     @abstractmethod
-    def store_transformed(self, run_id: str):
+    def store_transformed(
+        self, run_id: str, meters: List[GeneralMeter], reads: List[GeneralMeterRead]
+    ):
         pass

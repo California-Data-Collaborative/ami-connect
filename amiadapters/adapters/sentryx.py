@@ -13,7 +13,7 @@ from amiadapters.models import (
     GeneralMeterRead,
 )
 from amiadapters.adapters.base import BaseAMIAdapter
-from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
+from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader
 
 logger = logging.getLogger(__name__)
@@ -375,10 +375,9 @@ class SentryxRawSnowflakeLoader(RawSnowflakeLoader):
         run_id: str,
         org_id: str,
         org_timezone: DstTzInfo,
-        output_controller: BaseTaskOutputController,
+        extract_outputs: ExtractOutput,
         snowflake_conn,
     ):
-        extract_outputs = output_controller.read_extract_outputs(run_id)
         raw_meter_text = extract_outputs.from_file("meters.json")
         raw_meters = [
             SentryxMeter(**json.loads(d)) for d in raw_meter_text.strip().split("\n")

@@ -46,7 +46,6 @@ class BaseAMIAdapter(ABC):
         )
         self.storage_sinks = self._create_storage_sinks(
             configured_sinks,
-            self.output_controller,
             self.org_id,
             self.org_timezone,
             raw_snowflake_loader,
@@ -136,8 +135,9 @@ class BaseAMIAdapter(ABC):
 
         :run_id: identifier for this run of the pipeline, is used to find intermediate output files
         """
+        extract_outputs = self.output_controller.read_extract_outputs(run_id)
         for sink in self.storage_sinks:
-            sink.store_raw(run_id)
+            sink.store_raw(run_id, extract_outputs)
 
     def load_transformed(self, run_id: str):
         """
@@ -145,8 +145,10 @@ class BaseAMIAdapter(ABC):
 
         :run_id: identifier for this run of the pipeline, is used to find intermediate output files
         """
+        meters = self.output_controller.read_transformed_meters(run_id)
+        reads = self.output_controller.read_transformed_meter_reads(run_id)
         for sink in self.storage_sinks:
-            sink.store_transformed(run_id)
+            sink.store_transformed(run_id, meters, reads)
 
     def datetime_from_iso_str(
         self, datetime_str: str, org_timezone: DstTzInfo
@@ -257,7 +259,6 @@ class BaseAMIAdapter(ABC):
     @staticmethod
     def _create_storage_sinks(
         configured_sinks: List[ConfiguredStorageSink],
-        output_controller,
         org_id: str,
         org_timezone: DstTzInfo,
         raw_snowflake_loader: RawSnowflakeLoader,
@@ -268,7 +269,6 @@ class BaseAMIAdapter(ABC):
             if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
                 result.append(
                     SnowflakeStorageSink(
-                        output_controller,
                         org_id,
                         org_timezone,
                         sink,
