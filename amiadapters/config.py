@@ -203,10 +203,10 @@ class AMIAdapterConfiguration:
         Reads configuration to see which adapters to run and where to store the data.
         """
         # Circular import, TODO fix
-        from amiadapters.aclara import AclaraAdapter
-        from amiadapters.beacon import Beacon360Adapter
-        from amiadapters.metersense import MetersenseAdapter
-        from amiadapters.sentryx import SentryxAdapter
+        from amiadapters.adapters.aclara import AclaraAdapter
+        from amiadapters.adapters.beacon import Beacon360Adapter
+        from amiadapters.adapters.metersense import MetersenseAdapter
+        from amiadapters.adapters.sentryx import SentryxAdapter
 
         adapters = []
         for source in self._sources:

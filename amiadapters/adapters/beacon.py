@@ -11,7 +11,7 @@ from typing import Generator, List, Tuple
 from pytz.tzinfo import DstTzInfo
 import requests
 
-from amiadapters.base import BaseAMIAdapter
+from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader

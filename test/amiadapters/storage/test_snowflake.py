@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytz
 
-from amiadapters.beacon import BeaconRawSnowflakeLoader, Beacon360MeterAndRead
+from amiadapters.adapters.beacon import BeaconRawSnowflakeLoader
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import SnowflakeStorageSink

@@ -10,7 +10,7 @@ import paramiko
 import pytz
 from pytz.tzinfo import DstTzInfo
 
-from amiadapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
+from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
 from amiadapters.config import ConfiguredSftp
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput

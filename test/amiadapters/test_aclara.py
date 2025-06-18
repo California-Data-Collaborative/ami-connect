@@ -7,7 +7,7 @@ import pytz
 
 from amiadapters.models import DataclassJSONEncoder
 from amiadapters.config import ConfiguredLocalTaskOutputController, ConfiguredSftp
-from amiadapters.aclara import AclaraAdapter, AclaraMeterAndRead, files_for_date_range
+from amiadapters.adapters.aclara import AclaraAdapter, AclaraMeterAndRead, files_for_date_range
 from test.base_test_case import BaseTestCase
 
 
@@ -61,7 +61,7 @@ class TestAclaraAdapter(BaseTestCase):
 
     @patch("os.makedirs")
     @patch("os.path.exists")
-    @patch("amiadapters.aclara.files_for_date_range")
+    @patch("amiadapters.adapters.aclara.files_for_date_range")
     def test_downloads_new_files(
         self, mock_files_for_date_range, mock_exists, mock_makedirs
     ):

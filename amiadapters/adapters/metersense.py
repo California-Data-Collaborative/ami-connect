@@ -7,7 +7,7 @@ from typing import List, Tuple
 import oracledb
 import sshtunnel
 
-from amiadapters.base import BaseAMIAdapter
+from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 
