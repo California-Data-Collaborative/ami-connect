@@ -111,6 +111,10 @@ class AMIAdapterConfiguration:
                     secrets = SentryxSecrets(
                         this_source_secrets.get("sentryx_api_key"),
                     )
+                case ConfiguredAMISourceType.SUBECA.value.type:
+                    secrets = SubecaSecrets(
+                        this_source_secrets.get("subeca_api_key"),
+                    )
                 case _:
                     secrets = None
 
@@ -207,6 +211,7 @@ class AMIAdapterConfiguration:
         from amiadapters.adapters.beacon import Beacon360Adapter
         from amiadapters.adapters.metersense import MetersenseAdapter
         from amiadapters.adapters.sentryx import SentryxAdapter
+        from amiadapters.adapters.subeca import SubecaAdapter
 
         adapters = []
         for source in self._sources:
@@ -261,6 +266,16 @@ class AMIAdapterConfiguration:
                             source.task_output_controller,
                             source.storage_sinks,
                             utility_name=source.utility_name,
+                        )
+                    )
+                case ConfiguredAMISourceType.SUBECA.value.type:
+                    adapters.append(
+                        SubecaAdapter(
+                            source.org_id,
+                            source.timezone,
+                            source.secrets.api_key,
+                            source.task_output_controller,
+                            source.storage_sinks,
                         )
                     )
         return adapters
@@ -432,6 +447,11 @@ class SentryxSecrets:
 
 
 @dataclass
+class SubecaSecrets:
+    api_key: str
+
+
+@dataclass
 class ConfiguredSftp:
     host: str
     remote_data_directory: str
@@ -485,6 +505,9 @@ class ConfiguredAMISourceType(Enum):
     SENTRYX = SourceSchema(
         "sentryx", SentryxSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
     )
+    SUBECA = SourceSchema(
+        "subeca", SubecaSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
+    )
 
     @classmethod
     def is_valid_type(cls, the_type: str) -> bool:
@@ -496,7 +519,11 @@ class ConfiguredAMISourceType(Enum):
         cls,
         the_type: str,
         secret_type: Union[
-            AclaraSecrets, Beacon360Secrets, MetersenseSecrets, SentryxSecrets
+            AclaraSecrets,
+            Beacon360Secrets,
+            MetersenseSecrets,
+            SentryxSecrets,
+            SubecaSecrets,
         ],
     ) -> bool:
         matching_schema = cls._matching_schema_for_type(the_type)

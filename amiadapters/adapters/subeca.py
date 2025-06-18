@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
 import logging
-from typing import List
 
 from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
@@ -17,11 +16,13 @@ class SubecaAdapter(BaseAMIAdapter):
 
     def __init__(
         self,
-        org_id,
-        org_timezone,
+        org_id: str,
+        org_timezone: str,
+        api_key: str,
         configured_task_output_controller,
         configured_sinks,
     ):
+        self.api_key = api_key
         super().__init__(
             org_id,
             org_timezone,
@@ -37,7 +38,6 @@ class SubecaAdapter(BaseAMIAdapter):
         run_id: str,
         extract_range_start: datetime,
         extract_range_end: datetime,
-        device_ids: List[str] = None,
     ):
         logging.info(
             f"Retrieving Subeca data between {extract_range_start} and {extract_range_end}"
