@@ -204,7 +204,6 @@ class MetersenseAdapter(BaseAMIAdapter):
             cursor = connection.cursor()
 
             meters = self._extract_meters(cursor)
-            # TODO filter register_reads and interval_reads queries by start and end date
             register_reads = self._extract_register_reads(
                 cursor, extract_range_start, extract_range_end
             )
