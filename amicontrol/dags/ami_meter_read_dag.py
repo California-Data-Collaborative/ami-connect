@@ -55,12 +55,12 @@ def ami_control_dag_factory(
                 else None
             )
 
-            adapter.extract(run_id, start, end, device_ids=device_ids)
+            adapter.extract_and_output(run_id, start, end, device_ids=device_ids)
 
         @task()
         def transform(adapter: BaseAMIAdapter, **context):
             run_id = context["dag_run"].run_id
-            adapter.transform(run_id)
+            adapter.transform_and_output(run_id)
 
         @task()
         def load_raw(adapter: BaseAMIAdapter, **context):

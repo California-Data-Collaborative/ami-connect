@@ -27,14 +27,14 @@ def run_pipeline(
             extract_range_start, extract_range_end, backfill_params=backfill
         )
         logger.info(f"Extracting data for {adapter.name()} from {start} to {end}")
-        adapter.extract(run_id, start, end)
+        adapter.extract_and_output(run_id, start, end)
         logger.info(f"Extracted data for {adapter.name()}")
 
     logger.info(f"Extracted data for {len(adapters)} adapters")
 
     for adapter in adapters:
         logger.info(f"Transforming data for {adapter.name()}")
-        adapter.transform(run_id)
+        adapter.transform_and_output(run_id)
         logger.info(f"Transformed data for {adapter.name()}")
 
     logger.info(f"Transformed data for {len(adapters)} adapters")

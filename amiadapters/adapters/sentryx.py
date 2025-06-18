@@ -174,7 +174,7 @@ class SentryxAdapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"sentryx-api-{self.org_id}"
 
-    def extract(
+    def _extract(
         self,
         run_id: str,
         extract_range_start: datetime,
@@ -188,19 +188,15 @@ class SentryxAdapter(BaseAMIAdapter):
         meters_with_reads = self._extract_consumption_for_all_meters(
             extract_range_start, extract_range_end
         )
-        self.output_controller.write_extract_outputs(
-            run_id,
-            ExtractOutput(
-                {
-                    "meters.json": "\n".join(
-                        json.dumps(m, cls=DataclassJSONEncoder) for m in meters
-                    ),
-                    "reads.json": "\n".join(
-                        json.dumps(m, cls=DataclassJSONEncoder)
-                        for m in meters_with_reads
-                    ),
-                }
-            ),
+        return ExtractOutput(
+            {
+                "meters.json": "\n".join(
+                    json.dumps(m, cls=DataclassJSONEncoder) for m in meters
+                ),
+                "reads.json": "\n".join(
+                    json.dumps(m, cls=DataclassJSONEncoder) for m in meters_with_reads
+                ),
+            }
         )
 
     def _extract_all_meters(self) -> List[SentryxMeter]:
@@ -300,9 +296,7 @@ class SentryxAdapter(BaseAMIAdapter):
 
         return meters
 
-    def transform(self, run_id: str):
-        extract_outputs = self.output_controller.read_extract_outputs(run_id)
-
+    def _transform(self, run_id: str, extract_outputs: ExtractOutput):
         raw_meter_text = extract_outputs.from_file("meters.json")
         raw_meters = [
             SentryxMeter(**json.loads(d)) for d in raw_meter_text.strip().split("\n")
@@ -314,12 +308,7 @@ class SentryxAdapter(BaseAMIAdapter):
             for d in raw_meters_with_reads_text.strip().split("\n")
         ]
 
-        transformed_meters, transformed_reads = self._transform_meters_and_reads(
-            raw_meters, raw_meters_with_reads
-        )
-
-        self.output_controller.write_transformed_meters(run_id, transformed_meters)
-        self.output_controller.write_transformed_meter_reads(run_id, transformed_reads)
+        return self._transform_meters_and_reads(raw_meters, raw_meters_with_reads)
 
     def _transform_meters_and_reads(
         self,
