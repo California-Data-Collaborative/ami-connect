@@ -12,6 +12,11 @@ sources:
   use_raw_data_cache: False
   sinks:
   - my_snowflake_instance
+- type: subeca
+  org_id: my_subeca_utility
+  timezone: America/Los_Angeles
+  sinks:
+  - my_snowflake_instance
 - type: aclara
   org_id: my_aclara_utility
   timezone: America/Los_Angeles
