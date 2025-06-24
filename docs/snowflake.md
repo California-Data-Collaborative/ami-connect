@@ -131,8 +131,8 @@ To join a reading with metadata from the time of measurement:
 
 ```sql
 SELECT r.*, m.METER_SIZE, m.LOCATION_CITY
-FROM CADC_AMI.AMI_CONNECT.READINGS r
-LEFT JOIN CADC_AMI.AMI_CONNECT.METERS m
+FROM READINGS r
+LEFT JOIN METERS m
   ON r.ORG_ID = m.ORG_ID
  AND r.DEVICE_ID = m.DEVICE_ID
  -- Finds the meter row that was active when the measurement was taken
@@ -144,8 +144,8 @@ A simpler join will associate a reading with the most recent meter metadata:
 
 ```sql
 SELECT r.*, m.METER_SIZE, m.LOCATION_CITY
-FROM CADC_AMI.AMI_CONNECT.READINGS r
-JOIN CADC_AMI.AMI_CONNECT.METERS m
+FROM READINGS r
+JOIN METERS m
   ON r.ORG_ID = m.ORG_ID
  AND r.DEVICE_ID = m.DEVICE_ID
  -- Finds the most recent meter row
