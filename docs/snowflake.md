@@ -64,7 +64,7 @@ create or replace TABLE METERS (
 ---
 
 ### `READINGS`
-Time-series records of water usage, reported by meter (DEVICE_ID) with optional account and location context.
+Timeseries records of water usage, reported by meter (DEVICE_ID) with optional account and location context. We aim for hourly granularity in this timeseries, though that is dependent on the AMI data provider.
 
 ```sql
 create or replace TABLE READINGS (
