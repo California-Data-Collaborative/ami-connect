@@ -7,6 +7,8 @@ Seamless pipelines for AMI water data, now as easy to access as turning on a tap
 - [amiadapters](./amiadapters/) - Standalone Python library that adapts AMI data sources into our standard data format
 - [amicontrol](./amicontrol/) - The control plane for our AMI data pipeline. This houses Airflow DAGs and other code to operate the pipline.
 - [amideploy](./amideploy/) - IaC code to stand up an AMI Connect pipeline in the cloud. See [README](./amideploy/README.md) for instructions.
+- [docs](./docs/) - End-user and maintainer documentation.
+- [sql](./sql/) - Dumping ground for SQL used to manage storage sinks, e.g. Snowflake.
 - [test](./test/) - Unittests for all python code in the project.
 
 ## Development
