@@ -12,13 +12,15 @@ The model is denormalized to optimize for time-series analysis and joins across 
 
 ## Key Concepts
 
+- **AMI data source**: A software system that makes AMI data (meter reads and meter metadata) available. The company or organization that manages the software system may also produce the meters themselves. AMI Connect integrates with these data sources and normalizes the data into this Snowflake data model.
+- **Org ID**: Identifies the utility for which we're collecting data. A utility's data will come from one AMI data source, depending on who the utility bought their meters from. By convention, the `ORG_ID` is often prefixed with the name of the AMI Connect operator. It's used to ensure there is no ID collision between AMI data sources or utilities. Ex: `cadc_apple_water_co` might be an `ORG_ID` for Apply Water Company in CaDC's AMI Connect pipeline.
 - **Meter**: A physical device that measures water usage. Identified by a `DEVICE_ID`. In our system, this is the smallest unit that produces consumption readings. E.g. a compound meter for which multiple readings are available at a given time is considered two meters (with two `DEVICE_ID`s).
 - **Device ID**: The main join key between meter metadata and timeseries reads. Some AMI data sources call this a "meter_id", some call it an "endpoint_id", others call it something else. For each data source, we choose which field we call `DEVICE_ID` so that it's always present and always uniquely identies a meter.
 - **Endpoint**: The part of a meter that transmits consumption data. Sometimes a meter may have multiple endpoints that each produce consumption data. In those cases, we consider the meter to be two devices - one `DEVICE_ID` per endpoint.
 - **Location**: The service address where consumption occurs. May have multiple meters over time. We do our best to include location data for each meter, but are limited by the data source's capabilities.
 - **Account**: Represents a billable customer. An account may be associated with multiple locations over time. We do our best to include account for each meter, but are limited by the data source's capabilities.
 - **Flowtime**: Timestamp of when a water consumption measurement was taken.
-- **Org ID**: Identifies the utility for which we're collecting data. By convention, it's often prefixed with the name of the AMI Connect operator. It's used to ensure there is no ID collision between AMI data sources or utilities. Ex: `cadc_apple_water_co` might be an `ORG_ID` for Apply Water Company in CaDC's AMI Connect pipeline.
+
 
 ---
 
