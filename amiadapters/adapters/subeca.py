@@ -61,7 +61,7 @@ class SubecaAdapter(BaseAMIAdapter):
             "accept": "application/json",
             "x-subeca-api-key": self.api_key,
         }
-        
+
         # Retrieve accounts
         params = {
             "pageSize": 100,
@@ -74,9 +74,13 @@ class SubecaAdapter(BaseAMIAdapter):
             if next_token is not None:
                 params["nextToken"] = next_token
             logger.info(f"Requesting Subeca accounts. Request {num_requests}")
-            result = requests.get(f"{self.api_url}/v1/accounts", params=params, headers=headers)
+            result = requests.get(
+                f"{self.api_url}/v1/accounts", params=params, headers=headers
+            )
             if not result.ok:
-                raise ValueError(f"Invalid response from accounts request: {result} {result.text}")
+                raise ValueError(
+                    f"Invalid response from accounts request: {result} {result.text}"
+                )
             response_json = result.json()
             data = response_json["data"]
             next_token = response_json.get("nextToken")
@@ -115,10 +119,16 @@ class SubecaAdapter(BaseAMIAdapter):
                     "timezone": self.org_timezone,
                 },
             }
-            result = requests.post(f"{self.api_url}/v1/accounts/{account.accountId}/usages", data=body, headers=headers)
+            result = requests.post(
+                f"{self.api_url}/v1/accounts/{account.accountId}/usages",
+                data=body,
+                headers=headers,
+            )
 
             if not result.ok:
-                raise ValueError(f"Invalid response from usages request for account {account.accountId}: {result} {result.text}")
+                raise ValueError(
+                    f"Invalid response from usages request for account {account.accountId}: {result} {result.text}"
+                )
 
         raise Exception("hi")
         return ExtractOutput({"meters_and_reads.json": output})
