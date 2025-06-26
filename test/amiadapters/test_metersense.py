@@ -41,15 +41,17 @@ class TestMetersenseAdapter(BaseTestCase):
             database_password="dbp",
         )
 
-    def _account_service_factory(self) -> MetersenseAccountService:
+    def _account_service_factory(
+        self, active_dt="2024-01-01T00:00:00", inactive_dt="2025-01-01T00:00:00"
+    ) -> MetersenseAccountService:
         return MetersenseAccountService(
             service_id="SVC123",
             account_id="ACC456",
             location_no="1001",
             commodity_tp="W",
             last_read_dt="2024-12-01T10:00:00",
-            active_dt="2024-01-01T00:00:00",
-            inactive_dt="2025-01-01T00:00:00",
+            active_dt=active_dt,
+            inactive_dt=inactive_dt,
         )
 
     def _location_factory(self, location_no="1001") -> MetersenseLocation:
@@ -76,13 +78,17 @@ class TestMetersenseAdapter(BaseTestCase):
         )
 
     def _meter_location_xref_factory(
-        self, meter_id="MTR001", location_no="1001"
+        self,
+        meter_id="MTR001",
+        location_no="1001",
+        active_dt="2024-01-01T00:00:00",
+        inactive_dt="2025-01-01T00:00:00",
     ) -> MetersenseMeterLocationXref:
         return MetersenseMeterLocationXref(
             meter_id=meter_id,
-            active_dt="2024-01-01T00:00:00",
+            active_dt=active_dt,
             location_no=location_no,
-            inactive_dt="2025-01-01T00:00:00",
+            inactive_dt=inactive_dt,
             add_by="admin",
             add_dt="2024-01-01T12:00:00",
             change_by="tech2",
@@ -138,11 +144,11 @@ class TestMetersenseAdapter(BaseTestCase):
             register_constant="100",
         )
 
-    def _meter_factory(self) -> MetersenseMeter:
+    def _meter_factory(self, add_dt="2024-01-01T00:00:00") -> MetersenseMeter:
         return MetersenseMeter(
             meter_id="MTR001",
             alt_meter_id="ALT001",
-            meter_tp="Digital",
+            meter_tp="W-TRB8",
             commodity_tp="W",
             region_id="Region1",
             interval_length="60",
@@ -215,6 +221,31 @@ class TestMetersenseAdapter(BaseTestCase):
             read_version=1,
         )
 
+    def _build_extract_output(
+        self,
+        account_services=None,
+        locations=None,
+        meters=None,
+        xrefs=None,
+        meter_views=None,
+        reg_reads=None,
+        int_reads=None,
+    ):
+        def to_jsonl(objs):
+            return "\n".join(json.dumps(i, cls=DataclassJSONEncoder) for i in objs)
+
+        return ExtractOutput(
+            {
+                "account_services.json": to_jsonl(account_services or []),
+                "locations.json": to_jsonl(locations or []),
+                "meters.json": to_jsonl(meters or []),
+                "meter_location_xref.json": to_jsonl(xrefs or []),
+                "meters_view.json": to_jsonl(meter_views or []),
+                "registerreads.json": to_jsonl(reg_reads or []),
+                "intervalreads.json": to_jsonl(int_reads or []),
+            }
+        )
+
     def test_init(self):
         self.assertEqual("tunnel-ip", self.adapter.ssh_tunnel_server_host)
         self.assertEqual("ubuntu", self.adapter.ssh_tunnel_username)
@@ -226,47 +257,188 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual("dbp", self.adapter.database_password)
 
     def test_transform(self):
-        account_services = [self._account_service_factory()]
-        locations = [
-            self._location_factory(location_no=account_services[0].location_no)
-        ]
-        meters = [self._meter_factory()]
-        xrefs = [
-            self._meter_location_xref_factory(
-                meter_id=meters[0].meter_id, location_no=account_services[0].location_no
-            )
-        ]
-        meter_views = [self._meter_view_factory(meter_id=meters[0].meter_id)]
-        reg_reads = [self._register_read_factory(meter_id=meters[0].meter_id)]
-        int_reads = [self._interval_read_factory(meter_id=meters[0].meter_id)]
-        extract_outputs = ExtractOutput(
-            {
-                "account_services.json": "\n".join(
-                    json.dumps(i, cls=DataclassJSONEncoder) for i in account_services
-                ),
-                "locations.json": "\n".join(
-                    json.dumps(i, cls=DataclassJSONEncoder) for i in locations
-                ),
-                "meters.json": "\n".join(
-                    json.dumps(i, cls=DataclassJSONEncoder) for i in meters
-                ),
-                "meter_location_xref.json": "\n".join(
-                    json.dumps(i, cls=DataclassJSONEncoder) for i in xrefs
-                ),
-                "meters_view.json": "\n".join(
-                    json.dumps(i, cls=DataclassJSONEncoder) for i in meter_views
-                ),
-                "registerreads.json": "\n".join(
-                    json.dumps(i, cls=DataclassJSONEncoder) for i in reg_reads
-                ),
-                "intervalreads.json": "\n".join(
-                    json.dumps(i, cls=DataclassJSONEncoder) for i in int_reads
-                ),
-            }
+        meter = self._meter_factory()
+        location = self._location_factory()
+        account_service = self._account_service_factory()
+        xref = self._meter_location_xref_factory(
+            meter_id=meter.meter_id, location_no=location.location_no
+        )
+        meter_view = self._meter_view_factory()
+        register_read = self._register_read_factory(meter_id=meter.meter_id)
+        interval_read = self._interval_read_factory(meter_id=meter.meter_id)
+        extract_outputs = self._build_extract_output(
+            account_services=[account_service],
+            locations=[location],
+            meters=[meter],
+            xrefs=[xref],
+            meter_views=[meter_view],
+            reg_reads=[register_read],
+            int_reads=[interval_read],
         )
 
         transformed_meters, transformed_reads = self.adapter._transform(
             "run-id", extract_outputs
         )
         self.assertEqual(1, len(transformed_meters))
+        meter = transformed_meters[0]
+        self.assertEqual("MTR001", meter.meter_id)
+        self.assertEqual("8", meter.meter_size)
+        self.assertEqual("CM12345", meter.endpoint_id)
+        self.assertEqual("Main", meter.location_address)
+        self.assertEqual("ACC456", meter.account_id)
+
         self.assertEqual(1, len(transformed_reads))
+        read = transformed_reads[0]
+        self.assertEqual("ACC456", read.account_id)
+        self.assertEqual("1001", read.location_id)
+        self.assertEqual(10.5, read.register_value)
+        self.assertEqual(0.5, read.interval_value)
+
+    def test_missing_meter_view(self):
+        meter = self._meter_factory()
+        location = self._location_factory()
+        account_service = self._account_service_factory()
+        xref = self._meter_location_xref_factory(
+            meter_id=meter.meter_id, location_no=location.location_no
+        )
+        extract_outputs = self._build_extract_output(
+            account_services=[account_service],
+            locations=[location],
+            meters=[meter],
+            xrefs=[xref],
+            meter_views=[],
+        )
+        meters, reads = self.adapter._transform("run-id", extract_outputs)
+        self.assertEqual(1, len(meters))
+        self.assertIsNone(meters[0].endpoint_id)
+
+    def test_missing_account_for_location(self):
+        meter = self._meter_factory()
+        location = self._location_factory()
+        xref = self._meter_location_xref_factory(
+            meter_id=meter.meter_id, location_no=location.location_no
+        )
+        extract_outputs = self._build_extract_output(
+            account_services=[],
+            locations=[location],
+            meters=[meter],
+            xrefs=[xref],
+            meter_views=[self._meter_view_factory(meter_id=meter.meter_id)],
+        )
+        meters, reads = self.adapter._transform("run-id", extract_outputs)
+        self.assertEqual(1, len(meters))
+        self.assertIsNone(meters[0].account_id)
+
+    def test_missing_location_for_xref(self):
+        meter = self._meter_factory()
+        account_service = self._account_service_factory()
+        xref = self._meter_location_xref_factory(
+            meter_id=meter.meter_id, location_no="9999"  # doesn't exist
+        )
+        extract_outputs = self._build_extract_output(
+            account_services=[account_service],
+            locations=[],
+            meters=[meter],
+            xrefs=[xref],
+            meter_views=[self._meter_view_factory(meter_id=meter.meter_id)],
+        )
+        meters, reads = self.adapter._transform("run-id", extract_outputs)
+        self.assertEqual(1, len(meters))
+        self.assertIsNone(meters[0].location_id)
+
+    def test_no_interval_or_register_reads(self):
+        meter = self._meter_factory()
+        location = self._location_factory()
+        account_service = self._account_service_factory()
+        xref = self._meter_location_xref_factory(
+            meter_id=meter.meter_id, location_no=location.location_no
+        )
+        meter_view = self._meter_view_factory(meter_id=meter.meter_id)
+        extract_outputs = self._build_extract_output(
+            account_services=[account_service],
+            locations=[location],
+            meters=[meter],
+            xrefs=[xref],
+            meter_views=[meter_view],
+            reg_reads=[],
+            int_reads=[],
+        )
+        meters, reads = self.adapter._transform("run-id", extract_outputs)
+        self.assertEqual(1, len(meters))
+        self.assertEqual(0, len(reads))
+
+    def test_interval_and_register_reads_when_they_do_not_join(self):
+        meter = self._meter_factory()
+        location = self._location_factory()
+        account_service = self._account_service_factory()
+        xref = self._meter_location_xref_factory(
+            meter_id=meter.meter_id, location_no=location.location_no
+        )
+        meter_view = self._meter_view_factory(meter_id=meter.meter_id)
+        interval_read = self._interval_read_factory(
+            meter_id=meter.meter_id, read_dtm="2024-01-01 01:00:00"
+        )
+        register_read = self._register_read_factory(
+            meter_id=meter.meter_id, read_dtm="2024-01-01 12:00:00"
+        )
+        extract_outputs = self._build_extract_output(
+            account_services=[account_service],
+            locations=[location],
+            meters=[meter],
+            xrefs=[xref],
+            meter_views=[meter_view],
+            reg_reads=[register_read],
+            int_reads=[interval_read],
+        )
+        meters, reads = self.adapter._transform("run-id", extract_outputs)
+        self.assertEqual(1, len(meters))
+        self.assertEqual(2, len(reads))
+        self.assertEqual(reads[0].interval_value, interval_read.read_value)
+        self.assertEqual(reads[1].register_value, register_read.read_value)
+
+    def test_interval_and_register_reads_match_to_correct_meter(self):
+        meter = self._meter_factory()
+        location = self._location_factory()
+        account_service = self._account_service_factory(
+            active_dt="2024-01-01T00:00:00", inactive_dt="2025-01-01T00:00:00"
+        )
+        xref = self._meter_location_xref_factory(
+            meter_id=meter.meter_id,
+            location_no=location.location_no,
+            active_dt="2024-01-01T00:00:00",
+            inactive_dt="2025-01-01T00:00:00",
+        )
+        meter_view = self._meter_view_factory(meter_id=meter.meter_id)
+        # Inside active date range
+        interval_read_inside_date_range = self._interval_read_factory(
+            meter_id=meter.meter_id, read_dtm="2024-06-01 01:00:00"
+        )
+        # Outside active date range
+        interval_read_outside_date_range = self._interval_read_factory(
+            meter_id=meter.meter_id, read_dtm="2025-06-01 01:00:00"
+        )
+        extract_outputs = self._build_extract_output(
+            account_services=[account_service],
+            locations=[location],
+            meters=[meter],
+            xrefs=[xref],
+            meter_views=[meter_view],
+            reg_reads=[],
+            int_reads=[
+                interval_read_inside_date_range,
+                interval_read_outside_date_range,
+            ],
+        )
+        meters, reads = self.adapter._transform("run-id", extract_outputs)
+        self.assertEqual(1, len(meters))
+        self.assertEqual(2, len(reads))
+        self.assertEqual(
+            reads[0].interval_value, interval_read_inside_date_range.read_value
+        )
+        self.assertIsNotNone(reads[0].account_id)
+        self.assertIsNotNone(reads[0].location_id)
+        self.assertEqual(
+            reads[1].interval_value, interval_read_outside_date_range.read_value
+        )
+        self.assertIsNone(reads[1].account_id)
+        self.assertIsNone(reads[1].location_id)

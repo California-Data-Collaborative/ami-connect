@@ -301,39 +301,25 @@ class MetersenseAdapter(BaseAMIAdapter):
         return result
 
     def _transform(self, run_id: str, extract_outputs: ExtractOutput):
-        raw_account_services = [
-            MetersenseAccountService(**json.loads(d))
-            for d in extract_outputs.from_file("account_services.json")
-            .strip()
-            .split("\n")
-        ]
-        raw_meters = [
-            MetersenseMeter(**json.loads(d))
-            for d in extract_outputs.from_file("meters.json").strip().split("\n")
-        ]
-        raw_meter_location_xrefs = [
-            MetersenseMeterLocationXref(**json.loads(d))
-            for d in extract_outputs.from_file("meter_location_xref.json")
-            .strip()
-            .split("\n")
-        ]
-        raw_meters_views = [
-            MetersenseMetersView(**json.loads(d))
-            for d in extract_outputs.from_file("meters_view.json").strip().split("\n")
-        ]
-        raw_locations = [
-            MetersenseLocation(**json.loads(d))
-            for d in extract_outputs.from_file("locations.json").strip().split("\n")
-        ]
-        raw_interval_reads = [
-            MetersenseIntervalRead(**json.loads(d))
-            for d in extract_outputs.from_file("intervalreads.json").strip().split("\n")
-        ]
-        raw_register_reads = [
-            MetersenseRegisterRead(**json.loads(d))
-            for d in extract_outputs.from_file("registerreads.json").strip().split("\n")
-        ]
-
+        raw_account_services = self._read_file(
+            extract_outputs, "account_services.json", MetersenseAccountService
+        )
+        raw_meters = self._read_file(extract_outputs, "meters.json", MetersenseMeter)
+        raw_meter_location_xrefs = self._read_file(
+            extract_outputs, "meter_location_xref.json", MetersenseMeterLocationXref
+        )
+        raw_meters_views = self._read_file(
+            extract_outputs, "meters_view.json", MetersenseMetersView
+        )
+        raw_locations = self._read_file(
+            extract_outputs, "locations.json", MetersenseLocation
+        )
+        raw_interval_reads = self._read_file(
+            extract_outputs, "intervalreads.json", MetersenseIntervalRead
+        )
+        raw_register_reads = self._read_file(
+            extract_outputs, "registerreads.json", MetersenseRegisterRead
+        )
         return self._transform_meters_and_reads(
             raw_account_services,
             raw_meters,
@@ -405,29 +391,32 @@ class MetersenseAdapter(BaseAMIAdapter):
 
             # Most recent location and account for this meter
             # TODO handle nulls
-            location_xref = xrefs_by_meter_id.get(raw_meter.meter_id, [])[0]
-            location = locations_by_location_id.get(location_xref.location_no)
-            account = accounts_by_location_id.get(location.location_no)[0]
+            account, location = self._get_account_and_location_for_meter(
+                meter_id,
+                xrefs_by_meter_id,
+                locations_by_location_id,
+                accounts_by_location_id,
+            )
 
             meter_view = meter_views_by_meter_id.get(meter_id)
 
             meter = GeneralMeter(
                 org_id=self.org_id,
                 device_id=device_id,
-                account_id=account.account_id,
-                location_id=location.location_no,
+                account_id=account.account_id if account else None,
+                location_id=location.location_no if location else None,
                 meter_id=raw_meter.meter_id,
-                endpoint_id=meter_view.comm_module_id,
+                endpoint_id=meter_view.comm_module_id if meter_view else None,
                 meter_install_date=self.datetime_from_iso_str(
                     raw_meter.add_dt, self.org_timezone
                 ),
                 meter_size=self.map_meter_size(raw_meter.meter_tp),
                 meter_manufacturer=None,
                 multiplier=raw_meter.channel1_multiplier,
-                location_address=location.street_name,
-                location_city=location.city,
-                location_state=location.state,
-                location_zip=location.postal_cd,
+                location_address=location.street_name if location else None,
+                location_city=location.city if location else None,
+                location_state=location.state if location else None,
+                location_zip=location.postal_cd if location else None,
             )
             meters_by_device_id[device_id] = meter
 
@@ -533,3 +522,29 @@ class MetersenseAdapter(BaseAMIAdapter):
                 account_id = account.account_id
 
         return account_id, location_id
+
+    def _get_account_and_location_for_meter(
+        self,
+        meter_id: str,
+        xrefs_by_meter_id: Dict[str, List[MetersenseMeterLocationXref]],
+        locations_by_location_id: Dict[str, MetersenseLocation],
+        accounts_by_location_id: Dict[str, List[MetersenseAccountService]],
+    ) -> Tuple[MetersenseAccountService, MetersenseLocation]:
+        account, location, xref = None, None, None
+        if location_xrefs := xrefs_by_meter_id.get(meter_id, []):
+            # The most recent record
+            xref = location_xrefs[0]
+        if xref:
+            location = locations_by_location_id.get(xref.location_no)
+            if accounts := accounts_by_location_id.get(xref.location_no, []):
+                # The most recent record
+                account = accounts[0]
+        return account, location
+
+    def _read_file(
+        self, extract_outputs: ExtractOutput, file: str, dataclass_type
+    ) -> List:
+        lines = extract_outputs.from_file(file).strip().split("\n")
+        if not lines:
+            return []
+        return [dataclass_type(**json.loads(l)) for l in lines if l]
