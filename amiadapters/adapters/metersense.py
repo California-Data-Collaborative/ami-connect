@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 import json
 import logging
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import oracledb
 import sshtunnel
@@ -15,15 +15,45 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class MetersenseMeterLocation:
-    """
-    Representation of joined rows from the METERS, LOCATIONS, and ACCOUNT_SERVICES tables in Metersense schema.
-    """
+class MetersenseAccountService:
+    service_id: str
+    account_id: str
+    location_no: str
+    commodity_tp: str
+    last_read_dt: str
+    active_dt: str
+    inactive_dt: str
 
+
+@dataclass
+class MetersenseLocation:
+    location_no: str
+    alt_location_id: str
+    location_class: str
+    unit_no: str
+    street_no: str
+    street_pfx: str
+    street_name: str
+    street_sfx: str
+    street_sfx_dir: str
+    city: str
+    state: str
+    postal_cd: str
+    billing_cycle: str
+    add_by: str
+    add_dt: str
+    change_by: str
+    change_dt: str
+    latitude: str
+    longitude: str
+
+
+@dataclass
+class MetersenseMeter:
     meter_id: str
     alt_meter_id: str
     meter_tp: str
-    meters_commodity_tp: str
+    commodity_tp: str
     region_id: str
     interval_length: str
     regread_frequency: str
@@ -55,39 +85,74 @@ class MetersenseMeterLocation:
     last_data_ts: str
     ami_id: str
     power_status: str
-    meters_latitude: str
-    meters_longitude: str
+    latitude: str
+    longitude: str
     exclude_in_reports: str
-    meters_add_by: str
-    meters_add_dt: str
-    meters_change_by: str
-    meters_change_dt: str
-    locations_location_no: str
-    alt_location_id: str
-    location_class: str
-    unit_no: str
-    street_no: str
-    street_pfx: str
-    street_name: str
-    street_sfx: str
-    street_sfx_dir: str
-    city: str
-    state: str
-    postal_cd: str
-    billing_cycle: str
-    locations_add_by: str
-    locations_add_dt: str
-    locations_change_by: str
-    locations_change_dt: str
-    locations_latitude: str
-    locations_longitude: str
-    service_id: str
-    account_id: str
-    accounts_location_no: str
-    accounts_commodity_tp: str
-    last_read_dt: str
+    add_by: str
+    add_dt: str
+    change_by: str
+    change_dt: str
+
+
+@dataclass
+class MetersenseMetersView:
+    meter_id: str
+    alt_meter_id: str
+    meter_tp: str
+    commodity_tp: str
+    region_id: str
+    interval_length: str
+    regread_frequency: str
+    channel1_raw_uom: str
+    channel2_raw_uom: str
+    channel3_raw_uom: str
+    channel4_raw_uom: str
+    channel5_raw_uom: str
+    channel6_raw_uom: str
+    channel7_raw_uom: str
+    channel8_raw_uom: str
+    channel1_multiplier: str
+    channel2_multiplier: str
+    channel3_multiplier: str
+    channel4_multiplier: str
+    channel5_multiplier: str
+    channel6_multiplier: str
+    channel7_multiplier: str
+    channel8_multiplier: str
+    channel1_final_uom: str
+    channel2_final_uom: str
+    channel3_final_uom: str
+    channel4_final_uom: str
+    channel5_final_uom: str
+    channel6_final_uom: str
+    channel7_final_uom: str
+    channel8_final_uom: str
+    first_data_ts: str
+    last_data_ts: str
+    ami_id: str
+    power_status: str
+    latitude: str
+    longitude: str
+    exclude_in_reports: str
+    nb_dials: str
+    backflow: str
+    service_point_type: str
+    reclaim_inter_prog: str
+    power_status_details: str
+    comm_module_id: str
+    register_constant: str
+
+
+@dataclass
+class MetersenseMeterLocationXref:
+    meter_id: str
     active_dt: str
+    location_no: str
     inactive_dt: str
+    add_by: str
+    add_dt: str
+    change_by: str
+    change_dt: str
 
 
 @dataclass
@@ -202,286 +267,171 @@ class MetersenseAdapter(BaseAMIAdapter):
 
             cursor = connection.cursor()
 
-            meters = self._extract_meters(cursor)
-            register_reads = self._extract_register_reads(
-                cursor, extract_range_start, extract_range_end
-            )
-            interval_reads = self._extract_interval_reads(
-                cursor, extract_range_start, extract_range_end
-            )
+            files = {}
+            tables = [
+                ("ACCOUNT_SERVICES", MetersenseAccountService),
+                # ("INTERVALREADS", MetersenseIntervalRead), # TODO start and end date
+                ("LOCATIONS", MetersenseLocation),
+                ("METERS", MetersenseMeter),
+                ("METERS_VIEW", MetersenseMetersView),
+                ("METER_LOCATION_XREF", MetersenseMeterLocationXref),
+                # ("REGISTERREADS", MetersenseRegisterRead), # TODO start ane end date
+            ]
+            for table, row_type in tables:
+                rows = self._extract_table(cursor, table, row_type)
+                text = "\n".join(json.dumps(i, cls=DataclassJSONEncoder) for i in rows)
+                files[f"{table}.json"] = text
 
-        # # TODO remove
-        # with open("./output/metersense-cache-meter.json", "r") as f:
-        #     text = f.read()
-        #     meters = [
-        #         MetersenseMeterLocation(**json.loads(i)) for i in text.split("\n")
-        #     ]
-        # with open("./output/metersense-cache-register-reads.json", "r") as f:
-        #     text = f.read()
-        #     register_reads = [
-        #         MetersenseRegisterRead(**json.loads(i)) for i in text.split("\n")
-        #     ]
-        # with open("./output/metersense-cache-interval-reads.json", "r") as f:
-        #     text = f.read()
-        #     interval_reads = [
-        #         MetersenseIntervalRead(**json.loads(i)) for i in text.split("\n")
-        #     ]
+        return ExtractOutput(files)
 
-        return ExtractOutput(
-            {
-                "meters.json": "\n".join(
-                    json.dumps(i, cls=DataclassJSONEncoder) for i in meters
-                ),
-                "interval_reads.json": "\n".join(
-                    json.dumps(i, cls=DataclassJSONEncoder) for i in interval_reads
-                ),
-                "register_reads.json": "\n".join(
-                    json.dumps(i, cls=DataclassJSONEncoder) for i in register_reads
-                ),
-            }
-        )
+    def _extract_table(self, cursor, table_name: str, row_type) -> List:
+        cursor.execute(f"SELECT * FROM {table_name}")
+        rows = cursor.fetchall()
 
-    def _extract_meters(self, cursor) -> List[MetersenseMeterLocation]:
-        # TODO remove meter_id filter
-        result = cursor.execute(
-            """
-            SELECT
-                m.meter_id,
-                m.alt_meter_id,
-                m.meter_tp,
-                m.commodity_tp,
-                m.region_id,
-                m.interval_length,
-                m.regread_frequency,
-                m.channel1_raw_uom,
-                m.channel2_raw_uom,
-                m.channel3_raw_uom,
-                m.channel4_raw_uom,
-                m.channel5_raw_uom,
-                m.channel6_raw_uom,
-                m.channel7_raw_uom,
-                m.channel8_raw_uom,
-                m.channel1_multiplier,
-                m.channel2_multiplier,
-                m.channel3_multiplier,
-                m.channel4_multiplier,
-                m.channel5_multiplier,
-                m.channel6_multiplier,
-                m.channel7_multiplier,
-                m.channel8_multiplier,
-                m.channel1_final_uom,
-                m.channel2_final_uom,
-                m.channel3_final_uom,
-                m.channel4_final_uom,
-                m.channel5_final_uom,
-                m.channel6_final_uom,
-                m.channel7_final_uom,
-                m.channel8_final_uom,
-                m.first_data_ts,
-                m.last_data_ts,
-                m.ami_id,
-                m.power_status,
-                m.latitude,
-                m.longitude,
-                m.exclude_in_reports,
-                m.add_by,
-                m.add_dt,
-                m.change_by,
-                m.change_dt,
-                l.location_no,
-                l.alt_location_id,
-                l.location_class,
-                l.unit_no,
-                l.street_no,
-                l.street_pfx,
-                l.street_name,
-                l.street_sfx,
-                l.street_sfx_dir,
-                l.city,
-                l.state,
-                l.postal_cd,
-                l.billing_cycle,
-                l.add_by,
-                l.add_dt,
-                l.change_by,
-                l.change_dt,
-                l.latitude,
-                l.longitude,
-                a.service_id,
-                a.account_id,
-                a.location_no,
-                a.commodity_tp,
-                a.last_read_dt,
-                a.active_dt,
-                a.inactive_dt
-            FROM METERS m
-            LEFT JOIN meter_location_xref x ON m.meter_id = x.meter_id
-            LEFT JOIN locations l ON l.location_no = x.location_no
-            LEFT JOIN account_services a ON a.location_no = x.location_no
-            WHERE m.commodity_tp = 'W'
-            AND a.commodity_tp = 'W'
-            AND x.inactive_dt > SYSTIMESTAMP
-            AND a.inactive_dt > SYSTIMESTAMP
-            AND m.meter_id = '87195806'
-            ORDER BY m.meter_id, l.location_no, a.account_id, a.last_read_dt desc
-                                """
-        )
-        result = cursor.fetchall()
-        rows = [i for i in result]
-        logger.info(f"Fetched {len(rows)} meter metadata rows")
-        columns = list(MetersenseMeterLocation.__dataclass_fields__.keys())
-        meters = []
+        columns = list(row_type.__dataclass_fields__.keys())
+        result = []
         for row in rows:
             data = {}
             for name, value in zip(columns, row):
                 if isinstance(value, datetime):
                     value = value.isoformat()
                 data[name] = value
-            meters.append(MetersenseMeterLocation(**data))
-        return meters
-
-    def _extract_register_reads(
-        self, cursor, extract_range_start: datetime, extract_range_end: datetime
-    ) -> List[MetersenseRegisterRead]:
-        # TODO remove meter_id filter
-        register_reads_result = cursor.execute(
-            """
-            SELECT
-                r.meter_id,
-                r.channel_id,
-                r.read_dtm,
-                r.read_value,
-                r.uom,
-                r.status,
-                r.read_version
-            FROM registerreads r
-            WHERE r.meter_id IN (SELECT DISTINCT meter_id FROM meters m where m.commodity_tp = 'W')
-            AND r.read_dtm > :range_start
-            AND r.read_dtm < :range_end
-            AND r.meter_id = '87195806'
-        """,
-            range_start=extract_range_start,
-            range_end=extract_range_end,
-        )
-        register_read_rows = [i for i in register_reads_result]
-        logger.info(f"Fetched {len(register_read_rows)} register read rows")
-        register_read_columns = list(MetersenseRegisterRead.__dataclass_fields__.keys())
-        register_reads = []
-        for row in register_read_rows:
-            data = {}
-            for name, value in zip(register_read_columns, row):
-                if isinstance(value, datetime):
-                    value = value.isoformat()
-                data[name] = value
-            register_reads.append(MetersenseRegisterRead(**data))
-        return register_reads
-
-    def _extract_interval_reads(
-        self, cursor, extract_range_start: datetime, extract_range_end: datetime
-    ) -> List[MetersenseIntervalRead]:
-        # TODO remove meter_id filter
-        interval_reads_result = cursor.execute(
-            """
-            SELECT
-                r.meter_id,
-                r.channel_id,
-                r.read_dt,
-                r.read_hr,
-                r.read_30min_int,
-                r.read_15min_int,
-                r.read_5min_int,
-                r.read_dtm,
-                r.read_value,
-                r.uom,
-                r.status,
-                r.read_version
-            FROM intervalreads r
-            WHERE r.meter_id IN (SELECT DISTINCT meter_id FROM meters m where m.commodity_tp = 'W')
-            AND r.read_dtm > :range_start
-            AND r.read_dtm < :range_end
-            AND r.meter_id = '87195806'
-        """,
-            range_start=extract_range_start,
-            range_end=extract_range_end,
-        )
-        interval_reads_rows = [i for i in interval_reads_result]
-        logger.info(f"Fetched {len(interval_reads_rows)} interval read rows")
-        interval_read_columns = list(MetersenseIntervalRead.__dataclass_fields__.keys())
-        interval_reads = []
-        for row in interval_reads_rows:
-            data = {}
-            for name, value in zip(interval_read_columns, row):
-                if isinstance(value, datetime):
-                    value = value.isoformat()
-                data[name] = value
-            interval_reads.append(MetersenseIntervalRead(**data))
-        return interval_reads
+            result.append(row_type(**data))
+        logger.info(f"Fetched {len(result)} rows from {table_name}")
+        return result
 
     def _transform(self, run_id: str, extract_outputs: ExtractOutput):
+        raw_account_services = [
+            MetersenseAccountService(**json.loads(d))
+            for d in extract_outputs.from_file("account_services.json")
+            .strip()
+            .split("\n")
+        ]
         raw_meters = [
-            MetersenseMeterLocation(**json.loads(d))
+            MetersenseMeter(**json.loads(d))
             for d in extract_outputs.from_file("meters.json").strip().split("\n")
+        ]
+        raw_meter_location_xrefs = [
+            MetersenseMeterLocationXref(**json.loads(d))
+            for d in extract_outputs.from_file("meter_location_xref.json")
+            .strip()
+            .split("\n")
+        ]
+        raw_meters_views = [
+            MetersenseMetersView(**json.loads(d))
+            for d in extract_outputs.from_file("meters_view.json").strip().split("\n")
+        ]
+        raw_locations = [
+            MetersenseLocation(**json.loads(d))
+            for d in extract_outputs.from_file("locations.json").strip().split("\n")
         ]
         raw_interval_reads = [
             MetersenseIntervalRead(**json.loads(d))
-            for d in extract_outputs.from_file("interval_reads.json")
-            .strip()
-            .split("\n")
+            for d in extract_outputs.from_file("intervalreads.json").strip().split("\n")
         ]
         raw_register_reads = [
             MetersenseRegisterRead(**json.loads(d))
-            for d in extract_outputs.from_file("register_reads.json")
-            .strip()
-            .split("\n")
+            for d in extract_outputs.from_file("registerreads.json").strip().split("\n")
         ]
 
         return self._transform_meters_and_reads(
-            raw_meters, raw_interval_reads, raw_register_reads
+            raw_account_services,
+            raw_meters,
+            raw_meter_location_xrefs,
+            raw_meters_views,
+            raw_locations,
+            raw_interval_reads,
+            raw_register_reads,
         )
 
     def _transform_meters_and_reads(
         self,
-        raw_meters: List[MetersenseMeterLocation],
+        raw_account_services: List[MetersenseAccountService],
+        raw_meters: List[MetersenseMeter],
+        raw_meter_location_xrefs: List[MetersenseMeterLocationXref],
+        raw_meters_views: List[MetersenseMetersView],
+        raw_locations: List[MetersenseLocation],
+        # TODO need to take care of read_version!
         raw_interval_reads: List[MetersenseIntervalRead],
         raw_register_reads: List[MetersenseIntervalRead],
     ) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
-        """
-        Data questions:
-        - for account_id,
-        """
+        accounts_by_location_id = {}
+        for a in raw_account_services:
+            if not a.location_no or a.commodity_tp != "W":
+                continue
+            if a.location_no not in accounts_by_location_id:
+                accounts_by_location_id[a.location_no] = []
+            accounts_by_location_id[a.location_no].append(a)
+        for location in accounts_by_location_id.keys():
+            accounts_by_location_id[location] = sorted(
+                accounts_by_location_id[location],
+                key=lambda a: a.inactive_dt,
+                reverse=True,
+            )
+
+        xrefs_by_meter_id = {}
+        for x in raw_meter_location_xrefs:
+            if not x.meter_id or not x.location_no:
+                continue
+            if x.meter_id not in xrefs_by_meter_id:
+                xrefs_by_meter_id[x.meter_id] = []
+            xrefs_by_meter_id[x.meter_id].append(x)
+        for meter_id in xrefs_by_meter_id.keys():
+            xrefs_by_meter_id[meter_id] = sorted(
+                xrefs_by_meter_id[meter_id], key=lambda x: x.inactive_dt, reverse=True
+            )
+
+        meter_views_by_meter_id = {}
+        for mv in raw_meters_views:
+            if not mv.meter_id:
+                continue
+            meter_views_by_meter_id[mv.meter_id] = mv
+
+        locations_by_location_id = {}
+        for l in raw_locations:
+            if not l.location_no:
+                continue
+            locations_by_location_id[l.location_no] = l
+
         meters_by_device_id = {}
         for raw_meter in raw_meters:
-            device_id = raw_meter.meter_id
-            if device_id in meters_by_device_id:
+            if raw_meter.commodity_tp != "W":
                 continue
+            device_id = raw_meter.meter_id
+
+            # TODO remove this after we validate we are handling duplicates
+            if device_id in meters_by_device_id:
+                raise Exception()
+
+            # Most recent location and account for this meter
+            # TODO handle nulls
+            location_xref = xrefs_by_meter_id.get(raw_meter.meter_id, [])[0]
+            location = locations_by_location_id.get(location_xref.location_no)
+            account = accounts_by_location_id.get(location.location_no)[0]
+
+            meter_view = meter_views_by_meter_id.get(meter_id)
+
             meter = GeneralMeter(
                 org_id=self.org_id,
                 device_id=device_id,
-                # TODO account_id or service_id?
-                account_id=raw_meter.account_id,
-                location_id=raw_meter.locations_location_no,
+                account_id=account.account_id,
+                location_id=location.location_no,
                 meter_id=raw_meter.meter_id,
-                # TODO anything to populate here?
-                endpoint_id=None,
-                # TODO should we take into account meters_change_dt? Maybe if change date is less than today, we use it?
+                endpoint_id=meter_view.comm_module_id,
                 meter_install_date=self.datetime_from_iso_str(
-                    raw_meter.meters_add_dt, self.org_timezone
+                    raw_meter.add_dt, self.org_timezone
                 ),
-                # TODO anything to populate here?
-                meter_size=None,
-                # TODO anything to populate here?
+                meter_size=self.map_meter_size(raw_meter.meter_tp),
                 meter_manufacturer=None,
                 multiplier=raw_meter.channel1_multiplier,
-                location_address=raw_meter.street_name,
-                location_city=raw_meter.city,
-                location_state=raw_meter.state,
-                location_zip=raw_meter.postal_cd,
+                location_address=location.street_name,
+                location_city=location.city,
+                location_state=location.state,
+                location_zip=location.postal_cd,
             )
             meters_by_device_id[device_id] = meter
 
         reads_by_device_and_time = {}
-
-        # TODO handle read_version, which may indicate duplicates in meter+time because they're versioned? Could maybe sort by version and make an assumption in this code based off that, e.g. take the first one and ignore the rest
         for raw_interval_read in raw_interval_reads:
             device_id = raw_interval_read.meter_id
             flowtime = self.datetime_from_iso_str(
@@ -492,14 +442,12 @@ class MetersenseAdapter(BaseAMIAdapter):
                 flowtime,
             )
 
-            # TODO this assumes that today's account and location are the same as yesterday's account and location, which may not be true for old reads
-            device = meters_by_device_id.get(device_id)
-            if device is not None:
-                account_id = device.account_id
-                location_id = device.location_id
-            else:
-                account_id = None
-                location_id = None
+            account_id, location_id = self._get_account_and_location_for_read(
+                raw_interval_read.meter_id,
+                raw_interval_read.read_dtm,
+                xrefs_by_meter_id,
+                accounts_by_location_id,
+            )
 
             read = GeneralMeterRead(
                 org_id=self.org_id,
@@ -532,14 +480,12 @@ class MetersenseAdapter(BaseAMIAdapter):
                     register_unit=self.map_unit_of_measure(raw_register_read.uom),
                 )
             else:
-                # TODO this assumes that today's account and location are the same as yesterday's account and location, which may not be true for old reads
-                device = meters_by_device_id.get(device_id)
-                if device is not None:
-                    account_id = device.account_id
-                    location_id = device.location_id
-                else:
-                    account_id = None
-                    location_id = None
+                account_id, location_id = self._get_account_and_location_for_read(
+                    raw_interval_read.meter_id,
+                    raw_interval_read.read_dtm,
+                    xrefs_by_meter_id,
+                    accounts_by_location_id,
+                )
                 read = GeneralMeterRead(
                     org_id=self.org_id,
                     device_id=device_id,
@@ -552,6 +498,38 @@ class MetersenseAdapter(BaseAMIAdapter):
                     interval_unit=None,
                 )
             reads_by_device_and_time[key] = read
+
         return list(meters_by_device_id.values()), list(
             reads_by_device_and_time.values()
         )
+
+    def _get_account_and_location_for_read(
+        self,
+        meter_id: str,
+        read_dtm: str,
+        xrefs_by_meter_id: Dict[str, List],
+        accounts_by_location_id: Dict[str, List],
+    ) -> Tuple[str, str]:
+        account_id, location_id = None, None
+
+        flowtime = datetime.fromisoformat(read_dtm)
+
+        xrefs_for_meter = xrefs_by_meter_id.get(meter_id, [])
+        for xref in xrefs_for_meter:
+            if (
+                datetime.fromisoformat(xref.active_dt)
+                <= flowtime
+                <= datetime.fromisoformat(xref.inactive_dt)
+            ):
+                location_id = xref.location_no
+
+        accounts_for_location = accounts_by_location_id.get(location_id, [])
+        for account in accounts_for_location:
+            if (
+                datetime.fromisoformat(account.active_dt)
+                <= flowtime
+                <= datetime.fromisoformat(account.inactive_dt)
+            ):
+                account_id = account.account_id
+
+        return account_id, location_id
