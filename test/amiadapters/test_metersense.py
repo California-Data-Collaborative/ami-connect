@@ -484,9 +484,13 @@ class TestMetersenseAdapter(BaseTestCase):
 
         def execute_side_effect(query, params=None):
             if "FROM INTERVALREADS" in query:
-                cursor.fetchall.return_value = [self.make_row_from_dataclass(interval_read)]
+                cursor.fetchall.return_value = [
+                    self.make_row_from_dataclass(interval_read)
+                ]
             elif "FROM REGISTERREADS" in query:
-                cursor.fetchall.return_value = [self.make_row_from_dataclass(register_read)]
+                cursor.fetchall.return_value = [
+                    self.make_row_from_dataclass(register_read)
+                ]
             else:
                 cursor.fetchall.return_value = []
             return None
@@ -506,9 +510,8 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual(register_json["read_dtm"], "2024-01-01T12:00:00")
 
         self.assertIn("READ_DTM", cursor.execute.call_args[0][0])
-        self.assertEqual(start, cursor.execute.call_args[0][1]['extract_range_start'])
-        self.assertEqual(end, cursor.execute.call_args[0][1]['extract_range_end'])
-
+        self.assertEqual(start, cursor.execute.call_args[0][1]["extract_range_start"])
+        self.assertEqual(end, cursor.execute.call_args[0][1]["extract_range_end"])
 
     def test_query_tables_empty_tables(self):
         cursor = MagicMock()

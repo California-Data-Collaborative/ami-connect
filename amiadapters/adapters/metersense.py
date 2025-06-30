@@ -282,17 +282,25 @@ class MetersenseAdapter(BaseAMIAdapter):
         files = {}
         tables = [
             ("ACCOUNT_SERVICES", MetersenseAccountService, None, None),
-            ("INTERVALREADS", MetersenseIntervalRead, extract_range_start, extract_range_end),
+            (
+                "INTERVALREADS",
+                MetersenseIntervalRead,
+                extract_range_start,
+                extract_range_end,
+            ),
             ("LOCATIONS", MetersenseLocation, None, None),
             ("METERS", MetersenseMeter, None, None),
             ("METERS_VIEW", MetersenseMetersView, None, None),
             ("METER_LOCATION_XREF", MetersenseMeterLocationXref, None, None),
-            ("REGISTERREADS", MetersenseRegisterRead, extract_range_start, extract_range_end),
+            (
+                "REGISTERREADS",
+                MetersenseRegisterRead,
+                extract_range_start,
+                extract_range_end,
+            ),
         ]
         for table, row_type, start_date, end_date in tables:
-            rows = self._extract_table(
-                cursor, table, row_type, start_date, end_date
-            )
+            rows = self._extract_table(cursor, table, row_type, start_date, end_date)
             text = "\n".join(json.dumps(i, cls=DataclassJSONEncoder) for i in rows)
             files[f"{table.lower()}.json"] = text
         return files
@@ -305,22 +313,27 @@ class MetersenseAdapter(BaseAMIAdapter):
         extract_range_start: datetime,
         extract_range_end: datetime,
     ) -> List:
+        """
+        Query for data from a table in the Oracle database and prep for output.
+        """
         query = f"SELECT * FROM {table_name} WHERE 1=1 "
         kwargs = {}
-        
-        # TODO Remove limit
-        if table_name in ("LOCATIONS", "METER_LOCATION_XREF"):
-            query += f" AND location_no = '{9190910810}'"
-        if table_name in ("METERS", "METERS_VIEW", "INTERVALREADS", "REGISTERREADS"):
-            query += f" AND meter_id = '{91028496}'"
-        if table_name in ("ACCOUNT_SERVICES"):
-            query += f" AND account_id = '{797087154879778621849190910810}'"
+
+        # # TODO Remove limit
+        # if table_name in ("LOCATIONS", "METER_LOCATION_XREF"):
+        #     query += f" AND location_no = '{9190910810}'"
+        # if table_name in ("METERS", "METERS_VIEW", "INTERVALREADS", "REGISTERREADS"):
+        #     query += f" AND meter_id = '{91028496}'"
+        # if table_name in ("ACCOUNT_SERVICES"):
+        #     query += f" AND account_id = '{797087154879778621849190910810}'"
 
         # Reads should be filtered by date range
         if extract_range_start and extract_range_end:
-            query += f" AND READ_DTM BETWEEN :extract_range_start AND :extract_range_end "
-            kwargs['extract_range_start'] = extract_range_start
-            kwargs['extract_range_end'] = extract_range_end
+            query += (
+                f" AND READ_DTM BETWEEN :extract_range_start AND :extract_range_end "
+            )
+            kwargs["extract_range_start"] = extract_range_start
+            kwargs["extract_range_end"] = extract_range_end
 
         logger.info(f"Running query {query} with values {kwargs}")
         cursor.execute(query, kwargs)
@@ -338,7 +351,7 @@ class MetersenseAdapter(BaseAMIAdapter):
                     value = value.isoformat()
                 data[name] = value
             result.append(row_type(**data))
-        
+
         logger.info(f"Fetched {len(result)} rows from {table_name}")
         return result
 
@@ -357,7 +370,6 @@ class MetersenseAdapter(BaseAMIAdapter):
             locations_by_location_id,
         )
 
-        # TODO need to take care of read version!
         raw_interval_reads = self._read_file(extract_outputs, "intervalreads.json")
         raw_register_reads = self._read_file(extract_outputs, "registerreads.json")
         reads_by_device_and_flowtime = self._transform_reads(
@@ -370,8 +382,10 @@ class MetersenseAdapter(BaseAMIAdapter):
         return list(meters_by_device_id.values()), list(
             reads_by_device_and_flowtime.values()
         )
-    
-    def _accounts_by_location_id(self, extract_outputs: ExtractOutput) -> Dict[str, List[MetersenseAccountService]]:
+
+    def _accounts_by_location_id(
+        self, extract_outputs: ExtractOutput
+    ) -> Dict[str, List[MetersenseAccountService]]:
         """
         Map each location ID to the list of accounts associated with it. The list is sorted with most recently active
         account first.
@@ -393,12 +407,16 @@ class MetersenseAdapter(BaseAMIAdapter):
             )
         return accounts_by_location_id
 
-    def _xrefs_by_meter_id(self, extract_outputs: ExtractOutput) -> Dict[str, List[MetersenseMeterLocationXref]]:
+    def _xrefs_by_meter_id(
+        self, extract_outputs: ExtractOutput
+    ) -> Dict[str, List[MetersenseMeterLocationXref]]:
         """
         Map each meter ID to the list of locations associated with it. The list is sorted with most recently active
         account first.
         """
-        raw_meter_location_xrefs = self._read_file(extract_outputs, "meter_location_xref.json")
+        raw_meter_location_xrefs = self._read_file(
+            extract_outputs, "meter_location_xref.json"
+        )
         xrefs_by_meter_id = {}
         for l in raw_meter_location_xrefs:
             x = MetersenseMeterLocationXref(**json.loads(l))
@@ -413,7 +431,9 @@ class MetersenseAdapter(BaseAMIAdapter):
             )
         return xrefs_by_meter_id
 
-    def _meter_views_by_meter_id(self, extract_outputs: ExtractOutput) -> Dict[str, MetersenseMetersView]:
+    def _meter_views_by_meter_id(
+        self, extract_outputs: ExtractOutput
+    ) -> Dict[str, MetersenseMetersView]:
         """
         Map each meter ID to the meter view associated with it.
         """
@@ -426,7 +446,9 @@ class MetersenseAdapter(BaseAMIAdapter):
             meter_views_by_meter_id[mv.meter_id] = mv
         return meter_views_by_meter_id
 
-    def _locations_by_location_id(self, extract_outputs: ExtractOutput) -> Dict[str, MetersenseLocation]:
+    def _locations_by_location_id(
+        self, extract_outputs: ExtractOutput
+    ) -> Dict[str, MetersenseLocation]:
         """
         Map each location ID to the location associated with it.
         """
@@ -499,10 +521,15 @@ class MetersenseAdapter(BaseAMIAdapter):
         raw_interval_reads: List[MetersenseIntervalRead],
         raw_register_reads: List[MetersenseIntervalRead],
     ) -> Dict[str, GeneralMeter]:
+        """
+        Join interval and register reads together, join in meter metadata when possible.
+        """
         reads_by_device_and_time = {}
 
         for raw_interval_read_str in raw_interval_reads:
-            raw_interval_read = MetersenseIntervalRead(**json.loads(raw_interval_read_str))
+            raw_interval_read = MetersenseIntervalRead(
+                **json.loads(raw_interval_read_str)
+            )
             device_id = raw_interval_read.meter_id
             flowtime = self.datetime_from_iso_str(
                 raw_interval_read.read_dtm, self.org_timezone
@@ -533,7 +560,9 @@ class MetersenseAdapter(BaseAMIAdapter):
             reads_by_device_and_time[key] = read
 
         for raw_register_read_str in raw_register_reads:
-            raw_register_read = MetersenseRegisterRead(**json.loads(raw_register_read_str))
+            raw_register_read = MetersenseRegisterRead(
+                **json.loads(raw_register_read_str)
+            )
             device_id = raw_register_read.meter_id
             flowtime = self.datetime_from_iso_str(
                 raw_register_read.read_dtm, self.org_timezone
@@ -620,7 +649,7 @@ class MetersenseAdapter(BaseAMIAdapter):
                 # The most recent record
                 account = accounts[0]
         return account, location
-    
+
     def _read_file(self, extract_outputs: ExtractOutput, file: str) -> Generator:
         """
         Read a file's contents from extract stage output, create generator
