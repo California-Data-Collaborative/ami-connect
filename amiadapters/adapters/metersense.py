@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 import json
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, Generator, List, Tuple
 
 import oracledb
 import sshtunnel
@@ -343,48 +343,43 @@ class MetersenseAdapter(BaseAMIAdapter):
         return result
 
     def _transform(self, run_id: str, extract_outputs: ExtractOutput):
-        raw_account_services = self._read_file(
-            extract_outputs, "account_services.json", MetersenseAccountService
-        )
-        raw_meters = self._read_file(extract_outputs, "meters.json", MetersenseMeter)
-        raw_meter_location_xrefs = self._read_file(
-            extract_outputs, "meter_location_xref.json", MetersenseMeterLocationXref
-        )
-        raw_meters_views = self._read_file(
-            extract_outputs, "meters_view.json", MetersenseMetersView
-        )
-        raw_locations = self._read_file(
-            extract_outputs, "locations.json", MetersenseLocation
-        )
-        raw_interval_reads = self._read_file(
-            extract_outputs, "intervalreads.json", MetersenseIntervalRead
-        )
-        raw_register_reads = self._read_file(
-            extract_outputs, "registerreads.json", MetersenseRegisterRead
-        )
-        return self._transform_meters_and_reads(
-            raw_account_services,
+        accounts_by_location_id = self._accounts_by_location_id(extract_outputs)
+        xrefs_by_meter_id = self._xrefs_by_meter_id(extract_outputs)
+        meter_views_by_meter_id = self._meter_views_by_meter_id(extract_outputs)
+        locations_by_location_id = self._locations_by_location_id(extract_outputs)
+
+        raw_meters = self._read_file(extract_outputs, "meters.json")
+        meters_by_device_id = self._transform_meters(
             raw_meters,
-            raw_meter_location_xrefs,
-            raw_meters_views,
-            raw_locations,
+            accounts_by_location_id,
+            xrefs_by_meter_id,
+            meter_views_by_meter_id,
+            locations_by_location_id,
+        )
+
+        # TODO need to take care of read version!
+        raw_interval_reads = self._read_file(extract_outputs, "intervalreads.json")
+        raw_register_reads = self._read_file(extract_outputs, "registerreads.json")
+        reads_by_device_and_flowtime = self._transform_reads(
+            accounts_by_location_id,
+            xrefs_by_meter_id,
             raw_interval_reads,
             raw_register_reads,
         )
 
-    def _transform_meters_and_reads(
-        self,
-        raw_account_services: List[MetersenseAccountService],
-        raw_meters: List[MetersenseMeter],
-        raw_meter_location_xrefs: List[MetersenseMeterLocationXref],
-        raw_meters_views: List[MetersenseMetersView],
-        raw_locations: List[MetersenseLocation],
-        # TODO need to take care of read_version!
-        raw_interval_reads: List[MetersenseIntervalRead],
-        raw_register_reads: List[MetersenseIntervalRead],
-    ) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
+        return list(meters_by_device_id.values()), list(
+            reads_by_device_and_flowtime.values()
+        )
+    
+    def _accounts_by_location_id(self, extract_outputs: ExtractOutput) -> Dict[str, List[MetersenseAccountService]]:
+        """
+        Map each location ID to the list of accounts associated with it. The list is sorted with most recently active
+        account first.
+        """
+        raw_account_services = self._read_file(extract_outputs, "account_services.json")
         accounts_by_location_id = {}
-        for a in raw_account_services:
+        for l in raw_account_services:
+            a = MetersenseAccountService(**json.loads(l))
             if not a.location_no or a.commodity_tp != "W":
                 continue
             if a.location_no not in accounts_by_location_id:
@@ -396,9 +391,17 @@ class MetersenseAdapter(BaseAMIAdapter):
                 key=lambda a: a.inactive_dt,
                 reverse=True,
             )
+        return accounts_by_location_id
 
+    def _xrefs_by_meter_id(self, extract_outputs: ExtractOutput) -> Dict[str, List[MetersenseMeterLocationXref]]:
+        """
+        Map each meter ID to the list of locations associated with it. The list is sorted with most recently active
+        account first.
+        """
+        raw_meter_location_xrefs = self._read_file(extract_outputs, "meter_location_xref.json")
         xrefs_by_meter_id = {}
-        for x in raw_meter_location_xrefs:
+        for l in raw_meter_location_xrefs:
+            x = MetersenseMeterLocationXref(**json.loads(l))
             if not x.meter_id or not x.location_no:
                 continue
             if x.meter_id not in xrefs_by_meter_id:
@@ -408,21 +411,48 @@ class MetersenseAdapter(BaseAMIAdapter):
             xrefs_by_meter_id[meter_id] = sorted(
                 xrefs_by_meter_id[meter_id], key=lambda x: x.inactive_dt, reverse=True
             )
+        return xrefs_by_meter_id
 
+    def _meter_views_by_meter_id(self, extract_outputs: ExtractOutput) -> Dict[str, MetersenseMetersView]:
+        """
+        Map each meter ID to the meter view associated with it.
+        """
+        raw_meters_views = self._read_file(extract_outputs, "meters_view.json")
         meter_views_by_meter_id = {}
-        for mv in raw_meters_views:
+        for l in raw_meters_views:
+            mv = MetersenseMetersView(**json.loads(l))
             if not mv.meter_id:
                 continue
             meter_views_by_meter_id[mv.meter_id] = mv
+        return meter_views_by_meter_id
 
+    def _locations_by_location_id(self, extract_outputs: ExtractOutput) -> Dict[str, MetersenseLocation]:
+        """
+        Map each location ID to the location associated with it.
+        """
+        raw_locations = self._read_file(extract_outputs, "locations.json")
         locations_by_location_id = {}
-        for l in raw_locations:
+        for line in raw_locations:
+            l = MetersenseLocation(**json.loads(line))
             if not l.location_no:
                 continue
             locations_by_location_id[l.location_no] = l
+        return locations_by_location_id
 
+    def _transform_meters(
+        self,
+        raw_meters: Generator,
+        accounts_by_location_id: Dict[str, List[MetersenseAccountService]],
+        xrefs_by_meter_id: Dict[str, List[MetersenseMeterLocationXref]],
+        meter_views_by_meter_id: Dict[str, MetersenseMetersView],
+        locations_by_location_id: Dict[str, MetersenseLocation],
+    ) -> Dict[str, GeneralMeter]:
+        """
+        Join all raw data sources together and transform into general meter format.
+        """
         meters_by_device_id = {}
-        for raw_meter in raw_meters:
+        for raw_meter_str in raw_meters:
+            raw_meter = MetersenseMeter(**json.loads(raw_meter_str))
             if raw_meter.commodity_tp != "W":
                 continue
             device_id = raw_meter.meter_id
@@ -433,13 +463,13 @@ class MetersenseAdapter(BaseAMIAdapter):
 
             # Most recent location and account for this meter
             account, location = self._get_account_and_location_for_meter(
-                meter_id,
+                raw_meter.meter_id,
                 xrefs_by_meter_id,
                 locations_by_location_id,
                 accounts_by_location_id,
             )
 
-            meter_view = meter_views_by_meter_id.get(meter_id)
+            meter_view = meter_views_by_meter_id.get(raw_meter.meter_id)
 
             meter = GeneralMeter(
                 org_id=self.org_id,
@@ -460,9 +490,19 @@ class MetersenseAdapter(BaseAMIAdapter):
                 location_zip=location.postal_cd if location else None,
             )
             meters_by_device_id[device_id] = meter
+        return meters_by_device_id
 
+    def _transform_reads(
+        self,
+        accounts_by_location_id: Dict[str, List[MetersenseAccountService]],
+        xrefs_by_meter_id: Dict[str, List[MetersenseMeterLocationXref]],
+        raw_interval_reads: List[MetersenseIntervalRead],
+        raw_register_reads: List[MetersenseIntervalRead],
+    ) -> Dict[str, GeneralMeter]:
         reads_by_device_and_time = {}
-        for raw_interval_read in raw_interval_reads:
+
+        for raw_interval_read_str in raw_interval_reads:
+            raw_interval_read = MetersenseIntervalRead(**json.loads(raw_interval_read_str))
             device_id = raw_interval_read.meter_id
             flowtime = self.datetime_from_iso_str(
                 raw_interval_read.read_dtm, self.org_timezone
@@ -492,7 +532,8 @@ class MetersenseAdapter(BaseAMIAdapter):
             )
             reads_by_device_and_time[key] = read
 
-        for raw_register_read in raw_register_reads:
+        for raw_register_read_str in raw_register_reads:
+            raw_register_read = MetersenseRegisterRead(**json.loads(raw_register_read_str))
             device_id = raw_register_read.meter_id
             flowtime = self.datetime_from_iso_str(
                 raw_register_read.read_dtm, self.org_timezone
@@ -529,9 +570,7 @@ class MetersenseAdapter(BaseAMIAdapter):
                 )
             reads_by_device_and_time[key] = read
 
-        return list(meters_by_device_id.values()), list(
-            reads_by_device_and_time.values()
-        )
+        return reads_by_device_and_time
 
     def _get_account_and_location_for_read(
         self,
@@ -581,14 +620,16 @@ class MetersenseAdapter(BaseAMIAdapter):
                 # The most recent record
                 account = accounts[0]
         return account, location
-
-    def _read_file(
-        self, extract_outputs: ExtractOutput, file: str, dataclass_type
-    ) -> List:
+    
+    def _read_file(self, extract_outputs: ExtractOutput, file: str) -> Generator:
+        """
+        Read a file's contents from extract stage output, create generator
+        for each line of text
+        """
         file_text = extract_outputs.from_file(file)
         if file_text is None:
             raise Exception(f"No output found for file {file}")
         lines = file_text.strip().split("\n")
-        if not lines:
-            return []
-        return [dataclass_type(**json.loads(l)) for l in lines if l]
+        if lines == [""]:
+            lines = []
+        yield from lines
