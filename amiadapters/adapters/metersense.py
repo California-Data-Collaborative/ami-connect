@@ -267,36 +267,78 @@ class MetersenseAdapter(BaseAMIAdapter):
 
             cursor = connection.cursor()
 
-            files = {}
-            tables = [
-                ("ACCOUNT_SERVICES", MetersenseAccountService),
-                # ("INTERVALREADS", MetersenseIntervalRead), # TODO start and end date
-                ("LOCATIONS", MetersenseLocation),
-                ("METERS", MetersenseMeter),
-                ("METERS_VIEW", MetersenseMetersView),
-                ("METER_LOCATION_XREF", MetersenseMeterLocationXref),
-                # ("REGISTERREADS", MetersenseRegisterRead), # TODO start ane end date
-            ]
-            for table, row_type in tables:
-                rows = self._extract_table(cursor, table, row_type)
-                text = "\n".join(json.dumps(i, cls=DataclassJSONEncoder) for i in rows)
-                files[f"{table}.json"] = text
+            files = self._query_tables(cursor, extract_range_start, extract_range_end)
 
         return ExtractOutput(files)
 
-    def _extract_table(self, cursor, table_name: str, row_type) -> List:
-        cursor.execute(f"SELECT * FROM {table_name}")
+    def _query_tables(
+        self, cursor, extract_range_start: datetime, extract_range_end: datetime
+    ) -> Dict[str, str]:
+        """
+        Run SQL on remote Oracle database to extract all data. We've chosen to do as little
+        filtering and joining as possible to preserve the raw data. It comes out in extract
+        files per table.
+        """
+        files = {}
+        tables = [
+            ("ACCOUNT_SERVICES", MetersenseAccountService, None, None),
+            ("INTERVALREADS", MetersenseIntervalRead, extract_range_start, extract_range_end),
+            ("LOCATIONS", MetersenseLocation, None, None),
+            ("METERS", MetersenseMeter, None, None),
+            ("METERS_VIEW", MetersenseMetersView, None, None),
+            ("METER_LOCATION_XREF", MetersenseMeterLocationXref, None, None),
+            ("REGISTERREADS", MetersenseRegisterRead, extract_range_start, extract_range_end),
+        ]
+        for table, row_type, start_date, end_date in tables:
+            rows = self._extract_table(
+                cursor, table, row_type, start_date, end_date
+            )
+            text = "\n".join(json.dumps(i, cls=DataclassJSONEncoder) for i in rows)
+            files[f"{table.lower()}.json"] = text
+        return files
+
+    def _extract_table(
+        self,
+        cursor,
+        table_name: str,
+        row_type,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+    ) -> List:
+        query = f"SELECT * FROM {table_name} WHERE 1=1 "
+        kwargs = {}
+        
+        # TODO Remove limit
+        if table_name in ("LOCATIONS", "METER_LOCATION_XREF"):
+            query += f" AND location_no = '{9190910810}'"
+        if table_name in ("METERS", "METERS_VIEW", "INTERVALREADS", "REGISTERREADS"):
+            query += f" AND meter_id = '{91028496}'"
+        if table_name in ("ACCOUNT_SERVICES"):
+            query += f" AND account_id = '{797087154879778621849190910810}'"
+
+        # Reads should be filtered by date range
+        if extract_range_start and extract_range_end:
+            query += f" AND READ_DTM BETWEEN :extract_range_start AND :extract_range_end "
+            kwargs['extract_range_start'] = extract_range_start
+            kwargs['extract_range_end'] = extract_range_end
+
+        logger.info(f"Running query {query} with values {kwargs}")
+        cursor.execute(query, kwargs)
         rows = cursor.fetchall()
 
+        # Turn SQL results into our dataclass instances
+        # Use the dataclass for SQL column names
         columns = list(row_type.__dataclass_fields__.keys())
         result = []
         for row in rows:
             data = {}
             for name, value in zip(columns, row):
+                # Turn datetimes into strings for serialization
                 if isinstance(value, datetime):
                     value = value.isoformat()
                 data[name] = value
             result.append(row_type(**data))
+        
         logger.info(f"Fetched {len(result)} rows from {table_name}")
         return result
 
@@ -390,7 +432,6 @@ class MetersenseAdapter(BaseAMIAdapter):
                 raise Exception()
 
             # Most recent location and account for this meter
-            # TODO handle nulls
             account, location = self._get_account_and_location_for_meter(
                 meter_id,
                 xrefs_by_meter_id,
@@ -544,7 +585,10 @@ class MetersenseAdapter(BaseAMIAdapter):
     def _read_file(
         self, extract_outputs: ExtractOutput, file: str, dataclass_type
     ) -> List:
-        lines = extract_outputs.from_file(file).strip().split("\n")
+        file_text = extract_outputs.from_file(file)
+        if file_text is None:
+            raise Exception(f"No output found for file {file}")
+        lines = file_text.strip().split("\n")
         if not lines:
             return []
         return [dataclass_type(**json.loads(l)) for l in lines if l]

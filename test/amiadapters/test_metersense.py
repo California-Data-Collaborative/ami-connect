@@ -1,6 +1,6 @@
 import datetime
 import json
-from unittest.mock import Mock
+from unittest.mock import MagicMock
 
 import pytz
 
@@ -442,3 +442,89 @@ class TestMetersenseAdapter(BaseTestCase):
         )
         self.assertIsNone(reads[1].account_id)
         self.assertIsNone(reads[1].location_id)
+
+    def mock_cursor_with_rows(self, row_type, rows):
+        cursor = MagicMock()
+        cursor.fetchall.return_value = rows
+        cursor.execute.return_value = None
+        return cursor
+
+    def make_row_from_dataclass(self, instance):
+        return tuple(getattr(instance, f) for f in instance.__dataclass_fields__)
+
+    def test_query_tables_with_interval_and_register_reads(self):
+        start = datetime.datetime(2024, 1, 1)
+        end = datetime.datetime(2024, 1, 2)
+
+        interval_read = MetersenseIntervalRead(
+            meter_id="91028496",
+            channel_id="1",
+            read_dt="2024-01-01",
+            read_hr="12",
+            read_30min_int="",
+            read_15min_int="",
+            read_5min_int="",
+            read_dtm="2024-01-01T12:00:00",
+            read_value="100.0",
+            uom="G",
+            status="V",
+            read_version="1",
+        )
+        register_read = MetersenseRegisterRead(
+            meter_id="91028496",
+            channel_id="1",
+            read_dtm="2024-01-01T12:00:00",
+            read_value="200.0",
+            uom="G",
+            status="V",
+            read_version="1",
+        )
+
+        cursor = MagicMock()
+
+        def execute_side_effect(query, params=None):
+            if "FROM INTERVALREADS" in query:
+                cursor.fetchall.return_value = [self.make_row_from_dataclass(interval_read)]
+            elif "FROM REGISTERREADS" in query:
+                cursor.fetchall.return_value = [self.make_row_from_dataclass(register_read)]
+            else:
+                cursor.fetchall.return_value = []
+            return None
+
+        cursor.execute.side_effect = execute_side_effect
+
+        result = self.adapter._query_tables(cursor, start, end)
+
+        self.assertIn("intervalreads.json", result)
+        self.assertIn("registerreads.json", result)
+
+        interval_json = json.loads(result["intervalreads.json"].strip())
+        register_json = json.loads(result["registerreads.json"].strip())
+
+        self.assertEqual(interval_json["meter_id"], "91028496")
+        self.assertEqual(register_json["read_value"], "200.0")
+        self.assertEqual(register_json["read_dtm"], "2024-01-01T12:00:00")
+
+        self.assertIn("READ_DTM", cursor.execute.call_args[0][0])
+        self.assertEqual(start, cursor.execute.call_args[0][1]['extract_range_start'])
+        self.assertEqual(end, cursor.execute.call_args[0][1]['extract_range_end'])
+
+
+    def test_query_tables_empty_tables(self):
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+
+        result = self.adapter._query_tables(cursor, None, None)
+
+        # All table keys should exist even if they are empty
+        expected_keys = [
+            "account_services.json",
+            "intervalreads.json",
+            "locations.json",
+            "meters.json",
+            "meters_view.json",
+            "meter_location_xref.json",
+            "registerreads.json",
+        ]
+        for key in expected_keys:
+            self.assertEqual(result[key], "")
