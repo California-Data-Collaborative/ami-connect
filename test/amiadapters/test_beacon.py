@@ -521,6 +521,16 @@ class TestBeacon360Adapter(BaseTestCase):
         )
         self.assertEqual(1, len(transformed_reads))
 
+    def test_transform_meters_and_reads__splits_account_id(self):
+        raw_meters_with_reads = [
+            beacon_meter_and_read_factory(account_id="first-second"),
+        ]
+        transformed_meters, _ = self.adapter._transform_meters_and_reads(
+            raw_meters_with_reads
+        )
+        self.assertEqual(1, len(transformed_meters))
+        self.assertEqual("first", transformed_meters[0].account_id)
+
     def test_transform_meters_and_reads__ignores_reads_when_date_missing(self):
         raw_meters_with_reads = [
             beacon_meter_and_read_factory(flow_time=None),
