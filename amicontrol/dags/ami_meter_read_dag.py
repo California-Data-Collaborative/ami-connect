@@ -3,7 +3,7 @@ from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 
-from amiadapters.base import BaseAMIAdapter
+from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.config import (
     AMIAdapterConfiguration,
     find_config_yaml,
