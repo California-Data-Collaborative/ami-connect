@@ -108,7 +108,7 @@ class TestBaseAdapter(BaseTestCase):
     def test_map_reading__none_reading(self):
         value, unit = self.adapter.map_reading(None, "CCF")
         self.assertIsNone(value)
-        self.assertEqual(unit, "CCF")
+        self.assertIsNone(unit)
 
     def test_map_reading__none_unit(self):
         value, unit = self.adapter.map_reading(10.0, None)
