@@ -345,7 +345,10 @@ class SentryxAdapter(BaseAMIAdapter):
                 meter_metadata.account_id if meter_metadata is not None else None
             )
             for raw_read in raw_meter.data:
-                value = raw_read.reading
+                register_value, register_unit = self.map_reading(
+                    raw_read.reading,
+                    raw_meter.units,  # Expected to be CF
+                )
                 read = GeneralMeterRead(
                     org_id=self.org_id,
                     device_id=device_id,
@@ -354,8 +357,8 @@ class SentryxAdapter(BaseAMIAdapter):
                     flowtime=self.datetime_from_iso_str(
                         raw_read.time_stamp, self.org_timezone
                     ),
-                    register_value=value,
-                    register_unit=self.map_unit_of_measure(raw_meter.units),
+                    register_value=register_value,
+                    register_unit=register_unit,
                     interval_value=None,
                     interval_unit=None,
                 )

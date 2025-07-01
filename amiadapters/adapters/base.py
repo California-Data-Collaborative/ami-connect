@@ -240,6 +240,30 @@ class BaseAMIAdapter(ABC):
             logging.info(f"Unable to map unit of measure: {unit_of_measure}")
         return result
 
+    def map_reading(
+        self, reading: float, original_unit_of_measure: str
+    ) -> Tuple[float, str]:
+        """
+        All readings values should be mapped to CCF.
+        """
+        if reading is None or original_unit_of_measure is None:
+            return reading, original_unit_of_measure
+
+        multiplier = 1
+        match original_unit_of_measure:
+            case GeneralMeterUnitOfMeasure.HUNDRED_CUBIC_FEET:
+                multiplier = 1
+            case GeneralMeterUnitOfMeasure.CUBIC_FEET:
+                multiplier = 0.01
+            case GeneralMeterUnitOfMeasure.GALLON:
+                multiplier = 0.00133680546  # 1 / 748.052
+            case _:
+                raise ValueError(
+                    f"Unrecognized unit of measure: {original_unit_of_measure}"
+                )
+
+        return reading * multiplier, GeneralMeterUnitOfMeasure.HUNDRED_CUBIC_FEET
+
     def _validate_extract_range(
         self, extract_range_start: datetime, extract_range_end: datetime
     ):
