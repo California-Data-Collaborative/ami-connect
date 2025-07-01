@@ -195,6 +195,10 @@ class MetersenseAdapter(BaseAMIAdapter):
     AMI Adapter that retrieves Xylem/Sensus data from a Metersense Oracle database.
     The Oracle database is only accessible through an SSH tunnel. This code assumes the tunnel
     infrastructure exists and connects to Oracle through SSH to an intermediate server.
+
+    You may need to:
+    - Add your Airflow server's public SSH key to the intermediate server's allowed hosts
+    - Add your Airflow server's public IP address to a security group that allows SSH into the intermediate server
     """
 
     def __init__(
@@ -318,14 +322,6 @@ class MetersenseAdapter(BaseAMIAdapter):
         """
         query = f"SELECT * FROM {table_name} WHERE 1=1 "
         kwargs = {}
-
-        # # TODO Remove limit
-        # if table_name in ("LOCATIONS", "METER_LOCATION_XREF"):
-        #     query += f" AND location_no = '{9190910810}'"
-        # if table_name in ("METERS", "METERS_VIEW", "INTERVALREADS", "REGISTERREADS"):
-        #     query += f" AND meter_id = '{91028496}'"
-        # if table_name in ("ACCOUNT_SERVICES"):
-        #     query += f" AND account_id = '{797087154879778621849190910810}'"
 
         # Reads should be filtered by date range
         if extract_range_start and extract_range_end:
