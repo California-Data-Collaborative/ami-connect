@@ -246,8 +246,11 @@ class BaseAMIAdapter(ABC):
         """
         All readings values should be mapped to CCF.
         """
-        if reading is None or original_unit_of_measure is None:
-            return reading, original_unit_of_measure
+        if reading is None:
+            return None, None
+
+        if original_unit_of_measure is None:
+            return reading, None
 
         multiplier = 1
         match original_unit_of_measure:
