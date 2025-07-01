@@ -176,6 +176,7 @@ class TestAclaraAdapter(BaseTestCase):
 
         read = reads[0]
         self.assertIsNone(read.register_value)
+        self.assertIsNone(read.register_unit)
 
     def test_skips_detector_check_account_type(self):
         input_data = [self.meter_and_read_factory(account_type="DETECTOR CHECK")]
