@@ -6,7 +6,7 @@ Assumes config.yaml and secrets.yaml are set up with an adapter that uses a Snow
 Connects to production Snowflake.
 
 Usage:
-    python test/integration/snowflake_integration_test.py
+    python -m test.integration.snowflake_integration_test
 
 """
 

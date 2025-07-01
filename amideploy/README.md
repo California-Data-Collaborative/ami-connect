@@ -61,8 +61,7 @@ Each terraform command will need to reference the `*.tfvars` file you created ab
 everything is working:
 
 ```
-
-terraform plan -var-file="./environments/<your workspace>/<your workspace>.tfvars"
+terraform plan -var-file="./environments/$(terraform workspace show)/$(terraform workspace show).tfvars" 
 ```
 
 This command should exit without error. It should describe a number of resources we'll create:
@@ -77,7 +76,7 @@ This command should exit without error. It should describe a number of resources
 If that looks good, create the infrastructure:
 
 ```
-terraform apply -var-file="./environments/<your workspace>/<your workspace>.tfvars"
+terraform apply -var-file="./environments/$(terraform workspace show)/$(terraform workspace show).tfvars" 
 ```
 
 ## Configure the infrastructure
