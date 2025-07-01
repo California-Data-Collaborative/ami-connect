@@ -319,6 +319,11 @@ class Beacon360Adapter(BaseAMIAdapter):
         transformed_reads_by_key = {}
         for meter_and_read in raw_meters_with_reads:
             account_id = meter_and_read.Account_ID
+            if account_id is not None:
+                # Some utilities combine account and location ID in the Account_ID field, and we only
+                # want the first part. If there's ever a utility with a "-" in this field that we want to
+                # keep, we'll need to revisit this solution.
+                account_id = account_id.split("-")[0]
             location_id = meter_and_read.Location_ID
             device_id = meter_and_read.Endpoint_SN
 
