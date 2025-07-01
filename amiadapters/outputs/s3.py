@@ -27,6 +27,7 @@ class S3TaskOutputController(BaseTaskOutputController):
         org_id: str,
         s3_prefix: str = "intermediate_outputs",
         aws_profile_name: str = None,
+        s3_client=None,
     ):
         """
         bucket_name: S3 bucket to use
@@ -34,6 +35,7 @@ class S3TaskOutputController(BaseTaskOutputController):
         s3_prefix: optional S3 prefix (acts like a root folder inside the bucket)
         aws_profile_name: optional profile name used to locate credentials. Meant for local development, not for prod.
                           Prod should use IAM role we configure with Terraform.
+        s3_client: optionally pass in S3 client instead of creating it here. Meant for testing
         """
         if not bucket_name or not org_id:
             raise Exception(
@@ -43,11 +45,14 @@ class S3TaskOutputController(BaseTaskOutputController):
         self.bucket_name = bucket_name
         self.org_id = org_id
         self.s3_prefix = s3_prefix.strip("/")
-        if aws_profile_name:
-            session = boto3.Session(profile_name=aws_profile_name)
-            self.s3 = session.client("s3")
+        if s3_client is None:
+            if aws_profile_name:
+                session = boto3.Session(profile_name=aws_profile_name)
+                self.s3 = session.client("s3")
+            else:
+                self.s3 = boto3.client("s3")
         else:
-            self.s3 = boto3.client("s3")
+            self.s3 = s3_client
 
     def write_extract_outputs(self, run_id: str, outputs: ExtractOutput):
         for name, content in outputs.get_outputs().items():

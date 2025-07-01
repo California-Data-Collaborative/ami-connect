@@ -342,8 +342,8 @@ class TestSentryxAdapter(BaseTestCase):
                 flowtime=datetime.datetime(
                     2024, 7, 7, 1, 0, tzinfo=pytz.timezone("Africa/Algiers")
                 ),
-                register_value=116233.61,
-                register_unit="CF",
+                register_value=1162.3361,
+                register_unit="CCF",
                 interval_value=None,
                 interval_unit=None,
             ),
@@ -355,8 +355,8 @@ class TestSentryxAdapter(BaseTestCase):
                 flowtime=datetime.datetime(
                     2024, 7, 7, 1, 0, tzinfo=pytz.timezone("Africa/Algiers")
                 ),
-                register_value=11,
-                register_unit="CF",
+                register_value=0.11,
+                register_unit="CCF",
                 interval_value=None,
                 interval_unit=None,
             ),

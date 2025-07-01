@@ -90,6 +90,40 @@ class TestBaseAdapter(BaseTestCase):
             # End after start
             self.adapter._validate_extract_range(self.range_end, self.range_start)
 
+    def test_map_reading__valid_ccf_conversion(self):
+        value, unit = self.adapter.map_reading(12.5, "CCF")
+        self.assertEqual(value, 12.5)
+        self.assertEqual(unit, "CCF")
+
+    def test_map_reading__valid_cf_conversion(self):
+        value, unit = self.adapter.map_reading(1200, "CF")
+        self.assertEqual(value, 12.0)
+        self.assertEqual(unit, "CCF")
+
+    def test_map_reading__valid_gal_conversion(self):
+        value, unit = self.adapter.map_reading(2000, "Gallon")
+        self.assertAlmostEqual(value, 2.674, delta=0.001)
+        self.assertEqual(unit, "CCF")
+
+    def test_map_reading__none_reading(self):
+        value, unit = self.adapter.map_reading(None, "CCF")
+        self.assertIsNone(value)
+        self.assertEqual(unit, "CCF")
+
+    def test_map_reading__none_unit(self):
+        value, unit = self.adapter.map_reading(10.0, None)
+        self.assertEqual(value, 10.0)
+        self.assertIsNone(unit)
+
+    def test_map_reading__none_both(self):
+        value, unit = self.adapter.map_reading(None, None)
+        self.assertIsNone(value)
+        self.assertIsNone(unit)
+
+    def test_map_reading__unrecognized_unit(self):
+        with self.assertRaises(ValueError, msg="Unrecognized unit of measure: Pounds"):
+            self.adapter.map_reading(5.0, "Pounds")
+
 
 class TestExtractRangeCalculator(BaseTestCase):
 

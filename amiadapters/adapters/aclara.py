@@ -128,7 +128,8 @@ class AclaraAdapter(BaseAMIAdapter):
         downloaded_files = []
         # Get the list of remote files
         all_files_on_server = sftp.listdir(self.sftp_meter_and_reads_folder)
-        # NOTE: the files often contain readings from 1-2 days before the date in their filename. We've chosen to include those readings in the extract.
+        # NOTE: the files often contain readings from 1-2 days before the date in their filename.
+        # We've chosen to include those readings in the extract.
         files_to_download = files_for_date_range(
             all_files_on_server, extract_range_start, extract_range_end
         )
@@ -219,10 +220,14 @@ class AclaraAdapter(BaseAMIAdapter):
             transformed_meters_by_device_id[device_id] = meter
 
             flowtime = self.datetime_from_iso_str(meter_and_read.ReadingTime, pytz.UTC)
+
             register_value = (
                 float(meter_and_read.ScaledRead)
                 if meter_and_read.ScaledRead != "ERROR"
                 else None
+            )
+            register_value, register_unit = self.map_reading(
+                register_value, GeneralMeterUnitOfMeasure.CUBIC_FEET
             )
 
             read = GeneralMeterRead(
@@ -232,7 +237,7 @@ class AclaraAdapter(BaseAMIAdapter):
                 location_id=None,
                 flowtime=flowtime,
                 register_value=register_value,
-                register_unit=GeneralMeterUnitOfMeasure.CUBIC_FEET,
+                register_unit=register_unit,
                 interval_value=None,
                 interval_unit=None,
             )

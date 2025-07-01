@@ -155,7 +155,8 @@ class TestAclaraAdapter(BaseTestCase):
         self.assertEqual(meter.endpoint_id, "2")
         self.assertEqual(meter.meter_size, "0.625x0.75")
         self.assertEqual(read.device_id, "1")
-        self.assertEqual(read.register_value, 23497.071)
+        self.assertEqual(read.register_value, 234.97071)
+        self.assertEqual(read.register_unit, "CCF")
 
     def test_deduplicates_during_transform(self):
         input_data = [self.meter_and_read_factory(), self.meter_and_read_factory()]

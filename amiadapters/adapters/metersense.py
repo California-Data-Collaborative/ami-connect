@@ -542,6 +542,11 @@ class MetersenseAdapter(BaseAMIAdapter):
                 accounts_by_location_id,
             )
 
+            interval_value, interval_unit = self.map_reading(
+                raw_interval_read.read_value,
+                raw_interval_read.uom,  # Expected to be CCF
+            )
+
             read = GeneralMeterRead(
                 org_id=self.org_id,
                 device_id=device_id,
@@ -550,8 +555,8 @@ class MetersenseAdapter(BaseAMIAdapter):
                 flowtime=flowtime,
                 register_value=None,
                 register_unit=None,
-                interval_value=raw_interval_read.read_value,
-                interval_unit=self.map_unit_of_measure(raw_interval_read.uom),
+                interval_value=interval_value,
+                interval_unit=interval_unit,
             )
             reads_by_device_and_time[key] = read
 
@@ -563,6 +568,10 @@ class MetersenseAdapter(BaseAMIAdapter):
             flowtime = self.datetime_from_iso_str(
                 raw_register_read.read_dtm, self.org_timezone
             )
+            register_value, register_unit = self.map_reading(
+                raw_register_read.read_value,
+                raw_register_read.uom,  # Expected to be CCF
+            )
             key = (
                 device_id,
                 flowtime,
@@ -572,13 +581,13 @@ class MetersenseAdapter(BaseAMIAdapter):
                 old_read = reads_by_device_and_time[key]
                 read = replace(
                     old_read,
-                    register_value=raw_register_read.read_value,
-                    register_unit=self.map_unit_of_measure(raw_register_read.uom),
+                    register_value=register_value,
+                    register_unit=register_unit,
                 )
             else:
                 account_id, location_id = self._get_account_and_location_for_read(
-                    raw_interval_read.meter_id,
-                    raw_interval_read.read_dtm,
+                    raw_register_read.meter_id,
+                    raw_register_read.read_dtm,
                     xrefs_by_meter_id,
                     accounts_by_location_id,
                 )
@@ -588,8 +597,8 @@ class MetersenseAdapter(BaseAMIAdapter):
                     account_id=account_id,
                     location_id=location_id,
                     flowtime=flowtime,
-                    register_value=raw_register_read.read_value,
-                    register_unit=self.map_unit_of_measure(raw_register_read.uom),
+                    register_value=register_value,
+                    register_unit=register_unit,
                     interval_value=None,
                     interval_unit=None,
                 )

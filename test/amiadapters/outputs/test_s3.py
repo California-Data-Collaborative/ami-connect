@@ -17,12 +17,13 @@ class TestS3TaskOutputController(BaseTestCase):
         self.bucket = "test-bucket"
         self.org_id = "org-abc"
         self.prefix = "my-prefix"
-        self.controller = S3TaskOutputController(
-            bucket_name=self.bucket, org_id=self.org_id, s3_prefix=self.prefix
-        )
-
         self.mock_s3 = MagicMock()
-        self.controller.s3 = self.mock_s3  # Inject mock S3 client
+        self.controller = S3TaskOutputController(
+            bucket_name=self.bucket,
+            org_id=self.org_id,
+            s3_prefix=self.prefix,
+            s3_client=self.mock_s3,
+        )
 
     def test_write_extract_outputs(self):
         outputs = ExtractOutput({"file1.txt": "data1", "file2.txt": "data2"})
