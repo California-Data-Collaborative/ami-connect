@@ -507,14 +507,14 @@ class TestBeacon360Adapter(BaseTestCase):
             transformed_meters[0].meter_install_date,
         )
         self.assertEqual(1, len(transformed_reads))
-    
+
     def test_transform_meters_and_reads__preserves_flowtime_when_it_should(self):
         raw_meters_with_reads = [
             # 56th minute
             beacon_meter_and_read_factory(flow_time="2024-08-01 00:56"),
         ]
-        _, transformed_reads = (
-            self.adapter._transform_meters_and_reads(raw_meters_with_reads)
+        _, transformed_reads = self.adapter._transform_meters_and_reads(
+            raw_meters_with_reads
         )
         self.assertEqual(1, len(transformed_reads))
         self.assertEqual(
