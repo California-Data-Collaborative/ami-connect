@@ -359,7 +359,7 @@ class Beacon360Adapter(BaseAMIAdapter):
 
             register_value, register_unit = self.map_reading(
                 float(meter_and_read.Read),
-                meter_and_read.Read_Unit,  # Expected to always be CCF
+                meter_and_read.Read_Unit,  # Expected to be CCF or KGAL
             )
 
             read = GeneralMeterRead(

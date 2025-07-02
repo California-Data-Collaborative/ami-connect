@@ -225,21 +225,6 @@ class BaseAMIAdapter(ABC):
             logging.info(f"Unable to map meter size: {size}")
         return result
 
-    def map_unit_of_measure(self, unit_of_measure: str) -> str:
-        """
-        Map an AMI data provider meter read's unit of measure to one
-        of our generalized values. Return None if it can't be mapped.
-        """
-        mapping = {
-            "CF": GeneralMeterUnitOfMeasure.CUBIC_FEET,
-            "CCF": GeneralMeterUnitOfMeasure.HUNDRED_CUBIC_FEET,
-            "Gallon": GeneralMeterUnitOfMeasure.GALLON,
-        }
-        result = mapping.get(unit_of_measure)
-        if result is None:
-            logging.info(f"Unable to map unit of measure: {unit_of_measure}")
-        return result
-
     def map_reading(
         self, reading: float, original_unit_of_measure: str
     ) -> Tuple[float, str]:
@@ -258,8 +243,10 @@ class BaseAMIAdapter(ABC):
                 multiplier = 1
             case GeneralMeterUnitOfMeasure.CUBIC_FEET:
                 multiplier = 0.01
-            case GeneralMeterUnitOfMeasure.GALLON:
+            case GeneralMeterUnitOfMeasure.GALLON | GeneralMeterUnitOfMeasure.GALLONS:
                 multiplier = 0.00133680546  # 1 / 748.052
+            case GeneralMeterUnitOfMeasure.KILO_GALLON:
+                multiplier = 1.33680546  # 1000 * 1 / 748.052
             case _:
                 raise ValueError(
                     f"Unrecognized unit of measure: {original_unit_of_measure}"
@@ -334,13 +321,14 @@ class BaseAMIAdapter(ABC):
 
 class GeneralMeterUnitOfMeasure:
     """
-    Normalized values for a meter's unit of measure. All AMI-provided
-    values should be mapped to one of these.
+    Normalized values for a meter's unit of measure.
     """
 
     CUBIC_FEET = "CF"
     HUNDRED_CUBIC_FEET = "CCF"
     GALLON = "Gallon"
+    GALLONS = "Gallons"
+    KILO_GALLON = "KGAL"
 
 
 class ExtractRangeCalculator:
