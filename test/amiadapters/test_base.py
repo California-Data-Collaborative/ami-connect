@@ -66,17 +66,6 @@ class TestBaseAdapter(BaseTestCase):
             result = self.adapter.map_meter_size(size)
             self.assertEqual(result, expected)
 
-    def test_unit_of_measure(self):
-        cases = [
-            ("CF", "CF"),
-            ("CCF", "CCF"),
-            ("Gallon", "Gallon"),
-            (None, None),
-        ]
-        for size, expected in cases:
-            result = self.adapter.map_unit_of_measure(size)
-            self.assertEqual(result, expected)
-
     def test_extract_consumption_for_all_meters__throws_exception_when_range_not_valid(
         self,
     ):
@@ -103,6 +92,16 @@ class TestBaseAdapter(BaseTestCase):
     def test_map_reading__valid_gal_conversion(self):
         value, unit = self.adapter.map_reading(2000, "Gallon")
         self.assertAlmostEqual(value, 2.674, delta=0.001)
+        self.assertEqual(unit, "CCF")
+
+    def test_map_reading__valid_gals_conversion(self):
+        value, unit = self.adapter.map_reading(2000, "Gallons")
+        self.assertAlmostEqual(value, 2.674, delta=0.001)
+        self.assertEqual(unit, "CCF")
+
+    def test_map_reading__valid_kgal_conversion(self):
+        value, unit = self.adapter.map_reading(5, "KGAL")
+        self.assertAlmostEqual(value, 6.684, delta=0.001)
         self.assertEqual(unit, "CCF")
 
     def test_map_reading__none_reading(self):
