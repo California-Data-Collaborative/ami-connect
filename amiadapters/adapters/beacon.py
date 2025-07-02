@@ -362,6 +362,11 @@ class Beacon360Adapter(BaseAMIAdapter):
                 meter_and_read.Read_Unit,  # Expected to be CCF or KGAL
             )
 
+            interval_value, interval_unit = self.map_reading(
+                float(meter_and_read.Flow),
+                meter_and_read.Flow_Unit,  # Expected to be CCF or KGAL
+            )
+
             read = GeneralMeterRead(
                 org_id=self.org_id,
                 device_id=device_id,
@@ -370,8 +375,8 @@ class Beacon360Adapter(BaseAMIAdapter):
                 flowtime=flowtime,
                 register_value=register_value,
                 register_unit=register_unit,
-                interval_value=None,
-                interval_unit=None,
+                interval_value=interval_value,
+                interval_unit=interval_unit,
             )
             # Reads are unique by org_id, device_id, and flowtime. This ensures we do not include duplicates in our output.
             key = f"{read.device_id}-{read.flowtime}"

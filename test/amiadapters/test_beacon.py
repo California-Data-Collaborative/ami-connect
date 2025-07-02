@@ -76,7 +76,7 @@ def beacon_meter_and_read_factory(
         Account_ID=account_id,
         Endpoint_SN=endpoint_id,
         Estimated_Flag="0",
-        Flow="0.0",
+        Flow="5.0",
         Flow_Time=flow_time,
         Flow_Unit="Gallons",
         Location_Address_Line1="5391 E. MYSTREET",
@@ -379,8 +379,8 @@ class TestBeacon360Adapter(BaseTestCase):
                 ),
                 register_value=227.6,
                 register_unit="CCF",
-                interval_value=None,
-                interval_unit=None,
+                interval_value=0.00668403,
+                interval_unit="CCF",
             ),
             GeneralMeterRead(
                 org_id="this-org",
@@ -392,8 +392,8 @@ class TestBeacon360Adapter(BaseTestCase):
                 ),
                 register_value=227.6,
                 register_unit="CCF",
-                interval_value=None,
-                interval_unit=None,
+                interval_value=0.00668403,
+                interval_unit="CCF",
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)
@@ -472,8 +472,8 @@ class TestBeacon360Adapter(BaseTestCase):
                 ),
                 register_value=227.6,
                 register_unit="CCF",
-                interval_value=None,
-                interval_unit=None,
+                interval_value=0.00668403,
+                interval_unit="CCF",
             ),
             GeneralMeterRead(
                 org_id="this-org",
@@ -485,8 +485,8 @@ class TestBeacon360Adapter(BaseTestCase):
                 ),
                 register_value=227.6,
                 register_unit="CCF",
-                interval_value=None,
-                interval_unit=None,
+                interval_value=0.00668403,
+                interval_unit="CCF",
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)
