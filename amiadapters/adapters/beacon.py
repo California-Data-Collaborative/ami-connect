@@ -356,6 +356,9 @@ class Beacon360Adapter(BaseAMIAdapter):
                     f"Skipping read with no flowtime for account={account_id} location={location_id} device={device_id}"
                 )
                 continue
+            # The majority of Beacon readings fall on the 59th minute of an hour. We round these up to the next hour.
+            if flowtime.minute == 59:
+                flowtime = flowtime + timedelta(minutes=1)
 
             register_value, register_unit = self.map_reading(
                 float(meter_and_read.Read),

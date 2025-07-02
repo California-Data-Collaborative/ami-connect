@@ -375,7 +375,7 @@ class TestBeacon360Adapter(BaseTestCase):
                 account_id="303022",
                 location_id="303022",
                 flowtime=datetime.datetime(
-                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                    2024, 8, 1, 1, 0, tzinfo=pytz.timezone("Europe/Rome")
                 ),
                 register_value=227.6,
                 register_unit="CCF",
@@ -388,7 +388,7 @@ class TestBeacon360Adapter(BaseTestCase):
                 account_id="303022",
                 location_id="303022",
                 flowtime=datetime.datetime(
-                    2024, 8, 1, 1, 59, tzinfo=pytz.timezone("Europe/Rome")
+                    2024, 8, 1, 2, 0, tzinfo=pytz.timezone("Europe/Rome")
                 ),
                 register_value=227.6,
                 register_unit="CCF",
@@ -468,7 +468,7 @@ class TestBeacon360Adapter(BaseTestCase):
                 account_id="1",
                 location_id="1",
                 flowtime=datetime.datetime(
-                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                    2024, 8, 1, 1, 0, tzinfo=pytz.timezone("Europe/Rome")
                 ),
                 register_value=227.6,
                 register_unit="CCF",
@@ -481,7 +481,7 @@ class TestBeacon360Adapter(BaseTestCase):
                 account_id="303022",
                 location_id="303022",
                 flowtime=datetime.datetime(
-                    2024, 8, 1, 1, 59, tzinfo=pytz.timezone("Europe/Rome")
+                    2024, 8, 1, 2, 0, tzinfo=pytz.timezone("Europe/Rome")
                 ),
                 register_value=227.6,
                 register_unit="CCF",
@@ -507,6 +507,20 @@ class TestBeacon360Adapter(BaseTestCase):
             transformed_meters[0].meter_install_date,
         )
         self.assertEqual(1, len(transformed_reads))
+    
+    def test_transform_meters_and_reads__preserves_flowtime_when_it_should(self):
+        raw_meters_with_reads = [
+            # 56th minute
+            beacon_meter_and_read_factory(flow_time="2024-08-01 00:56"),
+        ]
+        _, transformed_reads = (
+            self.adapter._transform_meters_and_reads(raw_meters_with_reads)
+        )
+        self.assertEqual(1, len(transformed_reads))
+        self.assertEqual(
+            datetime.datetime(2024, 8, 1, 0, 56, tzinfo=pytz.timezone("Europe/Rome")),
+            transformed_reads[0].flowtime,
+        )
 
     def test_transform_meters_and_reads__splits_account_id(self):
         raw_meters_with_reads = [
