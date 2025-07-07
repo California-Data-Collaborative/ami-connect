@@ -13,6 +13,7 @@ from amiadapters.adapters.metersense import (
     MetersenseLocation,
     MetersenseMeterLocationXref,
     MetersenseMetersView,
+    MetersenseRawSnowflakeLoader,
     MetersenseRegisterRead,
 )
 from amiadapters.models import DataclassJSONEncoder
@@ -558,3 +559,34 @@ class TestMetersenseAdapter(BaseTestCase):
         ]
         for key in expected_keys:
             self.assertEqual(result[key], "")
+
+
+class TestMetersenseRawSnowflakeLoader(BaseTestCase):
+    def test_load_calls_snowflake_cursor_expected_times(self):
+        loader = MetersenseRawSnowflakeLoader()
+
+        fake_extract_output_files = {
+            "account_services.json": '{"account_id": "1", "location_no": "2", "commodity_tp": "W", "last_read_dt": "2024-01-01T00:00:00", "service_id": "svc", "active_dt": "2023-01-01T00:00:00", "inactive_dt": "2025-01-01T00:00:00"}\n',
+            "locations.json": '{"location_no": "2", "alt_location_id": "alt", "location_class": "", "unit_no": "", "street_no": "", "street_pfx": "", "street_name": "", "street_sfx": "", "street_sfx_dir": "", "city": "", "state": "", "postal_cd": "", "billing_cycle": "", "add_by": "", "add_dt": "", "change_by": "", "change_dt": "", "latitude": "", "longitude": ""}\n',
+            "meters.json": '{"meter_id": "91028496", "alt_meter_id": "", "meter_tp": "", "commodity_tp": "W", "region_id": "", "interval_length": "", "regread_frequency": "", "channel1_raw_uom": "", "channel2_raw_uom": "", "channel3_raw_uom": "", "channel4_raw_uom": "", "channel5_raw_uom": "", "channel6_raw_uom": "", "channel7_raw_uom": "", "channel8_raw_uom": "", "channel1_multiplier": "", "channel2_multiplier": "", "channel3_multiplier": "", "channel4_multiplier": "", "channel5_multiplier": "", "channel6_multiplier": "", "channel7_multiplier": "", "channel8_multiplier": "", "channel1_final_uom": "", "channel2_final_uom": "", "channel3_final_uom": "", "channel4_final_uom": "", "channel5_final_uom": "", "channel6_final_uom": "", "channel7_final_uom": "", "channel8_final_uom": "", "first_data_ts": "", "last_data_ts": "", "ami_id": "", "power_status": "", "latitude": "", "longitude": "", "exclude_in_reports": "", "add_by": "", "add_dt": "", "change_by": "", "change_dt": ""}\n',
+            "meters_view.json": '{"meter_id": "91028496", "alt_meter_id": "", "meter_tp": "", "commodity_tp": "", "region_id": "", "interval_length": "", "regread_frequency": "", "channel1_raw_uom": "", "channel2_raw_uom": "", "channel3_raw_uom": "", "channel4_raw_uom": "", "channel5_raw_uom": "", "channel6_raw_uom": "", "channel7_raw_uom": "", "channel8_raw_uom": "", "channel1_multiplier": "", "channel2_multiplier": "", "channel3_multiplier": "", "channel4_multiplier": "", "channel5_multiplier": "", "channel6_multiplier": "", "channel7_multiplier": "", "channel8_multiplier": "", "channel1_final_uom": "", "channel2_final_uom": "", "channel3_final_uom": "", "channel4_final_uom": "", "channel5_final_uom": "", "channel6_final_uom": "", "channel7_final_uom": "", "channel8_final_uom": "", "first_data_ts": "", "last_data_ts": "", "ami_id": "", "power_status": "", "latitude": "", "longitude": "", "exclude_in_reports": "", "nb_dials": "", "backflow": "", "service_point_type": "", "reclaim_inter_prog": "", "power_status_details": "", "comm_module_id": "", "register_constant": ""}\n',
+            "meter_location_xref.json": '{"meter_id": "91028496", "active_dt": "2023-01-01T00:00:00", "location_no": "2", "inactive_dt": "2025-01-01T00:00:00", "add_by": "", "add_dt": "", "change_by": "", "change_dt": ""}\n',
+            "intervalreads.json": '{"meter_id": "91028496", "channel_id": "1", "read_dt": "", "read_hr": "", "read_30min_int": "", "read_15min_int": "", "read_5min_int": "", "read_dtm": "2024-01-01T00:00:00", "read_value": "123.4", "uom": "CCF", "status": "", "read_version": ""}\n',
+            "registerreads.json": '{"meter_id": "91028496", "channel_id": "1", "read_dtm": "2024-01-01T00:00:00", "read_value": "123.4", "uom": "CCF", "status": "", "read_version": ""}\n',
+        }
+
+        mock_cursor = MagicMock()
+        mock_snowflake_conn = MagicMock()
+        mock_snowflake_conn.cursor.return_value = mock_cursor
+
+        loader.load(
+            "test_run",
+            "test_org",
+            pytz.timezone("America/Los_Angeles"),
+            ExtractOutput(fake_extract_output_files),
+            mock_snowflake_conn,
+        )
+
+        # Each of the 7 load methods calls cursor() three times
+        # So we expect at least 7 * 3 = 21 calls to snowflake_conn.cursor()
+        self.assertEqual(mock_snowflake_conn.cursor.call_count, 21)
