@@ -5,11 +5,13 @@ import logging
 from typing import Dict, Generator, List, Set, Tuple
 
 import oracledb
+from pytz.tzinfo import DstTzInfo
 import sshtunnel
 
 from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
+from amiadapters.storage.snowflake import RawSnowflakeLoader
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +217,6 @@ class MetersenseAdapter(BaseAMIAdapter):
         database_user,
         database_password,
         configured_sinks=None,
-        raw_snowflake_loader=None,
     ):
         """
         ssh_tunnel_server_host = hostname or IP of intermediate server
@@ -240,7 +241,7 @@ class MetersenseAdapter(BaseAMIAdapter):
             org_timezone,
             configured_task_output_controller,
             configured_sinks,
-            raw_snowflake_loader,
+            MetersenseRawSnowflakeLoader(),
         )
 
     def name(self) -> str:
@@ -674,3 +675,262 @@ class MetersenseAdapter(BaseAMIAdapter):
         if lines == [""]:
             lines = []
         yield from lines
+
+
+class MetersenseRawSnowflakeLoader(RawSnowflakeLoader):
+
+    def load(self, *args):
+        self._load_raw_account_services(*args)
+        self._load_raw_locations(*args)
+        self._load_raw_meters(*args)
+        self._load_raw_meters_views(*args)
+        self._load_raw_meter_location_xrefs(*args)
+        self._load_raw_interval_reads(*args)
+        self._load_raw_register_reads(*args)
+
+    def _load_raw_account_services(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        extract_outputs: ExtractOutput,
+        snowflake_conn,
+    ) -> None:
+        self._load_raw_data(
+            run_id,
+            org_id,
+            org_timezone,
+            extract_outputs,
+            snowflake_conn,
+            extract_output_filename="account_services.json",
+            raw_dataclass=MetersenseAccountService,
+            table="METERSENSE_ACCOUNT_SERVICES_BASE",
+            unique_by=["account_id", "location_no", "inactive_dt"],
+        )
+
+    def _load_raw_locations(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        extract_outputs: ExtractOutput,
+        snowflake_conn,
+    ) -> None:
+        self._load_raw_data(
+            run_id,
+            org_id,
+            org_timezone,
+            extract_outputs,
+            snowflake_conn,
+            extract_output_filename="locations.json",
+            raw_dataclass=MetersenseLocation,
+            table="METERSENSE_LOCATIONS_BASE",
+            unique_by=["location_no"],
+        )
+
+    def _load_raw_meters(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        extract_outputs: ExtractOutput,
+        snowflake_conn,
+    ) -> None:
+        self._load_raw_data(
+            run_id,
+            org_id,
+            org_timezone,
+            extract_outputs,
+            snowflake_conn,
+            extract_output_filename="meters.json",
+            raw_dataclass=MetersenseMeter,
+            table="METERSENSE_METERS_BASE",
+            unique_by=["meter_id"],
+        )
+
+    def _load_raw_meters_views(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        extract_outputs: ExtractOutput,
+        snowflake_conn,
+    ) -> None:
+        self._load_raw_data(
+            run_id,
+            org_id,
+            org_timezone,
+            extract_outputs,
+            snowflake_conn,
+            extract_output_filename="meters_view.json",
+            raw_dataclass=MetersenseMetersView,
+            table="METERSENSE_METERS_VIEW_BASE",
+            unique_by=["meter_id"],
+        )
+
+    def _load_raw_meter_location_xrefs(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        extract_outputs: ExtractOutput,
+        snowflake_conn,
+    ) -> None:
+        self._load_raw_data(
+            run_id,
+            org_id,
+            org_timezone,
+            extract_outputs,
+            snowflake_conn,
+            extract_output_filename="meter_location_xref.json",
+            raw_dataclass=MetersenseMeterLocationXref,
+            table="METERSENSE_METER_LOCATION_XREF_BASE",
+            unique_by=["meter_id", "inactive_dt"],
+        )
+
+    def _load_raw_interval_reads(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        extract_outputs: ExtractOutput,
+        snowflake_conn,
+    ) -> None:
+        self._load_raw_data(
+            run_id,
+            org_id,
+            org_timezone,
+            extract_outputs,
+            snowflake_conn,
+            extract_output_filename="intervalreads.json",
+            raw_dataclass=MetersenseIntervalRead,
+            table="METERSENSE_INTERVALREADS_BASE",
+            unique_by=["meter_id", "read_dtm"],
+        )
+
+    def _load_raw_register_reads(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        extract_outputs: ExtractOutput,
+        snowflake_conn,
+    ) -> None:
+        self._load_raw_data(
+            run_id,
+            org_id,
+            org_timezone,
+            extract_outputs,
+            snowflake_conn,
+            extract_output_filename="registerreads.json",
+            raw_dataclass=MetersenseRegisterRead,
+            table="METERSENSE_REGISTERREADS_BASE",
+            unique_by=["meter_id", "read_dtm"],
+        )
+
+    def _load_raw_data(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        extract_outputs: ExtractOutput,
+        snowflake_conn,
+        extract_output_filename: str,
+        raw_dataclass,
+        table: str,
+        unique_by: List[str],
+    ) -> None:
+        """
+        Extract raw data from intermediate outputs, then load into raw data table.
+
+        extract_output_filename: name of file in extract_outputs that contains the raw data
+        raw_dataclass: e.g. MetersenseRegisterRead, used to deserialize raw data and determine table column names
+        table: name of raw data table in Snowflake
+        unique_by: list of field names used with org_id to uniquely identify a row in the base table
+        """
+        text = extract_outputs.from_file(extract_output_filename)
+        raw_data = [raw_dataclass(**json.loads(d)) for d in text.strip().split("\n")]
+        temp_table = f"temp_{table}"
+        fields = list(raw_dataclass.__dataclass_fields__.keys())
+        self._create_temp_table(
+            snowflake_conn,
+            temp_table,
+            table,
+            fields,
+            org_timezone,
+            org_id,
+            raw_data,
+        )
+        self._merge_from_temp_table(
+            snowflake_conn,
+            table,
+            temp_table,
+            fields,
+            unique_by,
+        )
+
+    def _create_temp_table(
+        self, snowflake_conn, temp_table, table, fields, org_timezone, org_id, raw_data
+    ) -> None:
+        """
+        Insert every object in raw_data into a temp copy of the table.
+        """
+        logger.info(f"Prepping for raw load to table {table}")
+
+        # Create the temp table
+        create_temp_table_sql = (
+            f"CREATE OR REPLACE TEMPORARY TABLE {temp_table} LIKE {table};"
+        )
+        snowflake_conn.cursor().execute(create_temp_table_sql)
+
+        # Insert raw data
+        columns_as_comma_str = ", ".join(fields)
+        qmarks = "?, " * (len(fields) - 1) + "?"
+        insert_temp_data_sql = f"""
+            INSERT INTO {temp_table} (org_id, created_time, {columns_as_comma_str}) 
+                VALUES (?, ?, {qmarks})
+        """
+        created_time = datetime.now(tz=org_timezone)
+        rows = [
+            tuple(
+                [org_id, created_time] + [i.__getattribute__(name) for name in fields]
+            )
+            for i in raw_data
+        ]
+        snowflake_conn.cursor().executemany(insert_temp_data_sql, rows)
+
+    def _merge_from_temp_table(
+        self,
+        snowflake_conn,
+        table: str,
+        temp_table: str,
+        fields: List[str],
+        unique_by: List[str],
+    ) -> None:
+        """
+        Merge data from temp table into the base table using the unique_by keys
+        """
+        logger.info(f"Merging {temp_table} into {table}")
+        merge_sql = f"""
+            MERGE INTO {table} AS target
+            USING (
+                -- Use GROUP BY to ensure there are no duplicate rows before merge
+                SELECT 
+                    org_id,
+                    {", ".join(unique_by)},
+                    {", ".join([f"max({name}) as {name}" for name in fields if name not in unique_by])}, 
+                    max(created_time) as created_time
+                FROM {temp_table}
+                GROUP BY org_id, {", ".join(unique_by)}
+            ) AS source
+            ON source.org_id = target.org_id 
+                {" ".join(f"AND source.{i} = target.{i}" for i in unique_by)}
+            WHEN MATCHED THEN
+                UPDATE SET
+                    target.created_time = source.created_time,
+                    {",".join([f"target.{name} = source.{name}" for name in fields])}
+            WHEN NOT MATCHED THEN
+                INSERT (org_id, {", ".join(name for name in fields)}, created_time) 
+                        VALUES (source.org_id, {", ".join(f"source.{name}" for name in fields)}, source.created_time)
+        """
+        snowflake_conn.cursor().execute(merge_sql)
