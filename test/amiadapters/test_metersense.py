@@ -367,6 +367,33 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual(1, len(meters))
         self.assertEqual(0, len(reads))
 
+    def test_excludes_interval_and_register_read_when_no_meter(self):
+        meter = self._meter_factory()
+        location = self._location_factory()
+        account_service = self._account_service_factory()
+        xref = self._meter_location_xref_factory(
+            meter_id=meter.meter_id, location_no=location.location_no
+        )
+        meter_view = self._meter_view_factory(meter_id=meter.meter_id)
+        register_read = self._register_read_factory(
+            meter_id="another_id", read_dtm="2024-01-01 12:00:00"
+        )
+        interval_read = self._interval_read_factory(
+            meter_id="another_id", read_dtm="2024-01-01 12:00:00"
+        )
+        extract_outputs = self._build_extract_output(
+            account_services=[account_service],
+            locations=[location],
+            meters=[meter],
+            xrefs=[xref],
+            meter_views=[meter_view],
+            reg_reads=[register_read],
+            int_reads=[interval_read],
+        )
+        meters, reads = self.adapter._transform("run-id", extract_outputs)
+        self.assertEqual(1, len(meters))
+        self.assertEqual(0, len(reads))
+
     def test_interval_and_register_reads_when_they_do_not_join(self):
         meter = self._meter_factory()
         location = self._location_factory()

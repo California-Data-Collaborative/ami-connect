@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 import json
 import logging
-from typing import Dict, Generator, List, Tuple
+from typing import Dict, Generator, List, Set, Tuple
 
 import oracledb
 import sshtunnel
@@ -371,6 +371,7 @@ class MetersenseAdapter(BaseAMIAdapter):
         reads_by_device_and_flowtime = self._transform_reads(
             accounts_by_location_id,
             xrefs_by_meter_id,
+            set(meters_by_device_id.keys()),
             raw_interval_reads,
             raw_register_reads,
         )
@@ -514,11 +515,13 @@ class MetersenseAdapter(BaseAMIAdapter):
         self,
         accounts_by_location_id: Dict[str, List[MetersenseAccountService]],
         xrefs_by_meter_id: Dict[str, List[MetersenseMeterLocationXref]],
+        device_ids_to_include: Set[str],
         raw_interval_reads: List[MetersenseIntervalRead],
         raw_register_reads: List[MetersenseIntervalRead],
     ) -> Dict[str, GeneralMeter]:
         """
-        Join interval and register reads together, join in meter metadata when possible.
+        Join interval and register reads together, join in meter metadata when possible. Only include
+        reads for devices that we kept in the meter transform step.
         """
         reads_by_device_and_time = {}
 
@@ -527,6 +530,8 @@ class MetersenseAdapter(BaseAMIAdapter):
                 **json.loads(raw_interval_read_str)
             )
             device_id = raw_interval_read.meter_id
+            if device_id not in device_ids_to_include:
+                continue
             flowtime = self.datetime_from_iso_str(
                 raw_interval_read.read_dtm, self.org_timezone
             )
@@ -565,6 +570,8 @@ class MetersenseAdapter(BaseAMIAdapter):
                 **json.loads(raw_register_read_str)
             )
             device_id = raw_register_read.meter_id
+            if device_id not in device_ids_to_include:
+                continue
             flowtime = self.datetime_from_iso_str(
                 raw_register_read.read_dtm, self.org_timezone
             )
