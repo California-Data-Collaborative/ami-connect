@@ -229,7 +229,7 @@ class BaseAMIAdapter(ABC):
         self, reading: float, original_unit_of_measure: str
     ) -> Tuple[float, str]:
         """
-        All readings values should be mapped to CCF.
+        All readings values should be mapped to CF.
         """
         if reading is None:
             return None, None
@@ -239,14 +239,14 @@ class BaseAMIAdapter(ABC):
 
         multiplier = 1
         match original_unit_of_measure:
-            case GeneralMeterUnitOfMeasure.HUNDRED_CUBIC_FEET:
-                multiplier = 1
             case GeneralMeterUnitOfMeasure.CUBIC_FEET:
-                multiplier = 0.01
+                multiplier = 1
+            case GeneralMeterUnitOfMeasure.HUNDRED_CUBIC_FEET:
+                multiplier = 100
             case GeneralMeterUnitOfMeasure.GALLON | GeneralMeterUnitOfMeasure.GALLONS:
-                multiplier = 0.00133680546  # 1 / 748.052
+                multiplier = 0.133680546  # 1 / 7.48052
             case GeneralMeterUnitOfMeasure.KILO_GALLON:
-                multiplier = 1.33680546  # 1000 * 1 / 748.052
+                multiplier = 133.680546  # 1000 * 1 / 7.48052
             case _:
                 raise ValueError(
                     f"Unrecognized unit of measure: {original_unit_of_measure}"
@@ -256,7 +256,7 @@ class BaseAMIAdapter(ABC):
         # that reflects increases in a fraction of a gallon
         value = round(reading * multiplier, 8)
 
-        return value, GeneralMeterUnitOfMeasure.HUNDRED_CUBIC_FEET
+        return value, GeneralMeterUnitOfMeasure.CUBIC_FEET
 
     def _validate_extract_range(
         self, extract_range_start: datetime, extract_range_end: datetime

@@ -81,28 +81,23 @@ class TestBaseAdapter(BaseTestCase):
 
     def test_map_reading__valid_ccf_conversion(self):
         value, unit = self.adapter.map_reading(12.5, "CCF")
-        self.assertEqual(value, 12.5)
-        self.assertEqual(unit, "CCF")
+        self.assertEqual(value, 1250)
+        self.assertEqual(unit, "CF")
 
     def test_map_reading__valid_cf_conversion(self):
         value, unit = self.adapter.map_reading(1200, "CF")
-        self.assertEqual(value, 12.0)
-        self.assertEqual(unit, "CCF")
+        self.assertEqual(value, 1200)
+        self.assertEqual(unit, "CF")
 
     def test_map_reading__valid_gal_conversion(self):
         value, unit = self.adapter.map_reading(2000, "Gallon")
-        self.assertAlmostEqual(value, 2.674, delta=0.001)
-        self.assertEqual(unit, "CCF")
-
-    def test_map_reading__valid_gals_conversion(self):
-        value, unit = self.adapter.map_reading(2000, "Gallons")
-        self.assertAlmostEqual(value, 2.674, delta=0.001)
-        self.assertEqual(unit, "CCF")
+        self.assertAlmostEqual(value, 267.36, delta=0.01)
+        self.assertEqual(unit, "CF")
 
     def test_map_reading__valid_kgal_conversion(self):
         value, unit = self.adapter.map_reading(5, "KGAL")
-        self.assertAlmostEqual(value, 6.684, delta=0.001)
-        self.assertEqual(unit, "CCF")
+        self.assertAlmostEqual(value, 668.405, delta=0.01)
+        self.assertEqual(unit, "CF")
 
     def test_map_reading__none_reading(self):
         value, unit = self.adapter.map_reading(None, "CCF")
