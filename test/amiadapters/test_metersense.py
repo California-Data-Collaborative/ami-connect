@@ -292,8 +292,8 @@ class TestMetersenseAdapter(BaseTestCase):
         read = transformed_reads[0]
         self.assertEqual("ACC456", read.account_id)
         self.assertEqual("1001", read.location_id)
-        self.assertEqual(10.5, read.register_value)
-        self.assertEqual(0.5, read.interval_value)
+        self.assertEqual(1050.0, read.register_value)
+        self.assertEqual(50.0, read.interval_value)
 
     def test_missing_meter_view(self):
         meter = self._meter_factory()
@@ -421,8 +421,12 @@ class TestMetersenseAdapter(BaseTestCase):
         meters, reads = self.adapter._transform("run-id", extract_outputs)
         self.assertEqual(1, len(meters))
         self.assertEqual(2, len(reads))
-        self.assertEqual(reads[0].interval_value, interval_read.read_value)
-        self.assertEqual(reads[1].register_value, register_read.read_value)
+        self.assertEqual(
+            reads[0].interval_value, interval_read.read_value * 100
+        )  # CCF to CF
+        self.assertEqual(
+            reads[1].register_value, register_read.read_value * 100
+        )  # CCF to CF
 
     def test_interval_and_register_reads_match_to_correct_meter(self):
         meter = self._meter_factory()
@@ -461,21 +465,17 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual(1, len(meters))
         self.assertEqual(2, len(reads))
         self.assertEqual(
-            reads[0].interval_value, interval_read_inside_date_range.read_value
+            reads[0].interval_value,
+            interval_read_inside_date_range.read_value * 100,  # CCF to CF
         )
         self.assertIsNotNone(reads[0].account_id)
         self.assertIsNotNone(reads[0].location_id)
         self.assertEqual(
-            reads[1].interval_value, interval_read_outside_date_range.read_value
+            reads[1].interval_value,
+            interval_read_outside_date_range.read_value * 100,  # CCF to CF
         )
         self.assertIsNone(reads[1].account_id)
         self.assertIsNone(reads[1].location_id)
-
-    def mock_cursor_with_rows(self, row_type, rows):
-        cursor = MagicMock()
-        cursor.fetchall.return_value = rows
-        cursor.execute.return_value = None
-        return cursor
 
     def make_row_from_dataclass(self, instance):
         return tuple(getattr(instance, f) for f in instance.__dataclass_fields__)

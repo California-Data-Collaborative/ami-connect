@@ -377,10 +377,10 @@ class TestBeacon360Adapter(BaseTestCase):
                 flowtime=datetime.datetime(
                     2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
                 ),
-                register_value=227.6,
-                register_unit="CCF",
-                interval_value=0.00668403,
-                interval_unit="CCF",
+                register_value=22760.0,
+                register_unit="CF",
+                interval_value=0.66840273,
+                interval_unit="CF",
             ),
             GeneralMeterRead(
                 org_id="this-org",
@@ -390,10 +390,10 @@ class TestBeacon360Adapter(BaseTestCase):
                 flowtime=datetime.datetime(
                     2024, 8, 1, 1, 59, tzinfo=pytz.timezone("Europe/Rome")
                 ),
-                register_value=227.6,
-                register_unit="CCF",
-                interval_value=0.00668403,
-                interval_unit="CCF",
+                register_value=22760.0,
+                register_unit="CF",
+                interval_value=0.66840273,
+                interval_unit="CF",
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)
@@ -470,10 +470,10 @@ class TestBeacon360Adapter(BaseTestCase):
                 flowtime=datetime.datetime(
                     2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
                 ),
-                register_value=227.6,
-                register_unit="CCF",
-                interval_value=0.00668403,
-                interval_unit="CCF",
+                register_value=22760.0,
+                register_unit="CF",
+                interval_value=0.66840273,
+                interval_unit="CF",
             ),
             GeneralMeterRead(
                 org_id="this-org",
@@ -483,10 +483,10 @@ class TestBeacon360Adapter(BaseTestCase):
                 flowtime=datetime.datetime(
                     2024, 8, 1, 1, 59, tzinfo=pytz.timezone("Europe/Rome")
                 ),
-                register_value=227.6,
-                register_unit="CCF",
-                interval_value=0.00668403,
-                interval_unit="CCF",
+                register_value=22760.0,
+                register_unit="CF",
+                interval_value=0.66840273,
+                interval_unit="CF",
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)
