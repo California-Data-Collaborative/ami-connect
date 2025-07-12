@@ -1,15 +1,86 @@
 from dataclasses import dataclass, replace
 from datetime import datetime
 import logging
+import json
+from typing import Dict, Generator, List, Tuple
 
-import oracledb
+import psycopg2
 import sshtunnel
 
-from amiadapters.adapters.base import BaseAMIAdapter
+from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class XRMeter:
+    id: str
+    account_rate_code: str
+    service_address: str
+    meter_status: str
+    ert_id: str
+    meter_id: str
+    meter_id_2: str
+    meter_manufacturer: str
+    number_of_dials: str
+    spd_meter_mult: str
+    spd_meter_size: str
+    spd_usage_uom: str
+    service_point: str
+    asset_number: str
+    start_date: str
+    end_date: str
+    is_current: str
+    batch_id: str
+
+
+@dataclass
+class XRServicePoint:
+    service_address: str
+    service_point: str
+    account_billing_cycle: str
+    read_cycle: str
+    asset_address: str
+    asset_city: str
+    asset_zip: str
+    sdp_id: str
+    sdp_lat: str
+    sdp_lon: str
+    service_route: str
+    start_date: str
+    end_date: str
+    is_current: str
+    batch_id: str
+
+
+@dataclass
+class XRAmi:
+    id: str
+    encid: str
+    datetime: str
+    code: str
+    consumption: str
+    service_address: str
+    service_point: str
+    batch_id: str
+    meter_serial_id: str
+    ert_id: str
+
+
+@dataclass
+class XRRegisterRead:
+    id: str
+    encid: str
+    datetime: str
+    code: str
+    reg_read: str
+    service_address: str
+    service_point: str
+    batch_id: str
+    meter_serial_id: str
+    ert_id: str
 
 
 class XylemRedshiftAdapter(BaseAMIAdapter):
@@ -73,29 +144,252 @@ class XylemRedshiftAdapter(BaseAMIAdapter):
         extract_range_start: datetime,
         extract_range_end: datetime,
     ):
-        raise Exception("hey")
+
         # with sshtunnel.open_tunnel(
         #     (self.ssh_tunnel_server_host),
         #     ssh_username=self.ssh_tunnel_username,
         #     ssh_pkey=self.ssh_tunnel_key_path,
         #     remote_bind_address=(self.database_host, self.database_port),
-        #     # Locally, bind to localhost and arbitrary port. Use same host and port later when connecting to Oracle.
+        #     # Locally, bind to localhost and arbitrary port. Use same host and port later when connecting to Redshift.
         #     local_bind_address=("0.0.0.0", 10209),
         # ) as _:
         #     logging.info("Created SSH tunnel")
-        #     connection = oracledb.connect(
+        #     connection = psycopg2.connect(
         #         user=self.database_user,
         #         password=self.database_password,
-        #         dsn=f"0.0.0.0:10209/{self.database_db_name}",
+        #         host="0.0.0.0",
+        #         port=10209,
+        #         dbname=self.database_db_name,
         #     )
 
-        #     logger.info("Successfully connected to Oracle Database")
+        #     logger.info("Successfully connected to Redshift Database")
 
         #     cursor = connection.cursor()
 
         #     files = self._query_tables(cursor, extract_range_start, extract_range_end)
 
-        # return ExtractOutput(files)
+        sp = XRServicePoint(
+            service_address="101510",
+            service_point="1",
+            account_billing_cycle="11004",
+            read_cycle="11",
+            asset_address="1 BIG BAY",
+            asset_city="MY CITY",
+            asset_zip="00000",
+            sdp_id="999",
+            sdp_lat="1",
+            sdp_lon="-1",
+            service_route="4",
+            start_date="0001-01-01",
+            end_date="9999-12-31",
+            is_current="TRUE",
+            batch_id="1538",
+        )
+
+        rr = XRRegisterRead(
+            id="69530520",
+            encid="78645523",
+            datetime="2023-08-06 00:00:00.000 -0700",
+            code="R0",
+            reg_read="29916.59",
+            service_address="9200512",
+            service_point="1",
+            batch_id="5366",
+            meter_serial_id="78645523",
+            ert_id="85170724",
+        )
+
+        meter = XRMeter(
+            id="5298715",
+            account_rate_code="R1",
+            service_address="101510",
+            meter_status="Active",
+            ert_id="85170134",
+            meter_id="77507721",
+            meter_id_2="77507721",
+            meter_manufacturer="S",
+            number_of_dials="4",
+            spd_meter_mult="0.01",
+            spd_meter_size="1",
+            spd_usage_uom="CF",
+            service_point="1",
+            asset_number="40011",
+            start_date="0001-01-01",
+            end_date="2021-10-06",
+            is_current="FALSE",
+            batch_id="1538",
+        )
+
+        ami = XRAmi(
+            id="123456",
+            encid="654321",
+            datetime="2023-08-06 00:00:00.000 -0700",
+            code="R1",
+            consumption="12.34",
+            service_address="101510",
+            service_point="1",
+            batch_id="1538",
+            meter_serial_id="77507721",
+            ert_id="85170134",
+        )
+
+        files = {
+            "meter.json": "\n".join(
+                json.dumps(i, cls=DataclassJSONEncoder) for i in [meter]
+            ),
+            "service_point.json": "\n".join(
+                json.dumps(i, cls=DataclassJSONEncoder) for i in [sp]
+            ),
+            "ami.json": "\n".join(
+                json.dumps(i, cls=DataclassJSONEncoder) for i in [ami]
+            ),
+            "register_read.json": "\n".join(
+                json.dumps(i, cls=DataclassJSONEncoder) for i in [rr]
+            ),
+        }
+
+        return ExtractOutput(files)
 
     def _transform(self, run_id: str, extract_outputs: ExtractOutput):
-        return [], []
+        raw_meters_by_id = self._meters_by_meter_id(extract_outputs)
+        service_points_by_ids = self._service_points_by_ids(extract_outputs)
+        reads_by_meter_id = self._reads_by_meter_id(extract_outputs)
+
+        meters_by_id = {}
+        reads_by_device_and_time = {}
+
+        for meter_id, raw_meters in raw_meters_by_id.items():
+            # We take the first meter in the list, which is the most recently active
+            raw_meter = raw_meters[0]
+
+            device_id = raw_meter.meter_id
+            service_point = service_points_by_ids.get(
+                (raw_meter.service_address, raw_meter.service_point)
+            )
+            raw_reads = reads_by_meter_id.get(raw_meter.meter_id)
+
+            # TODO maybe should be service_address?
+            account_id = None
+            location_id = service_point.service_address if service_point else None
+
+            meter = GeneralMeter(
+                org_id=self.org_id,
+                device_id=device_id,
+                account_id=account_id,
+                location_id=location_id,
+                meter_id=raw_meter.meter_id,
+                # TODO check
+                endpoint_id=raw_meter.ert_id,
+                meter_install_date=self.datetime_from_iso_str(
+                    raw_meter.start_date, self.org_timezone
+                ),
+                meter_size=self.map_meter_size(raw_meter.spd_meter_size),
+                meter_manufacturer=raw_meter.meter_manufacturer,
+                multiplier=raw_meter.spd_meter_mult,
+                location_address=service_point.asset_address if service_point else None,
+                location_city=service_point.asset_city if service_point else None,
+                location_state=None,
+                location_zip=service_point.asset_zip if service_point else None,
+            )
+            meters_by_id[device_id] = meter
+
+            if raw_reads:
+                for raw_read in raw_reads:
+                    flowtime = datetime.strptime(
+                        raw_read.datetime, "%Y-%m-%d %H:%M:%S.%f %z"
+                    )
+                    key = (
+                        device_id,
+                        flowtime,
+                    )
+                    interval_value, interval_unit = self.map_reading(
+                        # TODO confirm original unit
+                        float(raw_read.consumption),
+                        GeneralMeterUnitOfMeasure.CUBIC_FEET,
+                    )
+                    read = GeneralMeterRead(
+                        org_id=self.org_id,
+                        device_id=device_id,
+                        account_id=account_id,
+                        location_id=location_id,
+                        flowtime=flowtime,
+                        register_value=None,
+                        register_unit=None,
+                        interval_value=interval_value,
+                        interval_unit=interval_unit,
+                    )
+                reads_by_device_and_time[key] = read
+
+        return list(meters_by_id.values()), list(reads_by_device_and_time.values())
+
+    def _meters_by_meter_id(
+        self, extract_outputs: ExtractOutput
+    ) -> Dict[str, List[XRMeter]]:
+        """
+        Map each meter ID to the list of meters associated with it. The list is sorted with most recently active
+        meter first.
+        """
+        raw_meters = self._read_file(extract_outputs, "meter.json")
+
+        # Build map
+        meters_by_id = {}
+        for m in raw_meters:
+            meter = XRMeter(**json.loads(m))
+            if meter.meter_id not in meters_by_id:
+                meters_by_id[meter.meter_id] = []
+            meters_by_id[meter.meter_id].append(meter)
+
+        # Sort each meter_id's meters
+        for meter_id in meters_by_id.keys():
+            meters_by_id[meter_id] = sorted(
+                meters_by_id[meter_id],
+                # Sort so that most recent end_date is first. Ties are broken by start_date.
+                key=lambda m: (m.end_date, m.start_date),
+                reverse=True,
+            )
+        return meters_by_id
+
+    def _service_points_by_ids(
+        self, extract_outputs: ExtractOutput
+    ) -> Dict[Tuple[str, str], XRServicePoint]:
+        """
+        Create a map of service points by their unique service_address+service_point.
+        """
+        raw_service_points = self._read_file(extract_outputs, "service_point.json")
+        result = {}
+        for sp in raw_service_points:
+            service_point = XRServicePoint(**json.loads(sp))
+            result[(service_point.service_address, service_point.service_point)] = (
+                service_point
+            )
+        return result
+
+    def _reads_by_meter_id(
+        self, extract_outputs: ExtractOutput
+    ) -> Dict[str, List[XRAmi]]:
+        """
+        Map each meter ID to the list of reads associated with it.
+        """
+        raw_reads = self._read_file(extract_outputs, "ami.json")
+
+        result = {}
+        for r in raw_reads:
+            read = XRAmi(**json.loads(r))
+            if read.meter_serial_id not in result:
+                result[read.meter_serial_id] = []
+            result[read.meter_serial_id].append(read)
+
+        return result
+
+    def _read_file(self, extract_outputs: ExtractOutput, file: str) -> Generator:
+        """
+        Read a file's contents from extract stage output, create generator
+        for each line of text
+        """
+        file_text = extract_outputs.from_file(file)
+        if file_text is None:
+            raise Exception(f"No output found for file {file}")
+        lines = file_text.strip().split("\n")
+        if lines == [""]:
+            lines = []
+        yield from lines
