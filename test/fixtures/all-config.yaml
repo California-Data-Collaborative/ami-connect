@@ -35,8 +35,8 @@ sources:
   database_port: 1521
   sinks:
   - my_snowflake_instance
-- type: xylem_redshift
-  org_id: my_xylem_redshift_utility
+- type: xylem_moulton_niguel
+  org_id: my_xylem_moulton_niguel_utility
   timezone: America/Los_Angeles
   ssh_tunnel_server_host: tunnel-ip
   ssh_tunnel_key_path: /key

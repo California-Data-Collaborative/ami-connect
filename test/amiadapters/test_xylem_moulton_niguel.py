@@ -5,13 +5,13 @@ from unittest.mock import MagicMock
 import pytz
 
 from amiadapters.config import ConfiguredLocalTaskOutputController
-from amiadapters.adapters.xylem_redshift import (
-    XylemRedshiftAdapter,
+from amiadapters.adapters.xylem_moulton_niguel import (
+    XylemMoultonNiguelAdapter,
     XRAmi,
     XRMeter,
     XRServicePoint,
 )
-from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
+from amiadapters.models import GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from test.base_test_case import BaseTestCase
 
@@ -20,7 +20,7 @@ class TestMetersenseAdapter(BaseTestCase):
 
     def setUp(self):
         self.tz = pytz.timezone("Europe/Rome")
-        self.adapter = XylemRedshiftAdapter(
+        self.adapter = XylemMoultonNiguelAdapter(
             org_id="this-org",
             org_timezone=self.tz,
             configured_task_output_controller=ConfiguredLocalTaskOutputController(

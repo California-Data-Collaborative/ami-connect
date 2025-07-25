@@ -115,8 +115,8 @@ class AMIAdapterConfiguration:
                     secrets = SubecaSecrets(
                         this_source_secrets.get("subeca_api_key"),
                     )
-                case ConfiguredAMISourceType.XYLEM_REDSHIFT.value.type:
-                    secrets = XylemRedshiftSecrets(
+                case ConfiguredAMISourceType.XYLEM_MOULTON_NIGUEL.value.type:
+                    secrets = XylemMoultonNiguelSecrets(
                         this_source_secrets.get("ssh_tunnel_username"),
                         this_source_secrets.get("database_db_name"),
                         this_source_secrets.get("database_user"),
@@ -219,7 +219,7 @@ class AMIAdapterConfiguration:
         from amiadapters.adapters.metersense import MetersenseAdapter
         from amiadapters.adapters.sentryx import SentryxAdapter
         from amiadapters.adapters.subeca import SubecaAdapter
-        from amiadapters.adapters.xylem_redshift import XylemRedshiftAdapter
+        from amiadapters.adapters.xylem_moulton_niguel import XylemMoultonNiguelAdapter
 
         adapters = []
         for source in self._sources:
@@ -286,9 +286,9 @@ class AMIAdapterConfiguration:
                             source.storage_sinks,
                         )
                     )
-                case ConfiguredAMISourceType.XYLEM_REDSHIFT.value.type:
+                case ConfiguredAMISourceType.XYLEM_MOULTON_NIGUEL.value.type:
                     adapters.append(
-                        XylemRedshiftAdapter(
+                        XylemMoultonNiguelAdapter(
                             source.org_id,
                             source.timezone,
                             source.task_output_controller,
@@ -478,7 +478,7 @@ class SubecaSecrets:
 
 
 @dataclass
-class XylemRedshiftSecrets:
+class XylemMoultonNiguelSecrets:
     ssh_tunnel_username: str
     database_db_name: str
     database_user: str
@@ -542,8 +542,10 @@ class ConfiguredAMISourceType(Enum):
     SUBECA = SourceSchema(
         "subeca", SubecaSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
     )
-    XYLEM_REDSHIFT = SourceSchema(
-        "xylem_redshift", XylemRedshiftSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
+    XYLEM_MOULTON_NIGUEL = SourceSchema(
+        "xylem_moulton_niguel",
+        XylemMoultonNiguelSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
     )
 
     @classmethod
@@ -561,7 +563,7 @@ class ConfiguredAMISourceType(Enum):
             MetersenseSecrets,
             SentryxSecrets,
             SubecaSecrets,
-            XylemRedshiftSecrets,
+            XylemMoultonNiguelSecrets,
         ],
     ) -> bool:
         matching_schema = cls._matching_schema_for_type(the_type)

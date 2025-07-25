@@ -1,5 +1,5 @@
 sources:
-- type: xylem_redshift
+- type: xylem_moulton_niguel
   org_id: my_utility
   timezone: America/Los_Angeles
   ssh_tunnel_server_host: tunnel-ip

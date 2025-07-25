@@ -121,14 +121,14 @@ class TestConfig(BaseTestCase):
         self.assertEqual("dbu", source.secrets.database_user)
         self.assertEqual("dbp", source.secrets.database_password)
 
-    def test_can_instantiate_xylem_redshift_via_yaml(self):
+    def test_can_instantiate_xylem_moulton_niguel_via_yaml(self):
         config = AMIAdapterConfiguration.from_yaml(
-            self.get_fixture_path("xylem-redshift-config.yaml"),
-            self.get_fixture_path("xylem-redshift-secrets.yaml"),
+            self.get_fixture_path("xylem-moulton-niguel-config.yaml"),
+            self.get_fixture_path("xylem-moulton-niguel-secrets.yaml"),
         )
         self.assertEqual(1, len(config._sources))
         source = config._sources[0]
-        self.assertEqual("xylem_redshift", source.type)
+        self.assertEqual("xylem_moulton_niguel", source.type)
         self.assertEqual("my_utility", source.org_id)
         self.assertEqual("America/Los_Angeles", str(source.timezone))
         self.assertEqual(

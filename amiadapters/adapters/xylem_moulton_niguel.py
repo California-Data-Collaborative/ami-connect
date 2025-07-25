@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 import logging
@@ -70,9 +70,9 @@ class XRAmi:
     ert_id: str
 
 
-class XylemRedshiftAdapter(BaseAMIAdapter):
+class XylemMoultonNiguelAdapter(BaseAMIAdapter):
     """
-    AMI Adapter that retrieves Xylem/Sensus data from a Redshift database.
+    AMI Adapter that retrieves Xylem/Sensus data from a Redshift database for the Moulton Niguel Water District.
     The Redshift database is only accessible through an SSH tunnel. This code assumes the tunnel
     infrastructure exists and connects to Redshift through SSH to an intermediate server.
 
@@ -123,7 +123,7 @@ class XylemRedshiftAdapter(BaseAMIAdapter):
         )
 
     def name(self) -> str:
-        return f"xylem-redshift-{self.org_id}"
+        return f"xylem-moulton-niguel-{self.org_id}"
 
     def _extract(
         self,
