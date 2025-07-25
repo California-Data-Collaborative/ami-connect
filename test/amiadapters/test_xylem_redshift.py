@@ -9,7 +9,6 @@ from amiadapters.adapters.xylem_redshift import (
     XylemRedshiftAdapter,
     XRAmi,
     XRMeter,
-    XRRegisterRead,
     XRServicePoint,
 )
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead

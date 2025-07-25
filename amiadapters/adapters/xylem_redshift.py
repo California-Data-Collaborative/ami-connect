@@ -1,5 +1,5 @@
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import date, datetime
 import logging
 import json
 from typing import Dict, Generator, List, Tuple
@@ -69,20 +69,6 @@ class XRAmi:
     ert_id: str
 
 
-@dataclass
-class XRRegisterRead:
-    id: str
-    encid: str
-    datetime: str
-    code: str
-    reg_read: str
-    service_address: str
-    service_point: str
-    batch_id: str
-    meter_serial_id: str
-    ert_id: str
-
-
 class XylemRedshiftAdapter(BaseAMIAdapter):
     """
     AMI Adapter that retrieves Xylem/Sensus data from a Redshift database.
@@ -145,110 +131,92 @@ class XylemRedshiftAdapter(BaseAMIAdapter):
         extract_range_end: datetime,
     ):
 
-        # with sshtunnel.open_tunnel(
-        #     (self.ssh_tunnel_server_host),
-        #     ssh_username=self.ssh_tunnel_username,
-        #     ssh_pkey=self.ssh_tunnel_key_path,
-        #     remote_bind_address=(self.database_host, self.database_port),
-        #     # Locally, bind to localhost and arbitrary port. Use same host and port later when connecting to Redshift.
-        #     local_bind_address=("0.0.0.0", 10209),
-        # ) as _:
-        #     logging.info("Created SSH tunnel")
-        #     connection = psycopg2.connect(
-        #         user=self.database_user,
-        #         password=self.database_password,
-        #         host="0.0.0.0",
-        #         port=10209,
-        #         dbname=self.database_db_name,
-        #     )
+        with sshtunnel.open_tunnel(
+            (self.ssh_tunnel_server_host),
+            ssh_username=self.ssh_tunnel_username,
+            ssh_pkey=self.ssh_tunnel_key_path,
+            remote_bind_address=(self.database_host, self.database_port),
+            # Locally, bind to localhost and arbitrary port. Use same host and port later when connecting to Redshift.
+            local_bind_address=("0.0.0.0", 10209),
+        ) as _:
+            logging.info("Created SSH tunnel")
+            connection = psycopg2.connect(
+                user=self.database_user,
+                password=self.database_password,
+                host="0.0.0.0",
+                port=10209,
+                dbname=self.database_db_name,
+            )
 
-        #     logger.info("Successfully connected to Redshift Database")
+            logger.info("Successfully connected to Redshift Database")
 
-        #     cursor = connection.cursor()
+            cursor = connection.cursor()
 
-        #     files = self._query_tables(cursor, extract_range_start, extract_range_end)
-
-        sp = XRServicePoint(
-            service_address="101510",
-            service_point="1",
-            account_billing_cycle="11004",
-            read_cycle="11",
-            asset_address="1 BIG BAY",
-            asset_city="MY CITY",
-            asset_zip="00000",
-            sdp_id="999",
-            sdp_lat="1",
-            sdp_lon="-1",
-            service_route="4",
-            start_date="0001-01-01",
-            end_date="9999-12-31",
-            is_current="TRUE",
-            batch_id="1538",
-        )
-
-        rr = XRRegisterRead(
-            id="69530520",
-            encid="78645523",
-            datetime="2023-08-06 00:00:00.000 -0700",
-            code="R0",
-            reg_read="29916.59",
-            service_address="9200512",
-            service_point="1",
-            batch_id="5366",
-            meter_serial_id="78645523",
-            ert_id="85170724",
-        )
-
-        meter = XRMeter(
-            id="5298715",
-            account_rate_code="R1",
-            service_address="101510",
-            meter_status="Active",
-            ert_id="85170134",
-            meter_id="77507721",
-            meter_id_2="77507721",
-            meter_manufacturer="S",
-            number_of_dials="4",
-            spd_meter_mult="0.01",
-            spd_meter_size="1",
-            spd_usage_uom="CF",
-            service_point="1",
-            asset_number="40011",
-            start_date="0001-01-01",
-            end_date="2021-10-06",
-            is_current="FALSE",
-            batch_id="1538",
-        )
-
-        ami = XRAmi(
-            id="123456",
-            encid="654321",
-            datetime="2023-08-06 00:00:00.000 -0700",
-            code="R1",
-            consumption="12.34",
-            service_address="101510",
-            service_point="1",
-            batch_id="1538",
-            meter_serial_id="77507721",
-            ert_id="85170134",
-        )
-
-        files = {
-            "meter.json": "\n".join(
-                json.dumps(i, cls=DataclassJSONEncoder) for i in [meter]
-            ),
-            "service_point.json": "\n".join(
-                json.dumps(i, cls=DataclassJSONEncoder) for i in [sp]
-            ),
-            "ami.json": "\n".join(
-                json.dumps(i, cls=DataclassJSONEncoder) for i in [ami]
-            ),
-            "register_read.json": "\n".join(
-                json.dumps(i, cls=DataclassJSONEncoder) for i in [rr]
-            ),
-        }
+            files = self._query_tables(cursor, extract_range_start, extract_range_end)
 
         return ExtractOutput(files)
+
+    def _query_tables(
+        self, cursor, extract_range_start: datetime, extract_range_end: datetime
+    ) -> Dict[str, str]:
+        """
+        Run SQL on remote Redshift database to extract all data. We've chosen to do as little
+        filtering and joining as possible to preserve the raw data. It comes out in extract
+        files per table.
+        """
+        files = {}
+        tables = [
+            ("meter", XRMeter, None, None),
+            ("service_point", XRServicePoint, None, None),
+            ("ami", XRAmi, extract_range_start, extract_range_end),
+        ]
+        for table, row_type, start_date, end_date in tables:
+            rows = self._extract_table(cursor, table, row_type, start_date, end_date)
+            text = "\n".join(json.dumps(i, cls=DataclassJSONEncoder) for i in rows)
+            files[f"{table.lower()}.json"] = text
+        return files
+
+    def _extract_table(
+        self,
+        cursor,
+        table_name: str,
+        row_type,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+    ) -> List:
+        """
+        Query for data from a table in the Oracle database and prep for output.
+        """
+        query = f"SELECT * FROM {table_name} t WHERE 1=1 "
+        kwargs = {}
+
+        # Reads should be filtered by date range
+        if extract_range_start and extract_range_end:
+            query += (
+                f" AND t.datetime BETWEEN %(extract_range_start)s AND %(extract_range_end)s "
+            )
+            kwargs["extract_range_start"] = extract_range_start
+            kwargs["extract_range_end"] = extract_range_end
+
+        logger.info(f"Running query {query} with values {kwargs}")
+        cursor.execute(query, kwargs)
+        rows = cursor.fetchall()
+
+        # Turn SQL results into our dataclass instances
+        # Use the dataclass for SQL column names
+        columns = list(row_type.__dataclass_fields__.keys())
+        result = []
+        for row in rows:
+            data = {}
+            for name, value in zip(columns, row):
+                # Turn datetimes into strings for serialization
+                if isinstance(value, date):
+                    value = value.isoformat()
+                data[name] = value
+            result.append(row_type(**data))
+
+        logger.info(f"Fetched {len(result)} rows from {table_name}")
+        return result
 
     def _transform(self, run_id: str, extract_outputs: ExtractOutput):
         raw_meters_by_id = self._meters_by_meter_id(extract_outputs)
