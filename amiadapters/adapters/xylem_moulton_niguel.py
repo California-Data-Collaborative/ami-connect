@@ -296,7 +296,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
                         interval_value=interval_value,
                         interval_unit=interval_unit,
                     )
-                reads_by_device_and_time[key] = read
+                    reads_by_device_and_time[key] = read
 
         return list(meters_by_id.values()), list(reads_by_device_and_time.values())
 
