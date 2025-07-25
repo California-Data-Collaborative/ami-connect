@@ -217,3 +217,54 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual(len(meters), 1)
         self.assertIsNone(meters[0].location_address)
         self.assertIsNone(meters[0].location_city)
+
+    def test_query_tables_with_interval_reads(self):
+        start = datetime.datetime(2024, 1, 1)
+        end = datetime.datetime(2024, 1, 2)
+
+        interval_read = self._ami_read_factory()
+
+        cursor = MagicMock()
+
+        def execute_side_effect(query, params=None):
+            if "FROM ami" in query:
+                cursor.fetchall.return_value = [
+                    tuple(
+                        getattr(interval_read, f)
+                        for f in interval_read.__dataclass_fields__
+                    )
+                ]
+            else:
+                cursor.fetchall.return_value = []
+            return None
+
+        cursor.execute.side_effect = execute_side_effect
+
+        result = self.adapter._query_tables(cursor, start, end)
+
+        self.assertIn("meter.json", result)
+        self.assertIn("service_point.json", result)
+        self.assertIn("ami.json", result)
+
+        interval_json = json.loads(result["ami.json"].strip())
+
+        self.assertEqual(interval_json["meter_serial_id"], "M1")
+
+        self.assertIn("datetime", cursor.execute.call_args[0][0])
+        self.assertEqual(start, cursor.execute.call_args[0][1]["extract_range_start"])
+        self.assertEqual(end, cursor.execute.call_args[0][1]["extract_range_end"])
+
+    def test_query_tables_empty_tables(self):
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+
+        result = self.adapter._query_tables(cursor, None, None)
+
+        # All table keys should exist even if they are empty
+        expected_keys = [
+            "meter.json",
+            "service_point.json",
+            "ami.json",
+        ]
+        for key in expected_keys:
+            self.assertEqual(result[key], "")

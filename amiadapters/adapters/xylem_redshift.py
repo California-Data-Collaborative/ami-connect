@@ -1,5 +1,6 @@
 from dataclasses import dataclass, replace
 from datetime import date, datetime
+from decimal import Decimal
 import logging
 import json
 from typing import Dict, Generator, List, Tuple
@@ -192,9 +193,7 @@ class XylemRedshiftAdapter(BaseAMIAdapter):
 
         # Reads should be filtered by date range
         if extract_range_start and extract_range_end:
-            query += (
-                f" AND t.datetime BETWEEN %(extract_range_start)s AND %(extract_range_end)s "
-            )
+            query += f" AND t.datetime BETWEEN %(extract_range_start)s AND %(extract_range_end)s "
             kwargs["extract_range_start"] = extract_range_start
             kwargs["extract_range_end"] = extract_range_end
 
@@ -209,7 +208,9 @@ class XylemRedshiftAdapter(BaseAMIAdapter):
         for row in rows:
             data = {}
             for name, value in zip(columns, row):
-                # Turn datetimes into strings for serialization
+                # Cast some values to serializable types
+                if isinstance(value, Decimal):
+                    value = float(value)
                 if isinstance(value, date):
                     value = value.isoformat()
                 data[name] = value
@@ -251,7 +252,7 @@ class XylemRedshiftAdapter(BaseAMIAdapter):
                 meter_install_date=self.datetime_from_iso_str(
                     raw_meter.start_date, self.org_timezone
                 ),
-                meter_size=self.map_meter_size(raw_meter.spd_meter_size),
+                meter_size=self.map_meter_size(str(raw_meter.spd_meter_size)),
                 meter_manufacturer=raw_meter.meter_manufacturer,
                 multiplier=raw_meter.spd_meter_mult,
                 location_address=service_point.asset_address if service_point else None,
@@ -263,9 +264,14 @@ class XylemRedshiftAdapter(BaseAMIAdapter):
 
             if raw_reads:
                 for raw_read in raw_reads:
-                    flowtime = datetime.strptime(
-                        raw_read.datetime, "%Y-%m-%d %H:%M:%S.%f %z"
-                    )
+                    if "T" in raw_read.datetime:
+                        flowtime = datetime.strptime(
+                            raw_read.datetime, "%Y-%m-%dT%H:%M:%S%z"
+                        )
+                    else:
+                        flowtime = datetime.strptime(
+                            raw_read.datetime, "%Y-%m-%d %H:%M:%S.%f %z"
+                        )
                     key = (
                         device_id,
                         flowtime,
