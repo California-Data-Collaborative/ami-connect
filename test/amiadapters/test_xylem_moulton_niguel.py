@@ -7,9 +7,9 @@ import pytz
 from amiadapters.config import ConfiguredLocalTaskOutputController
 from amiadapters.adapters.xylem_moulton_niguel import (
     XylemMoultonNiguelAdapter,
-    XRAmi,
-    XRMeter,
-    XRServicePoint,
+    Ami,
+    Meter,
+    ServicePoint,
 )
 from amiadapters.models import GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
@@ -57,8 +57,8 @@ class TestMetersenseAdapter(BaseTestCase):
         }
         return ExtractOutput(files)
 
-    def _meter_factory(self) -> XRMeter:
-        return XRMeter(
+    def _meter_factory(self) -> Meter:
+        return Meter(
             **{
                 "id": "1",
                 "account_rate_code": "R1",
@@ -81,8 +81,8 @@ class TestMetersenseAdapter(BaseTestCase):
             }
         )
 
-    def _service_point_factory(self) -> XRServicePoint:
-        return XRServicePoint(
+    def _service_point_factory(self) -> ServicePoint:
+        return ServicePoint(
             **{
                 "service_address": "100",
                 "service_point": "1",
@@ -102,8 +102,8 @@ class TestMetersenseAdapter(BaseTestCase):
             }
         )
 
-    def _ami_read_factory(self) -> XRAmi:
-        return XRAmi(
+    def _ami_read_factory(self) -> Ami:
+        return Ami(
             **{
                 "id": "1",
                 "encid": "1",
@@ -194,7 +194,7 @@ class TestMetersenseAdapter(BaseTestCase):
         meter = self._meter_factory()
         sp1 = self._service_point_factory()
         # Same service_address value, different service_point
-        sp2 = XRServicePoint(
+        sp2 = ServicePoint(
             **{
                 **sp1.__dict__,
                 "service_point": "2",

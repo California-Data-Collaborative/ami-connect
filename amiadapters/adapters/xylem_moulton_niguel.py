@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class XRMeter:
+class Meter:
     id: str
     account_rate_code: str
     service_address: str
@@ -38,7 +38,7 @@ class XRMeter:
 
 
 @dataclass
-class XRServicePoint:
+class ServicePoint:
     service_address: str
     service_point: str
     account_billing_cycle: str
@@ -57,7 +57,11 @@ class XRServicePoint:
 
 
 @dataclass
-class XRAmi:
+class Ami:
+    """
+    Row in "ami" table which contains interval reads.
+    """
+
     id: str
     encid: str
     datetime: str
@@ -167,9 +171,9 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         """
         files = {}
         tables = [
-            ("meter", XRMeter, None, None),
-            ("service_point", XRServicePoint, None, None),
-            ("ami", XRAmi, extract_range_start, extract_range_end),
+            ("meter", Meter, None, None),
+            ("service_point", ServicePoint, None, None),
+            ("ami", Ami, extract_range_start, extract_range_end),
         ]
         for table, row_type, start_date, end_date in tables:
             rows = self._extract_table(cursor, table, row_type, start_date, end_date)
@@ -298,7 +302,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
 
     def _meters_by_meter_id(
         self, extract_outputs: ExtractOutput
-    ) -> Dict[str, List[XRMeter]]:
+    ) -> Dict[str, List[Meter]]:
         """
         Map each meter ID to the list of meters associated with it. The list is sorted with most recently active
         meter first.
@@ -308,7 +312,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         # Build map
         meters_by_id = {}
         for m in raw_meters:
-            meter = XRMeter(**json.loads(m))
+            meter = Meter(**json.loads(m))
             if meter.meter_id not in meters_by_id:
                 meters_by_id[meter.meter_id] = []
             meters_by_id[meter.meter_id].append(meter)
@@ -325,14 +329,14 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
 
     def _service_points_by_ids(
         self, extract_outputs: ExtractOutput
-    ) -> Dict[Tuple[str, str], XRServicePoint]:
+    ) -> Dict[Tuple[str, str], ServicePoint]:
         """
         Create a map of service points by their unique service_address+service_point.
         """
         raw_service_points = self._read_file(extract_outputs, "service_point.json")
         result = {}
         for sp in raw_service_points:
-            service_point = XRServicePoint(**json.loads(sp))
+            service_point = ServicePoint(**json.loads(sp))
             result[(service_point.service_address, service_point.service_point)] = (
                 service_point
             )
@@ -340,7 +344,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
 
     def _reads_by_meter_id(
         self, extract_outputs: ExtractOutput
-    ) -> Dict[str, List[XRAmi]]:
+    ) -> Dict[str, List[Ami]]:
         """
         Map each meter ID to the list of reads associated with it.
         """
@@ -348,7 +352,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
 
         result = {}
         for r in raw_reads:
-            read = XRAmi(**json.loads(r))
+            read = Ami(**json.loads(r))
             if read.meter_serial_id not in result:
                 result[read.meter_serial_id] = []
             result[read.meter_serial_id].append(read)
