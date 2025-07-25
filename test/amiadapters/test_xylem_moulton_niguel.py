@@ -102,12 +102,12 @@ class TestMetersenseAdapter(BaseTestCase):
             }
         )
 
-    def _ami_read_factory(self) -> Ami:
+    def _ami_read_factory(self, flowtime="2023-01-01 00:00:00.000 -0700") -> Ami:
         return Ami(
             **{
                 "id": "1",
                 "encid": "1",
-                "datetime": "2023-01-01 00:00:00.000 -0700",
+                "datetime": flowtime,
                 "code": "R1",
                 "consumption": "10",
                 "service_address": "100",
@@ -121,8 +121,9 @@ class TestMetersenseAdapter(BaseTestCase):
     def test_transform(self):
         meter = self._meter_factory()
         sp = self._service_point_factory()
-        read = self._ami_read_factory()
-        extract_outputs = self._mock_extract_output([meter], [sp], [read])
+        read_1 = self._ami_read_factory(flowtime="2023-01-01 00:00:00.000 -0700")
+        read_2 = self._ami_read_factory(flowtime="2023-01-01 00:01:00.000 -0700")
+        extract_outputs = self._mock_extract_output([meter], [sp], [read_1, read_2])
         meters, reads = self.adapter._transform("run1", extract_outputs)
         self.assertEqual(len(meters), 1)
         self.assertEqual(
@@ -147,7 +148,7 @@ class TestMetersenseAdapter(BaseTestCase):
             meters[0],
         )
 
-        self.assertEqual(len(reads), 1)
+        self.assertEqual(len(reads), 2)
         self.assertEqual(
             GeneralMeterRead(
                 org_id="this-org",
