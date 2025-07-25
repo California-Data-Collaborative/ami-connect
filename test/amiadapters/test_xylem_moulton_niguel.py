@@ -7,6 +7,7 @@ import pytz
 from amiadapters.config import ConfiguredLocalTaskOutputController
 from amiadapters.adapters.xylem_moulton_niguel import (
     XylemMoultonNiguelAdapter,
+    XylemMoultonNiguelRawSnowflakeLoader,
     Ami,
     Meter,
     ServicePoint,
@@ -269,3 +270,83 @@ class TestMetersenseAdapter(BaseTestCase):
         ]
         for key in expected_keys:
             self.assertEqual(result[key], "")
+
+
+class TestMetersenseRawSnowflakeLoader(BaseTestCase):
+
+    def test_load_calls_snowflake_cursor_expected_times(self):
+        loader = XylemMoultonNiguelRawSnowflakeLoader()
+
+        meter = {
+            "id": "1",
+            "account_rate_code": "R1",
+            "service_address": "100",
+            "meter_status": "Active",
+            "ert_id": "ERT1",
+            "meter_id": "M1",
+            "meter_id_2": "M1",
+            "meter_manufacturer": "S",
+            "number_of_dials": "4",
+            "spd_meter_mult": "1",
+            "spd_meter_size": "1",
+            "spd_usage_uom": "CF",
+            "service_point": "1",
+            "asset_number": "A1",
+            "start_date": "2020-01-01",
+            "end_date": "2021-01-01",
+            "is_current": "TRUE",
+            "batch_id": "B1",
+        }
+
+        sp = {
+            "service_address": "100",
+            "service_point": "1",
+            "account_billing_cycle": "C1",
+            "read_cycle": "RC",
+            "asset_address": "Addr",
+            "asset_city": "City",
+            "asset_zip": "Zip",
+            "sdp_id": "S1",
+            "sdp_lat": "1",
+            "sdp_lon": "-1",
+            "service_route": "Route",
+            "start_date": "2020-01-01",
+            "end_date": "2021-01-01",
+            "is_current": "TRUE",
+            "batch_id": "B1",
+        }
+
+        ami = {
+            "id": "1",
+            "encid": "1",
+            "datetime": "2021-01-01",
+            "code": "R1",
+            "consumption": "10",
+            "service_address": "100",
+            "service_point": "1",
+            "batch_id": "B1",
+            "meter_serial_id": "M1",
+            "ert_id": "ERT1",
+        }
+
+        fake_extract_output_files = {
+            "meter.json": json.dumps(meter),
+            "service_point.json": json.dumps(sp),
+            "ami.json": json.dumps(ami),
+        }
+
+        mock_cursor = MagicMock()
+        mock_snowflake_conn = MagicMock()
+        mock_snowflake_conn.cursor.return_value = mock_cursor
+
+        loader.load(
+            "test_run",
+            "test_org",
+            pytz.timezone("America/Los_Angeles"),
+            ExtractOutput(fake_extract_output_files),
+            mock_snowflake_conn,
+        )
+
+        # Each of the 7 load methods calls cursor() three times
+        # So we expect at least 3 * 3 = 9 calls to snowflake_conn.cursor()
+        self.assertEqual(mock_snowflake_conn.cursor.call_count, 9)
