@@ -121,6 +121,31 @@ class TestConfig(BaseTestCase):
         self.assertEqual("dbu", source.secrets.database_user)
         self.assertEqual("dbp", source.secrets.database_password)
 
+    def test_can_instantiate_xylem_moulton_niguel_via_yaml(self):
+        config = AMIAdapterConfiguration.from_yaml(
+            self.get_fixture_path("xylem-moulton-niguel-config.yaml"),
+            self.get_fixture_path("xylem-moulton-niguel-secrets.yaml"),
+        )
+        self.assertEqual(1, len(config._sources))
+        source = config._sources[0]
+        self.assertEqual("xylem_moulton_niguel", source.type)
+        self.assertEqual("my_utility", source.org_id)
+        self.assertEqual("America/Los_Angeles", str(source.timezone))
+        self.assertEqual(
+            "tunnel-ip", source.configured_ssh_tunnel_to_database.ssh_tunnel_server_host
+        )
+        self.assertEqual("ubuntu", source.secrets.ssh_tunnel_username)
+        self.assertEqual(
+            "/key", source.configured_ssh_tunnel_to_database.ssh_tunnel_key_path
+        )
+        self.assertEqual(
+            "db-host", source.configured_ssh_tunnel_to_database.database_host
+        )
+        self.assertEqual(1521, source.configured_ssh_tunnel_to_database.database_port)
+        self.assertEqual("db-name", source.secrets.database_db_name)
+        self.assertEqual("dbu", source.secrets.database_user)
+        self.assertEqual("dbp", source.secrets.database_password)
+
     def test_can_instantiate_subeca_via_yaml(self):
         config = AMIAdapterConfiguration.from_yaml(
             self.get_fixture_path("subeca-config.yaml"),
@@ -164,7 +189,7 @@ class TestConfig(BaseTestCase):
         )
         adapters = config.adapters()
 
-        self.assertEqual(5, len(adapters))
+        self.assertEqual(6, len(adapters))
         self.assertIn(AclaraAdapter, map(lambda a: type(a), adapters))
         self.assertIn(Beacon360Adapter, map(lambda a: type(a), adapters))
         self.assertIn(MetersenseAdapter, map(lambda a: type(a), adapters))

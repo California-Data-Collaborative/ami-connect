@@ -115,6 +115,13 @@ class AMIAdapterConfiguration:
                     secrets = SubecaSecrets(
                         this_source_secrets.get("subeca_api_key"),
                     )
+                case ConfiguredAMISourceType.XYLEM_MOULTON_NIGUEL.value.type:
+                    secrets = XylemMoultonNiguelSecrets(
+                        this_source_secrets.get("ssh_tunnel_username"),
+                        this_source_secrets.get("database_db_name"),
+                        this_source_secrets.get("database_user"),
+                        this_source_secrets.get("database_password"),
+                    )
                 case _:
                     secrets = None
 
@@ -212,6 +219,7 @@ class AMIAdapterConfiguration:
         from amiadapters.adapters.metersense import MetersenseAdapter
         from amiadapters.adapters.sentryx import SentryxAdapter
         from amiadapters.adapters.subeca import SubecaAdapter
+        from amiadapters.adapters.xylem_moulton_niguel import XylemMoultonNiguelAdapter
 
         adapters = []
         for source in self._sources:
@@ -278,6 +286,24 @@ class AMIAdapterConfiguration:
                             source.storage_sinks,
                         )
                     )
+                case ConfiguredAMISourceType.XYLEM_MOULTON_NIGUEL.value.type:
+                    adapters.append(
+                        XylemMoultonNiguelAdapter(
+                            source.org_id,
+                            source.timezone,
+                            source.task_output_controller,
+                            ssh_tunnel_server_host=source.configured_ssh_tunnel_to_database.ssh_tunnel_server_host,
+                            ssh_tunnel_username=source.secrets.ssh_tunnel_username,
+                            ssh_tunnel_key_path=source.configured_ssh_tunnel_to_database.ssh_tunnel_key_path,
+                            database_host=source.configured_ssh_tunnel_to_database.database_host,
+                            database_port=source.configured_ssh_tunnel_to_database.database_port,
+                            database_db_name=source.secrets.database_db_name,
+                            database_user=source.secrets.database_user,
+                            database_password=source.secrets.database_password,
+                            configured_sinks=source.storage_sinks,
+                        )
+                    )
+
         return adapters
 
     def backfills(self) -> List:
@@ -452,6 +478,14 @@ class SubecaSecrets:
 
 
 @dataclass
+class XylemMoultonNiguelSecrets:
+    ssh_tunnel_username: str
+    database_db_name: str
+    database_user: str
+    database_password: str
+
+
+@dataclass
 class ConfiguredSftp:
     host: str
     remote_data_directory: str
@@ -508,6 +542,11 @@ class ConfiguredAMISourceType(Enum):
     SUBECA = SourceSchema(
         "subeca", SubecaSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
     )
+    XYLEM_MOULTON_NIGUEL = SourceSchema(
+        "xylem_moulton_niguel",
+        XylemMoultonNiguelSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
 
     @classmethod
     def is_valid_type(cls, the_type: str) -> bool:
@@ -524,6 +563,7 @@ class ConfiguredAMISourceType(Enum):
             MetersenseSecrets,
             SentryxSecrets,
             SubecaSecrets,
+            XylemMoultonNiguelSecrets,
         ],
     ) -> bool:
         matching_schema = cls._matching_schema_for_type(the_type)
