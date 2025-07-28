@@ -2,6 +2,26 @@
 
 Seamless pipelines for AMI water data, now as easy to access as turning on a tap.
 
+## AMI Adapters
+
+A core function of this project is to provide a set of adapters for various AMI data sources. These adapters allow you to
+access each AMI data source with minimal setup. They are able to extract data from the AMI source and transform it into our
+standard format. They can store that standardized data in various storage sinks, like Snowflake.
+
+Here are the adapters in this project:
+
+| Adapter          | Implementation Status  | Compatible Sinks  | Documentation |
+|------------------|------------------------|-------------------|-------------------------------------------------|
+| Beacon360        | Complete               | Snowflake         | [Link](./docs/adapters/beacon.md)            |
+| Aclara           | Complete               | Snowflake         | [Link](./docs/adapters/aclara.md)               |
+| Metersense       | Complete               | Snowflake         | [Link](./docs/adapters/metersense.md)           |
+| Sentryx          | Complete               | Snowflake         | [Link](./docs/adapters/sentryx.md)              |
+| Xylem for Moulton Niguel | In Progress    | Snowflake         | [Link](./docs/adapters/xylem_moulton_niguel.md) |
+| Subeca           | In Progress            | Snowflake         | [Link](./docs/adapters/subeca.md)               |
+| Neptune          | Planned                | n/a               | n/a                                             |
+| Harmony          | Planned                | n/a               | n/a                                             |
+
+
 ## Project structure
 
 - [amiadapters](./amiadapters/) - Standalone Python library that adapts AMI data sources into our standard data format
@@ -119,3 +139,5 @@ Steps:
 3. Define a transform function that takes the data from extract and transforms it into our generic data models, then outputs it using an output controller.
 4. If you're loading the raw data into a storage sink, you should define that step using something like RawSnowflakeLoader.
 5. For the pipeline to run your adapter, the `AMIAdapterConfiguration.adapters()` function will need to be able to instantiate your adapter. This will require some code in `config.py`. You'll need to figure out what a block in the `sources` section of the config looks like for your adapter, then be able to parse that block, e.g. within `AMIAdapterConfiguration.from_yaml()`.
+
+Add any documentation that's specific to this adapter to [./docs/adapters](./docs/adapters).
