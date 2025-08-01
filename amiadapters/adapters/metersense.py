@@ -518,7 +518,7 @@ class MetersenseAdapter(BaseAMIAdapter):
         device_ids_to_include: Set[str],
         raw_interval_reads: List[MetersenseIntervalRead],
         raw_register_reads: List[MetersenseIntervalRead],
-    ) -> Dict[str, GeneralMeter]:
+    ) -> Dict[str, GeneralMeterRead]:
         """
         Join interval and register reads together, join in meter metadata when possible. Only include
         reads for devices that we kept in the meter transform step.

@@ -9,7 +9,9 @@ from amiadapters.adapters.xylem_moulton_niguel import (
     XylemMoultonNiguelAdapter,
     XylemMoultonNiguelRawSnowflakeLoader,
     Ami,
+    Customer,
     Meter,
+    RegisterRead,
     ServicePoint,
 )
 from amiadapters.models import GeneralMeter, GeneralMeterRead
@@ -48,13 +50,19 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual("dbu", self.adapter.database_user)
         self.assertEqual("dbp", self.adapter.database_password)
 
-    def _mock_extract_output(self, meters, service_points, reads):
+    def _mock_extract_output(
+        self, meters, service_points, customers, interval_reads, register_reads
+    ):
         files = {
             "meter.json": "\n".join(json.dumps(m.__dict__) for m in meters),
             "service_point.json": "\n".join(
                 json.dumps(sp.__dict__) for sp in service_points
             ),
-            "ami.json": "\n".join(json.dumps(r.__dict__) for r in reads),
+            "customer.json": "\n".join(json.dumps(c.__dict__) for c in customers),
+            "ami.json": "\n".join(json.dumps(r.__dict__) for r in interval_reads),
+            "register_read.json": "\n".join(
+                json.dumps(r.__dict__) for r in register_reads
+            ),
         }
         return ExtractOutput(files)
 
@@ -103,6 +111,26 @@ class TestMetersenseAdapter(BaseTestCase):
             }
         )
 
+    def _customer_factory(self, account_id="67890", end_date="9999-12-31") -> Customer:
+        return Customer(
+            id="12345",
+            account_id=account_id,
+            account_rate_code="R1",
+            service_type="Water",
+            account_status="Active",
+            service_address="100",
+            customer_number="98765",
+            customer_cell_phone="555-123-4567",
+            customer_email="customer@example.com",
+            customer_home_phone="555-987-6543",
+            customer_name="John Doe",
+            billing_format_code="E-BILL",
+            start_date="2020-01-01",
+            end_date=end_date,
+            is_current="TRUE",
+            batch_id="1538",
+        )
+
     def _ami_read_factory(self, flowtime="2023-01-01 00:00:00.000 -0700") -> Ami:
         return Ami(
             **{
@@ -119,19 +147,54 @@ class TestMetersenseAdapter(BaseTestCase):
             }
         )
 
+    def _register_read_factory(
+        self, flowtime="2023-01-01 00:00:00.000 -0700"
+    ) -> RegisterRead:
+        return RegisterRead(
+            **{
+                "id": "1",
+                "encid": "1",
+                "datetime": flowtime,
+                "code": "R1",
+                "reg_read": "1000",
+                "service_address": "100",
+                "service_point": "1",
+                "batch_id": "B1",
+                "meter_serial_id": "M1",
+                "ert_id": "ERT1",
+            }
+        )
+
     def test_transform(self):
         meter = self._meter_factory()
         sp = self._service_point_factory()
-        read_1 = self._ami_read_factory(flowtime="2023-01-01 00:00:00.000 -0700")
-        read_2 = self._ami_read_factory(flowtime="2023-01-01 00:01:00.000 -0700")
-        extract_outputs = self._mock_extract_output([meter], [sp], [read_1, read_2])
+        customer = self._customer_factory()
+        interval_read_1 = self._ami_read_factory(
+            flowtime="2023-01-01 00:00:00.000 -0700"
+        )
+        interval_read_2 = self._ami_read_factory(
+            flowtime="2023-01-01 00:01:00.000 -0700"
+        )
+        register_read_1 = self._register_read_factory(
+            flowtime="2023-01-01 00:00:00.000 -0700"
+        )
+        register_read_3 = self._register_read_factory(
+            flowtime="2023-02-01 00:00:00.000 -0700"
+        )
+        extract_outputs = self._mock_extract_output(
+            [meter],
+            [sp],
+            [customer],
+            [interval_read_1, interval_read_2],
+            [register_read_1, register_read_3],
+        )
         meters, reads = self.adapter._transform("run1", extract_outputs)
         self.assertEqual(len(meters), 1)
         self.assertEqual(
             GeneralMeter(
                 org_id="this-org",
                 device_id="M1",
-                account_id=None,
+                account_id="67890",
                 location_id="100",
                 meter_id="M1",
                 endpoint_id="ERT1",
@@ -149,12 +212,13 @@ class TestMetersenseAdapter(BaseTestCase):
             meters[0],
         )
 
-        self.assertEqual(len(reads), 2)
+        self.assertEqual(len(reads), 3)
+        # First record has both register and interval reads
         self.assertEqual(
             GeneralMeterRead(
                 org_id="this-org",
                 device_id="M1",
-                account_id=None,
+                account_id="67890",
                 location_id="100",
                 flowtime=datetime.datetime(
                     2023,
@@ -166,19 +230,25 @@ class TestMetersenseAdapter(BaseTestCase):
                         datetime.timedelta(days=-1, seconds=61200)
                     ),
                 ),
-                register_value=None,
-                register_unit=None,
+                register_value=1000.0,
+                register_unit="CF",
                 interval_value=10.0,
                 interval_unit="CF",
             ),
             reads[0],
         )
+        # Second record has only interval reads
+        self.assertIsNotNone(reads[1].interval_value)
+        self.assertIsNone(reads[1].register_value)
+        # Third record has only interval reads
+        self.assertIsNone(reads[2].interval_value)
+        self.assertIsNotNone(reads[2].register_value)
 
     def test_meter_with_no_reads_included(self):
         meter = self._meter_factory()
         sp = self._service_point_factory()
 
-        extract_outputs = self._mock_extract_output([meter], [sp], [])
+        extract_outputs = self._mock_extract_output([meter], [sp], [], [], [])
         meters, reads = self.adapter._transform("run1", extract_outputs)
 
         self.assertEqual(len(meters), 1)
@@ -186,8 +256,12 @@ class TestMetersenseAdapter(BaseTestCase):
 
     def test_read_with_no_meter_excluded(self):
         sp = self._service_point_factory()
+        customer = self._customer_factory()
         read = self._ami_read_factory()
-        extract_outputs = self._mock_extract_output([], [sp], [read])
+        reg_read = self._register_read_factory()
+        extract_outputs = self._mock_extract_output(
+            [], [sp], [customer], [read], [reg_read]
+        )
         meters, reads = self.adapter._transform("run1", extract_outputs)
         self.assertEqual(len(meters), 0)
         self.assertEqual(len(reads), 0)
@@ -205,7 +279,7 @@ class TestMetersenseAdapter(BaseTestCase):
             }
         )
 
-        extract_outputs = self._mock_extract_output([meter], [sp1, sp2], [])
+        extract_outputs = self._mock_extract_output([meter], [sp1, sp2], [], [], [])
         meters, _ = self.adapter._transform("run1", extract_outputs)
         self.assertEqual(len(meters), 1)
         self.assertEqual(meters[0].location_address, sp1.asset_address)
@@ -214,11 +288,26 @@ class TestMetersenseAdapter(BaseTestCase):
     def test_no_service_point_found(self):
         meter = self._meter_factory()
 
-        extract_outputs = self._mock_extract_output([meter], [], [])
+        extract_outputs = self._mock_extract_output([meter], [], [], [], [])
         meters, _ = self.adapter._transform("run1", extract_outputs)
         self.assertEqual(len(meters), 1)
         self.assertIsNone(meters[0].location_address)
         self.assertIsNone(meters[0].location_city)
+
+    def test_transform_picks_most_recent_customer(self):
+        meter = self._meter_factory()
+        sp = self._service_point_factory()
+        customer_1 = self._customer_factory(account_id="101", end_date="2021-11-15")
+        customer_2 = self._customer_factory(account_id="202", end_date="9999-12-31")
+        extract_outputs = self._mock_extract_output(
+            [meter], [sp], [customer_1, customer_2], [], []
+        )
+        meters, _ = self.adapter._transform("run1", extract_outputs)
+        self.assertEqual(len(meters), 1)
+        self.assertEqual(
+            "202",
+            meters[0].account_id,
+        )
 
     def test_query_tables_with_interval_reads(self):
         start = datetime.datetime(2024, 1, 1)
@@ -316,6 +405,25 @@ class TestMetersenseRawSnowflakeLoader(BaseTestCase):
             "batch_id": "B1",
         }
 
+        customer = dict(
+            id="12345",
+            account_id="67890",
+            account_rate_code="R1",
+            service_type="Water",
+            account_status="Active",
+            service_address="100",
+            customer_number="98765",
+            customer_cell_phone="555-123-4567",
+            customer_email="customer@example.com",
+            customer_home_phone="555-987-6543",
+            customer_name="John Doe",
+            billing_format_code="E-BILL",
+            start_date="2020-01-01",
+            end_date="9999-12-31",
+            is_current="TRUE",
+            batch_id="1538",
+        )
+
         ami = {
             "id": "1",
             "encid": "1",
@@ -329,10 +437,25 @@ class TestMetersenseRawSnowflakeLoader(BaseTestCase):
             "ert_id": "ERT1",
         }
 
+        reg_read = {
+            "id": "1",
+            "encid": "1",
+            "datetime": "2021-01-01",
+            "code": "R1",
+            "reg_read": "1000",
+            "service_address": "100",
+            "service_point": "1",
+            "batch_id": "B1",
+            "meter_serial_id": "M1",
+            "ert_id": "ERT1",
+        }
+
         fake_extract_output_files = {
             "meter.json": json.dumps(meter),
             "service_point.json": json.dumps(sp),
+            "customer.json": json.dumps(customer),
             "ami.json": json.dumps(ami),
+            "register_read.json": json.dumps(reg_read),
         }
 
         mock_cursor = MagicMock()
@@ -347,6 +470,6 @@ class TestMetersenseRawSnowflakeLoader(BaseTestCase):
             mock_snowflake_conn,
         )
 
-        # Each of the 7 load methods calls cursor() three times
-        # So we expect at least 3 * 3 = 9 calls to snowflake_conn.cursor()
-        self.assertEqual(mock_snowflake_conn.cursor.call_count, 9)
+        # Each of the 5 load methods calls cursor() three times
+        # So we expect at least 5 * 3 = 15 calls to snowflake_conn.cursor()
+        self.assertEqual(mock_snowflake_conn.cursor.call_count, 15)
