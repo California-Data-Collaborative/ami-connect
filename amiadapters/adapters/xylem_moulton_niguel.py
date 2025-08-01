@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass, replace
+from datetime import date, datetime
 from decimal import Decimal
 import logging
 import json
@@ -7,7 +7,6 @@ from typing import Dict, Generator, List, Tuple
 
 import psycopg2
 from pytz.tzinfo import DstTzInfo
-import sshtunnel
 
 from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
 from amiadapters.adapters.connections import open_ssh_tunnel
@@ -77,6 +76,40 @@ class Ami:
     ert_id: str
 
 
+@dataclass
+class RegisterRead:
+    id: str
+    encid: str
+    datetime: str
+    code: str
+    reg_read: str
+    service_address: str
+    service_point: str
+    batch_id: str
+    meter_serial_id: str
+    ert_id: str
+
+
+@dataclass
+class Customer:
+    id: str
+    account_id: str
+    account_rate_code: str
+    service_type: str
+    account_status: str
+    service_address: str
+    customer_number: str
+    customer_cell_phone: str
+    customer_email: str
+    customer_home_phone: str
+    customer_name: str
+    billing_format_code: str
+    start_date: str
+    end_date: str
+    is_current: str
+    batch_id: str
+
+
 class XylemMoultonNiguelAdapter(BaseAMIAdapter):
     """
     AMI Adapter that retrieves Xylem/Sensus data from a Redshift database for the Moulton Niguel Water District.
@@ -132,30 +165,6 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"xylem-moulton-niguel-{self.org_id}"
 
-    def calculate_extract_range(
-        self, start: datetime, end: datetime, **kwargs
-    ) -> Tuple[datetime, datetime]:
-        """
-        The source database only contains data up to ~5 days ago, so the typical daily adapter run
-        that extracts the last two days of data will miss data. So we adjust the daily run's range here.
-        """
-
-        def is_daily_run(s, e):
-            return (
-                e.date() == datetime.today().date()
-                and s.date() == e.date() - timedelta(days=2)
-            )
-
-        calculated_start, calculated_end = super().calculate_extract_range(
-            start, end, **kwargs
-        )
-
-        if is_daily_run(calculated_start, calculated_end):
-            logger.info("Adjusting start date to accomodate stale source data")
-            return calculated_end - timedelta(days=5), calculated_end
-        else:
-            return calculated_start, calculated_end
-
     def _extract(
         self,
         run_id: str,
@@ -199,7 +208,9 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         tables = [
             ("meter", Meter, None, None),
             ("service_point", ServicePoint, None, None),
+            ("customer", Customer, None, None),
             ("ami", Ami, extract_range_start, extract_range_end),
+            ("register_read", RegisterRead, extract_range_start, extract_range_end),
         ]
         for table, row_type, start_date, end_date in tables:
             rows = self._extract_table(cursor, table, row_type, start_date, end_date)
@@ -252,10 +263,14 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
     def _transform(self, run_id: str, extract_outputs: ExtractOutput):
         raw_meters_by_id = self._meters_by_meter_id(extract_outputs)
         service_points_by_ids = self._service_points_by_ids(extract_outputs)
-        reads_by_meter_id = self._reads_by_meter_id(extract_outputs)
+        customers_by_service_address = self._customers_by_service_address(
+            extract_outputs
+        )
+        interval_reads_by_meter_id = self._interval_reads_by_meter_id(extract_outputs)
+        register_reads_by_meter_id = self._register_reads_by_meter_id(extract_outputs)
 
         meters_by_id = {}
-        reads_by_device_and_time = {}
+        reads = []
 
         for meter_id, raw_meters in raw_meters_by_id.items():
             # We take the first meter in the list, which is the most recently active
@@ -265,10 +280,14 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
             service_point = service_points_by_ids.get(
                 (raw_meter.service_address, raw_meter.service_point)
             )
-            raw_reads = reads_by_meter_id.get(raw_meter.meter_id)
+            raw_interval_reads = interval_reads_by_meter_id.get(raw_meter.meter_id, [])
+            raw_register_reads = register_reads_by_meter_id.get(raw_meter.meter_id, [])
 
-            # TODO maybe should be service_address?
             account_id = None
+            if customers := customers_by_service_address.get(raw_meter.service_address):
+                # Take the first, which is most recently active
+                account_id = customers[0].account_id
+
             location_id = service_point.service_address if service_point else None
 
             meter = GeneralMeter(
@@ -277,7 +296,6 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
                 account_id=account_id,
                 location_id=location_id,
                 meter_id=raw_meter.meter_id,
-                # TODO check
                 endpoint_id=raw_meter.ert_id,
                 meter_install_date=self.datetime_from_iso_str(
                     raw_meter.start_date, self.org_timezone
@@ -292,39 +310,89 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
             )
             meters_by_id[device_id] = meter
 
-            if raw_reads:
-                for raw_read in raw_reads:
-                    if "T" in raw_read.datetime:
-                        flowtime = datetime.strptime(
-                            raw_read.datetime, "%Y-%m-%dT%H:%M:%S%z"
-                        )
-                    else:
-                        flowtime = datetime.strptime(
-                            raw_read.datetime, "%Y-%m-%d %H:%M:%S.%f %z"
-                        )
-                    key = (
-                        device_id,
-                        flowtime,
-                    )
-                    interval_value, interval_unit = self.map_reading(
-                        # TODO confirm original unit
-                        float(raw_read.consumption),
-                        GeneralMeterUnitOfMeasure.CUBIC_FEET,
-                    )
-                    read = GeneralMeterRead(
-                        org_id=self.org_id,
-                        device_id=device_id,
-                        account_id=account_id,
-                        location_id=location_id,
-                        flowtime=flowtime,
-                        register_value=None,
-                        register_unit=None,
-                        interval_value=interval_value,
-                        interval_unit=interval_unit,
-                    )
-                    reads_by_device_and_time[key] = read
+            reads += self._transform_reads_for_meter(
+                device_id,
+                location_id,
+                account_id,
+                raw_register_reads,
+                raw_interval_reads,
+            )
 
-        return list(meters_by_id.values()), list(reads_by_device_and_time.values())
+        return list(meters_by_id.values()), reads
+
+    def _transform_reads_for_meter(
+        self,
+        device_id: str,
+        location_id: str,
+        account_id: str,
+        raw_register_reads: List[RegisterRead],
+        raw_interval_reads: List[Ami],
+    ) -> List[GeneralMeterRead]:
+        """
+        For a meter, join its interval and register reads together.
+        """
+        reads_by_time = {}
+
+        # Create a record for every interval read
+        for raw_interval_read in raw_interval_reads:
+            flowtime = self._parse_flowtime(raw_interval_read.datetime)
+
+            interval_value, interval_unit = self.map_reading(
+                float(raw_interval_read.consumption),
+                GeneralMeterUnitOfMeasure.CUBIC_FEET,
+            )
+
+            read = GeneralMeterRead(
+                org_id=self.org_id,
+                device_id=device_id,
+                account_id=account_id,
+                location_id=location_id,
+                flowtime=flowtime,
+                register_value=None,
+                register_unit=None,
+                interval_value=interval_value,
+                interval_unit=interval_unit,
+            )
+            reads_by_time[flowtime] = read
+
+        # For every register read, join it to the matching record. If no match,
+        # create a new record.
+        for raw_register_read in raw_register_reads:
+            flowtime = self._parse_flowtime(raw_register_read.datetime)
+            register_value, register_unit = self.map_reading(
+                float(raw_register_read.reg_read),
+                GeneralMeterUnitOfMeasure.CUBIC_FEET,
+            )
+            if flowtime in reads_by_time:
+                # Join register read onto the interval read object
+                existing_read = reads_by_time[flowtime]
+                read = replace(
+                    existing_read,
+                    register_value=register_value,
+                    register_unit=register_unit,
+                )
+            else:
+                # Create a new one
+                read = GeneralMeterRead(
+                    org_id=self.org_id,
+                    device_id=device_id,
+                    account_id=account_id,
+                    location_id=location_id,
+                    flowtime=flowtime,
+                    register_value=register_value,
+                    register_unit=register_unit,
+                    interval_value=None,
+                    interval_unit=None,
+                )
+            reads_by_time[flowtime] = read
+
+        return list(reads_by_time.values())
+
+    def _parse_flowtime(self, raw_flowtime: str) -> datetime:
+        if "T" in raw_flowtime:
+            return datetime.strptime(raw_flowtime, "%Y-%m-%dT%H:%M:%S%z")
+        else:
+            return datetime.strptime(raw_flowtime, "%Y-%m-%d %H:%M:%S.%f %z")
 
     def _meters_by_meter_id(
         self, extract_outputs: ExtractOutput
@@ -368,17 +436,59 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
             )
         return result
 
-    def _reads_by_meter_id(
+    def _customers_by_service_address(
+        self, extract_outputs: ExtractOutput
+    ) -> Dict[str, List[Customer]]:
+        """
+        Create a map of service addresses to the list of customers at that service address. There
+        can be many customers per service address - they are sorted by end_date desc.
+        """
+        raw_customers = self._read_file(extract_outputs, "customer.json")
+        result = {}
+        for c in raw_customers:
+            customer = Customer(**json.loads(c))
+            if customer.service_address not in result:
+                result[customer.service_address] = []
+            result[customer.service_address].append(customer)
+
+        # Sort each service_address's customers
+        for service_address in result.keys():
+            result[service_address] = sorted(
+                result[service_address],
+                # Sort so that most recent end_date is first. Ties are broken by start_date.
+                key=lambda c: (c.end_date, c.start_date),
+                reverse=True,
+            )
+        return result
+
+    def _interval_reads_by_meter_id(
         self, extract_outputs: ExtractOutput
     ) -> Dict[str, List[Ami]]:
         """
-        Map each meter ID to the list of reads associated with it.
+        Map each meter ID to the list of interval reads associated with it.
         """
         raw_reads = self._read_file(extract_outputs, "ami.json")
 
         result = {}
         for r in raw_reads:
             read = Ami(**json.loads(r))
+            if read.meter_serial_id not in result:
+                result[read.meter_serial_id] = []
+            result[read.meter_serial_id].append(read)
+
+        return result
+
+    def _register_reads_by_meter_id(
+        self, extract_outputs: ExtractOutput
+    ) -> Dict[str, List[RegisterRead]]:
+        """
+        Map each meter ID to the list of register reads associated with it.
+        """
+        raw_reads = self._read_file(extract_outputs, "register_read.json")
+
+        result = {}
+        for r in raw_reads:
+            read = RegisterRead(**json.loads(r))
             if read.meter_serial_id not in result:
                 result[read.meter_serial_id] = []
             result[read.meter_serial_id].append(read)
@@ -404,7 +514,9 @@ class XylemMoultonNiguelRawSnowflakeLoader(RawSnowflakeLoader):
     def load(self, *args):
         self._load_raw_meters(*args)
         self._load_raw_service_points(*args)
+        self._load_raw_customers(*args)
         self._load_raw_ami(*args)
+        self._load_raw_register_reads(*args)
 
     def _load_raw_meters(
         self,
@@ -446,6 +558,26 @@ class XylemMoultonNiguelRawSnowflakeLoader(RawSnowflakeLoader):
             unique_by=["service_address", "service_point"],
         )
 
+    def _load_raw_customers(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        extract_outputs: ExtractOutput,
+        snowflake_conn,
+    ) -> None:
+        self._load_raw_data(
+            run_id,
+            org_id,
+            org_timezone,
+            extract_outputs,
+            snowflake_conn,
+            extract_output_filename="customer.json",
+            raw_dataclass=Customer,
+            table="XYLEM_MOULTON_NIGUEL_CUSTOMER_BASE",
+            unique_by=["id"],
+        )
+
     def _load_raw_ami(
         self,
         run_id: str,
@@ -463,6 +595,26 @@ class XylemMoultonNiguelRawSnowflakeLoader(RawSnowflakeLoader):
             extract_output_filename="ami.json",
             raw_dataclass=Ami,
             table="XYLEM_MOULTON_NIGUEL_AMI_BASE",
+            unique_by=["id"],
+        )
+
+    def _load_raw_register_reads(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        extract_outputs: ExtractOutput,
+        snowflake_conn,
+    ) -> None:
+        self._load_raw_data(
+            run_id,
+            org_id,
+            org_timezone,
+            extract_outputs,
+            snowflake_conn,
+            extract_output_filename="register_read.json",
+            raw_dataclass=RegisterRead,
+            table="XYLEM_MOULTON_NIGUEL_REGISTER_READ_BASE",
             unique_by=["id"],
         )
 
