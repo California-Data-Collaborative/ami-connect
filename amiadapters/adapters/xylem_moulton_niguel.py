@@ -1,5 +1,5 @@
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 import logging
 import json
@@ -164,31 +164,6 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
 
     def name(self) -> str:
         return f"xylem-moulton-niguel-{self.org_id}"
-
-    def calculate_extract_range(
-        self, start: datetime, end: datetime, **kwargs
-    ) -> Tuple[datetime, datetime]:
-        """
-        The source database only contains data up to ~5 days ago, so the typical daily adapter run
-        that extracts the last two days of data will miss data. So we adjust the daily run's range here.
-        """
-
-        # def is_daily_run(s, e):
-        #     return (
-        #         e.date() == datetime.today().date()
-        #         and s.date() == e.date() - timedelta(days=2)
-        #     )
-
-        # calculated_start, calculated_end = super().calculate_extract_range(
-        #     start, end, **kwargs
-        # )
-
-        # if is_daily_run(calculated_start, calculated_end):
-        #     logger.info("Adjusting start date to accomodate stale source data")
-        #     return calculated_end - timedelta(days=5), calculated_end
-        # else:
-        #     return calculated_start, calculated_end
-        return super().calculate_extract_range(start, end, **kwargs)
 
     def _extract(
         self,
