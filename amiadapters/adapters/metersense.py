@@ -6,9 +6,9 @@ from typing import Dict, Generator, List, Set, Tuple
 
 import oracledb
 from pytz.tzinfo import DstTzInfo
-import sshtunnel
 
 from amiadapters.adapters.base import BaseAMIAdapter
+from amiadapters.adapters.connections import open_ssh_tunnel
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader
@@ -253,19 +253,18 @@ class MetersenseAdapter(BaseAMIAdapter):
         extract_range_start: datetime,
         extract_range_end: datetime,
     ):
-        with sshtunnel.open_tunnel(
-            (self.ssh_tunnel_server_host),
-            ssh_username=self.ssh_tunnel_username,
-            ssh_pkey=self.ssh_tunnel_key_path,
-            remote_bind_address=(self.database_host, self.database_port),
-            # Locally, bind to localhost and arbitrary port. Use same host and port later when connecting to Oracle.
-            local_bind_address=("0.0.0.0", 10209),
-        ) as _:
+        with open_ssh_tunnel(
+            ssh_tunnel_server_host=self.ssh_tunnel_server_host,
+            ssh_tunnel_username=self.ssh_tunnel_username,
+            ssh_tunnel_key_path=self.ssh_tunnel_key_path,
+            remote_host=self.database_host,
+            remote_port=self.database_port,
+        ) as ctx:
             logging.info("Created SSH tunnel")
             connection = oracledb.connect(
                 user=self.database_user,
                 password=self.database_password,
-                dsn=f"0.0.0.0:10209/{self.database_db_name}",
+                dsn=f"0.0.0.0:{ctx.local_bind_port}/{self.database_db_name}",
             )
 
             logger.info("Successfully connected to Oracle Database")

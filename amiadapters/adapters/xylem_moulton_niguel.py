@@ -10,6 +10,7 @@ from pytz.tzinfo import DstTzInfo
 import sshtunnel
 
 from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
+from amiadapters.adapters.connections import open_ssh_tunnel
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader
@@ -162,20 +163,19 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         extract_range_end: datetime,
     ):
 
-        with sshtunnel.open_tunnel(
-            (self.ssh_tunnel_server_host),
-            ssh_username=self.ssh_tunnel_username,
-            ssh_pkey=self.ssh_tunnel_key_path,
-            remote_bind_address=(self.database_host, self.database_port),
-            # Locally, bind to localhost and arbitrary port. Use same host and port later when connecting to Redshift.
-            local_bind_address=("0.0.0.0", 10209),
-        ) as _:
+        with open_ssh_tunnel(
+            ssh_tunnel_server_host=self.ssh_tunnel_server_host,
+            ssh_tunnel_username=self.ssh_tunnel_username,
+            ssh_tunnel_key_path=self.ssh_tunnel_key_path,
+            remote_host=self.database_host,
+            remote_port=self.database_port,
+        ) as ctx:
             logging.info("Created SSH tunnel")
             connection = psycopg2.connect(
                 user=self.database_user,
                 password=self.database_password,
                 host="0.0.0.0",
-                port=10209,
+                port=ctx.local_bind_port,
                 dbname=self.database_db_name,
             )
 
