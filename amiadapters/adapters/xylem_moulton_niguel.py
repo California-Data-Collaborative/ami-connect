@@ -270,7 +270,6 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         register_reads_by_meter_id = self._register_reads_by_meter_id(extract_outputs)
 
         meters_by_id = {}
-        # reads_by_device_and_time = {}
         reads = []
 
         for meter_id, raw_meters in raw_meters_by_id.items():
