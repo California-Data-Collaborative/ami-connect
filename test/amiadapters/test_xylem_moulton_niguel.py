@@ -66,12 +66,14 @@ class TestMetersenseAdapter(BaseTestCase):
         }
         return ExtractOutput(files)
 
-    def _meter_factory(self) -> Meter:
+    def _meter_factory(
+        self, start_date="2020-01-01", end_date="9999-01-01", service_address="100"
+    ) -> Meter:
         return Meter(
             **{
                 "id": "1",
                 "account_rate_code": "R1",
-                "service_address": "100",
+                "service_address": service_address,
                 "meter_status": "Active",
                 "ert_id": "ERT1",
                 "meter_id": "M1",
@@ -83,8 +85,8 @@ class TestMetersenseAdapter(BaseTestCase):
                 "spd_usage_uom": "CF",
                 "service_point": "1",
                 "asset_number": "A1",
-                "start_date": "2020-01-01",
-                "end_date": "2021-01-01",
+                "start_date": start_date,
+                "end_date": end_date,
                 "is_current": "TRUE",
                 "batch_id": "B1",
             }
@@ -105,27 +107,33 @@ class TestMetersenseAdapter(BaseTestCase):
                 "sdp_lon": "-1",
                 "service_route": "Route",
                 "start_date": "2020-01-01",
-                "end_date": "2021-01-01",
+                "end_date": "9999-01-01",
                 "is_current": "TRUE",
                 "batch_id": "B1",
             }
         )
 
-    def _customer_factory(self, account_id="67890", end_date="9999-12-31") -> Customer:
+    def _customer_factory(
+        self,
+        account_id="67890",
+        service_address="100",
+        start_date="2020-01-01",
+        end_date="9999-12-31",
+    ) -> Customer:
         return Customer(
             id="12345",
             account_id=account_id,
             account_rate_code="R1",
             service_type="Water",
             account_status="Active",
-            service_address="100",
+            service_address=service_address,
             customer_number="98765",
             customer_cell_phone="555-123-4567",
             customer_email="customer@example.com",
             customer_home_phone="555-987-6543",
             customer_name="John Doe",
             billing_format_code="E-BILL",
-            start_date="2020-01-01",
+            start_date=start_date,
             end_date=end_date,
             is_current="TRUE",
             batch_id="1538",
@@ -135,7 +143,7 @@ class TestMetersenseAdapter(BaseTestCase):
         return Ami(
             **{
                 "id": "1",
-                "encid": "1",
+                "encid": "M1",
                 "datetime": flowtime,
                 "code": "R1",
                 "consumption": "10",
@@ -153,7 +161,7 @@ class TestMetersenseAdapter(BaseTestCase):
         return RegisterRead(
             **{
                 "id": "1",
-                "encid": "1",
+                "encid": "M1",
                 "datetime": flowtime,
                 "code": "R1",
                 "reg_read": "1000",
@@ -243,6 +251,42 @@ class TestMetersenseAdapter(BaseTestCase):
         # Third record has only interval reads
         self.assertIsNone(reads[2].interval_value)
         self.assertIsNotNone(reads[2].register_value)
+
+    def test_transform_matches_reads_to_metadata_based_on_active_time(self):
+        old_meter = self._meter_factory(start_date="1999-01-01", end_date="2020-01-01")
+        current_meter = self._meter_factory(
+            start_date="2020-01-01",
+            end_date="2024-01-01",
+            service_address="current-address",
+        )
+
+        old_customer = self._customer_factory(
+            start_date="1999-01-01", end_date="2020-01-01"
+        )
+        current_customer = self._customer_factory(
+            account_id="current-account",
+            start_date="2020-01-01",
+            end_date="2024-01-01",
+            service_address="current-address",
+        )
+        interval_read = self._ami_read_factory(flowtime="2023-01-01 00:00:00.000 -0700")
+        register_read = self._register_read_factory(
+            flowtime="2023-02-01 00:00:00.000 -0700"
+        )
+        extract_outputs = self._mock_extract_output(
+            [old_meter, current_meter],
+            [],
+            [old_customer, current_customer],
+            [interval_read],
+            [register_read],
+        )
+        meters, reads = self.adapter._transform("run1", extract_outputs)
+        self.assertEqual(len(meters), 1)
+        self.assertEqual(len(reads), 2)
+        self.assertEqual("current-address", reads[0].location_id)
+        self.assertEqual("current-address", reads[1].location_id)
+        self.assertEqual("current-account", reads[0].account_id)
+        self.assertEqual("current-account", reads[1].account_id)
 
     def test_meter_with_no_reads_included(self):
         meter = self._meter_factory()
