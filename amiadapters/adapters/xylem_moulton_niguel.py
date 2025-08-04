@@ -367,7 +367,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         for raw_register_read in register_reads:
             if raw_register_read.encid not in meter_ids_to_include:
                 continue
-            device_id = raw_interval_read.encid
+            device_id = raw_register_read.encid
             flowtime = self._parse_flowtime(raw_register_read.datetime)
             register_value, register_unit = self.map_reading(
                 float(raw_register_read.reg_read),
