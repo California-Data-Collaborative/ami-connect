@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+import json
+from typing import Generator, List, Set
 
 import requests
 
@@ -12,7 +14,23 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class SubecaReading:
+    """
+    Represents both an interval read (usage) and register read (latest reading) for a device.
+    """
+
+    deviceId: str
+    usageTime: str
+    unit: str
+    value: str
+
+
+@dataclass
 class SubecaAccount:
+    """
+    We combine account and device metadata with the account's latest reading here. It's
+    all info we get from the /accounts/{accountId} endpoint.
+    """
 
     accountId: str
     accountStatus: str
@@ -21,12 +39,29 @@ class SubecaAccount:
     registerSerial: str
     meterSize: str
     createdAt: str
+    deviceId: str
+    activeProtocol: str
+    installationDate: str
+    latestCommunicationDate: str
+    latestReading: SubecaReading
+
+    @classmethod
+    def from_json(cls, d: str):
+        """
+        Parses SubecaAccount from JSON, including nested reading.
+        Dataclass doesn't handle nested JSON well, so we roll our own.
+        """
+        account = SubecaAccount(**json.loads(d))
+        account.latestReading = SubecaReading(**account.latestReading)
+        return account
 
 
 class SubecaAdapter(BaseAMIAdapter):
     """
     AMI Adapter that uses API to retrieve Subeca data.
     """
+
+    READ_UNIT = "cf"
 
     def __init__(
         self,
@@ -53,27 +88,62 @@ class SubecaAdapter(BaseAMIAdapter):
         run_id: str,
         extract_range_start: datetime,
         extract_range_end: datetime,
-    ):
+    ) -> ExtractOutput:
         logging.info(
             f"Retrieving Subeca data between {extract_range_start} and {extract_range_end}"
         )
+        account_ids = self._extract_all_account_ids()
+
+        accounts = []
+        usages = []
+        for i, account_id in enumerate(account_ids):
+            logger.info(
+                f"Requesting usage for account {account_id} ({i+1} / {len(account_ids)})"
+            )
+            usages += self._extract_usages_for_account(
+                account_id, extract_range_start, extract_range_end
+            )
+
+            logger.info(
+                f"Requesting account and device metadata for account {account_id} ({i+1} / {len(account_ids)})"
+            )
+            accounts.append(self._extract_metadata_for_account(account_id))
+
+        logger.info(f"Extracted {len(accounts)} accounts")
+        logger.info(f"Extracted {len(usages)} usage records across all accounts")
+
+        return ExtractOutput(
+            {
+                "accounts.json": "\n".join(
+                    json.dumps(i, cls=DataclassJSONEncoder) for i in accounts
+                ),
+                "usages.json": "\n".join(
+                    json.dumps(i, cls=DataclassJSONEncoder) for i in usages
+                ),
+            }
+        )
+
+    def _extract_all_account_ids(self) -> Set[str]:
+        """
+        Use the /v1/accounts endpoint to get the set of all account IDs.
+        """
         headers = {
             "accept": "application/json",
             "x-subeca-api-key": self.api_key,
         }
-
-        # Retrieve accounts
         params = {
             "pageSize": 100,
         }
         finished = False
         next_token = None
-        accounts = []
+        account_ids = set()
         num_requests = 1
         while not finished and num_requests < 10_000:
             if next_token is not None:
                 params["nextToken"] = next_token
+
             logger.info(f"Requesting Subeca accounts. Request {num_requests}")
+
             result = requests.get(
                 f"{self.api_url}/v1/accounts", params=params, headers=headers
             )
@@ -81,58 +151,153 @@ class SubecaAdapter(BaseAMIAdapter):
                 raise ValueError(
                     f"Invalid response from accounts request: {result} {result.text}"
                 )
+
             response_json = result.json()
             data = response_json["data"]
-            next_token = response_json.get("nextToken")
+
             for d in data:
-                accounts.append(
-                    SubecaAccount(
-                        d["accountId"],
-                        d["accountStatus"],
-                        d["meterSerial"],
-                        d["billingRoute"],
-                        d["registerSerial"],
-                        d.get("meterInfo", {}).get("meterSize"),
-                        d["createdAt"],
-                    )
-                )
+                account_ids.add(d["accountId"])
+
             num_requests += 1
+
+            next_token = response_json.get("nextToken")
             if next_token is None:
                 finished = True
-        logger.info(f"Retrieved {len(accounts)} accounts")
 
-        headers = {
-            "accept": "application/json",
-            "content-type": "application/json",
-            "x-subeca-api-key": self.api_key,
+        logger.info(f"Retrieved {len(account_ids)} account IDs")
+        return account_ids
+
+    def _extract_usages_for_account(
+        self,
+        account_id: str,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+    ) -> List[SubecaReading]:
+        """
+        Use the /v1/accounts/{accountId}/usages endpoint to get the usage for this account
+        """
+        usages = []
+        body = {
+            "readUnit": self.READ_UNIT,
+            "granularity": "hourly",
+            "referencePeriod": {
+                "start": extract_range_start.strftime("%Y-%m-%d"),
+                "end": extract_range_end.strftime("%Y-%m-%d"),
+                "utcOffset": "+00:00",
+            },
         }
-        for account in accounts:
-            logger.info(f"Requesting Subeca readings for account {account.accountId}")
-            body = {
-                "pageSize": 50,
-                "readUnit": "ccf",
-                "granularity": "hourly",
-                # must not be longer than one week
-                "referencePeriod": {
-                    "start": extract_range_start.strftime("%Y-%m-%d"),
-                    "end": extract_range_end.strftime("%Y-%m-%d"),
-                    "timezone": self.org_timezone,
-                },
-            }
-            result = requests.post(
-                f"{self.api_url}/v1/accounts/{account.accountId}/usages",
-                data=body,
-                headers=headers,
+        result = requests.post(
+            f"{self.api_url}/v1/accounts/{account_id}/usages",
+            json=body,
+            headers={
+                "accept": "application/json",
+                "content-type": "application/json",
+                "x-subeca-api-key": self.api_key,
+            },
+        )
+
+        if not result.ok:
+            raise ValueError(
+                f"Invalid response from usages endpoint for account {account_id}: {result.status_code} {result.text}"
             )
 
-            if not result.ok:
-                raise ValueError(
-                    f"Invalid response from usages request for account {account.accountId}: {result} {result.text}"
+        for usage_time, usage in (
+            result.json().get("data", {}).get("hourly", {}).items()
+        ):
+            # Ignore usage with deviceId == ""
+            if device_id := usage.get("deviceId"):
+                usages.append(
+                    SubecaReading(
+                        deviceId=device_id,
+                        usageTime=usage_time,
+                        unit=usage.get("unit"),
+                        value=usage.get("value"),
+                    )
                 )
 
-        raise Exception("hi")
-        return ExtractOutput({"meters_and_reads.json": output})
+        return usages
+
+    def _extract_metadata_for_account(self, account_id: str) -> SubecaAccount:
+        """
+        Use /v1/accounts/{accountId} endpoint to get metadata for this account.
+
+        Example response:
+            {
+                "accountId": "3.29.4.W",
+                "accountStatus": "active",
+                "meterSerial": "",
+                "billingRoute": "",
+                "registerSerial": "5C2D085100009237",
+                "meterInfo": {
+                    "meterSize": "5/8"
+                },
+                "device": {
+                    "activeProtocol": "LoRaWAN",
+                    "installationDate": "2025-06-05T19:33:54+00:00",
+                    "latestCommunicationDate": "2025-08-05T20:19:46+00:00",
+                    "latestReading": {
+                        "value": "16685.9",
+                        "unit": "gal",
+                        "date": "2025-08-05T20:19:46+00:00"
+                        },
+                    "deviceId": "5C2D085100009237"
+                },
+                "createdAt": "2025-05-30T02:37:52+00:00"
+            }
+        """
+        result = requests.get(
+            f"{self.api_url}/v1/accounts/{account_id}",
+            params={
+                "readUnit": self.READ_UNIT,
+            },
+            headers={
+                "accept": "application/json",
+                "content-type": "application/json",
+                "x-subeca-api-key": self.api_key,
+            },
+        )
+
+        if not result.ok:
+            raise ValueError(
+                f"Invalid response from account metadata endpoint for account {account_id}: {result.status_code} {result.text}"
+            )
+
+        raw_account = result.json()
+        raw_device = raw_account.get("device") or {}
+        latest_reading = SubecaReading(
+            deviceId=raw_device.get("deviceId"),
+            usageTime=raw_device.get("latestReading", {}).get("date"),
+            value=raw_device.get("latestReading", {}).get("value"),
+            unit=raw_device.get("latestReading", {}).get("unit"),
+        )
+        return SubecaAccount(
+            accountId=raw_account["accountId"],
+            accountStatus=raw_account.get("accountStatus"),
+            meterSerial=raw_account.get("meterSerial"),
+            billingRoute=raw_account.get("billingRoute"),
+            registerSerial=raw_account.get("registerSerial"),
+            meterSize=raw_account.get("meterInfo", {}).get("meterSize"),
+            createdAt=raw_account.get("createdAt"),
+            deviceId=raw_device.get("deviceId"),
+            activeProtocol=raw_device.get("activeProtocol"),
+            installationDate=raw_device.get("installationDate"),
+            latestCommunicationDate=raw_device.get("latestCommunicationDate"),
+            latestReading=latest_reading,
+        )
 
     def _transform(self, run_id: str, extract_outputs: ExtractOutput):
         text = extract_outputs.from_file("meters_and_reads.json")
         return [], []
+
+    def _read_file(self, extract_outputs: ExtractOutput, file: str) -> Generator:
+        """
+        Read a file's contents from extract stage output, create generator
+        for each line of text
+        """
+        file_text = extract_outputs.from_file(file)
+        if file_text is None:
+            raise Exception(f"No output found for file {file}")
+        lines = file_text.strip().split("\n")
+        if lines == [""]:
+            lines = []
+        yield from lines
