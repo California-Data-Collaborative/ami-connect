@@ -1,18 +1,17 @@
 import datetime
 import json
 import pytz
+from pytz import timezone
 from unittest.mock import MagicMock, patch
 
 from amiadapters.config import ConfiguredLocalTaskOutputController
-from amiadapters.models import GeneralMeterRead
-from amiadapters.models import GeneralMeter
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.adapters.subeca import (
     SubecaAccount,
     SubecaAdapter,
+    SubecaRawSnowflakeLoader,
     SubecaReading,
 )
-
 from test.base_test_case import BaseTestCase
 
 
@@ -385,3 +384,65 @@ class TestSubecaAdapter(BaseTestCase):
         meters, _ = self.adapter._transform("run-1", extract_output)
 
         self.assertEqual(0, len(meters))
+
+
+class TestSubecaRawSnowflakeLoader(BaseTestCase):
+    def setUp(self):
+        self.loader = SubecaRawSnowflakeLoader()
+        self.run_id = "run-123"
+        self.org_id = "test-org"
+        self.org_timezone = timezone("UTC")
+
+        # Create mock ExtractOutput
+        account = SubecaAccount(
+            accountId="123",
+            accountStatus="active",
+            meterSerial="meter-001",
+            billingRoute="route-1",
+            registerSerial="reg-001",
+            meterSize="5/8",
+            createdAt="2025-05-30T02:37:52+00:00",
+            deviceId="device-001",
+            activeProtocol="LoRaWAN",
+            installationDate="2025-06-05T19:33:54+00:00",
+            latestCommunicationDate="2025-08-05T20:19:46+00:00",
+            latestReading=SubecaReading(
+                deviceId="device-001",
+                usageTime="2025-08-05T20:19:46+00:00",
+                unit="gal",
+                value="16685.9",
+            ),
+        )
+
+        usage = SubecaReading(
+            deviceId="device-001",
+            usageTime="2025-08-01T10:00:00+00:00",
+            unit="cf",
+            value="12.3",
+        )
+
+        self.extract_outputs = ExtractOutput(
+            {
+                "accounts.json": json.dumps(account, default=lambda o: o.__dict__),
+                "usages.json": json.dumps(usage, default=lambda o: o.__dict__),
+            }
+        )
+
+        self.snowflake_conn = MagicMock()
+        self.snowflake_conn.cursor.return_value = MagicMock()
+
+    def test_load_with_mocked_snowflake_conn(self):
+        self.loader.load(
+            self.run_id,
+            self.org_id,
+            self.org_timezone,
+            self.extract_outputs,
+            self.snowflake_conn,
+        )
+
+        # Ensure that snowflake cursor executed SQL statements
+        self.assertTrue(self.snowflake_conn.cursor.return_value.execute.called)
+        self.assertTrue(self.snowflake_conn.cursor.return_value.executemany.called)
+        # Each of the 3 load methods calls cursor() three times
+        # So we expect at least 3 * 3 = 9 calls to snowflake_conn.cursor()
+        self.assertEqual(self.snowflake_conn.cursor.call_count, 9)
