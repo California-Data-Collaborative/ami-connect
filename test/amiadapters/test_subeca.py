@@ -252,3 +252,136 @@ class TestSubecaAdapter(BaseTestCase):
         self.assertIn(
             "Invalid response from account metadata endpoint", str(ctx.exception)
         )
+
+    def make_extract_output(self, accounts, usages):
+        return ExtractOutput(
+            {
+                "accounts.json": "\n".join(
+                    json.dumps(a, default=lambda o: o.__dict__) for a in accounts
+                ),
+                "usages.json": "\n".join(
+                    json.dumps(u, default=lambda o: o.__dict__) for u in usages
+                ),
+            }
+        )
+
+    def test_transform_when_register_read_same_time_as_interval_read(self):
+        usage_time = "2025-08-01T10:00:00+00:00"
+        account = SubecaAccount(
+            accountId="A1",
+            accountStatus="active",
+            meterSerial="M1",
+            billingRoute="",
+            registerSerial="R1",
+            meterSize="5/8",
+            createdAt="2025-08-01T10:00:00+00:00",
+            deviceId="D1",
+            activeProtocol="LoRaWAN",
+            installationDate="2025-08-01T10:00:00+00:00",
+            latestCommunicationDate="2025-08-02T10:00:00+00:00",
+            latestReading=SubecaReading(
+                deviceId="D1", usageTime=usage_time, unit="cf", value="100"
+            ),
+        )
+        usage = SubecaReading(deviceId="D1", usageTime=usage_time, unit="cf", value="1")
+        extract_output = self.make_extract_output([account], [usage])
+
+        meters, reads = self.adapter._transform("run-1", extract_output)
+
+        self.assertEqual(len(meters), 1)
+        self.assertEqual(meters[0].device_id, "D1")
+        self.assertEqual(len(reads), 1)  # Register read added
+        self.assertEqual(reads[0].interval_value, 1)
+        self.assertEqual(reads[0].register_value, 100)
+
+    def test_transform_meter_with_no_reads_is_still_included(self):
+        """Meters should be included even if they have no reads."""
+        account = SubecaAccount(
+            accountId="A1",
+            accountStatus="active",
+            meterSerial="M1",
+            billingRoute="",
+            registerSerial="R1",
+            meterSize="5/8",
+            createdAt="2025-08-01T10:00:00+00:00",
+            deviceId="D1",
+            activeProtocol="LoRaWAN",
+            installationDate="2025-08-01T10:00:00+00:00",
+            latestCommunicationDate="2025-08-02T10:00:00+00:00",
+            latestReading=SubecaReading(
+                deviceId="D1",
+                usageTime="2025-08-01T10:00:00+00:00",
+                unit="cf",
+                value="100",
+            ),
+        )
+        extract_output = self.make_extract_output([account], [])  # no usages
+
+        meters, reads = self.adapter._transform("run-1", extract_output)
+
+        self.assertEqual(len(meters), 1)
+        self.assertEqual(meters[0].device_id, "D1")
+        self.assertEqual(len(reads), 1)  # Register read added
+        self.assertEqual(reads[0].register_value, 100)
+
+    def test_transform_read_with_no_meter_is_excluded(self):
+        """Reads with no matching meter (device ID) should be excluded."""
+        account = SubecaAccount(
+            accountId="A1",
+            accountStatus="active",
+            meterSerial="M1",
+            billingRoute="",
+            registerSerial="R1",
+            meterSize="5/8",
+            createdAt="2025-08-01T10:00:00+00:00",
+            deviceId="D1",
+            activeProtocol="LoRaWAN",
+            installationDate="2025-08-01T10:00:00+00:00",
+            latestCommunicationDate="2025-08-02T10:00:00+00:00",
+            latestReading=SubecaReading(
+                deviceId="D1",
+                usageTime="2025-08-01T10:00:00+00:00",
+                unit="cf",
+                value="100",
+            ),
+        )
+        bad_usage = SubecaReading(
+            deviceId="OTHER_DEVICE",
+            usageTime="2025-08-01T10:00:00+00:00",
+            unit="cf",
+            value="10",
+        )
+
+        extract_output = self.make_extract_output([account], [bad_usage])
+
+        meters, reads = self.adapter._transform("run-1", extract_output)
+
+        self.assertEqual(len(meters), 1)
+        self.assertTrue(all(r.device_id != "OTHER_DEVICE" for r in reads))
+
+    def test_transform_transform_no_device_id(self):
+        """If no service point is found, meter still gets created with None for location_id."""
+        account = SubecaAccount(
+            accountId="A1",
+            accountStatus="active",
+            meterSerial="M1",
+            billingRoute="",
+            registerSerial="R1",
+            meterSize="5/8",
+            createdAt="2025-08-01T10:00:00+00:00",
+            deviceId=None,
+            activeProtocol="LoRaWAN",
+            installationDate="2025-08-01T10:00:00+00:00",
+            latestCommunicationDate="2025-08-02T10:00:00+00:00",
+            latestReading=SubecaReading(
+                deviceId="D1",
+                usageTime="2025-08-01T10:00:00+00:00",
+                unit="cf",
+                value="100",
+            ),
+        )
+        extract_output = self.make_extract_output([account], [])
+
+        meters, _ = self.adapter._transform("run-1", extract_output)
+
+        self.assertEqual(0, len(meters))

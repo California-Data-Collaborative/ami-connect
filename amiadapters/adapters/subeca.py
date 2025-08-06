@@ -1,8 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 import logging
 import json
-from typing import Generator, List, Set
+from typing import Dict, Generator, List, Set, Tuple
 
 import requests
 
@@ -285,9 +285,120 @@ class SubecaAdapter(BaseAMIAdapter):
             latestReading=latest_reading,
         )
 
-    def _transform(self, run_id: str, extract_outputs: ExtractOutput):
-        text = extract_outputs.from_file("meters_and_reads.json")
-        return [], []
+    def _transform(
+        self, run_id: str, extract_outputs: ExtractOutput
+    ) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
+        raw_accounts = [
+            SubecaAccount.from_json(a)
+            for a in self._read_file(extract_outputs, "accounts.json")
+        ]
+        raw_usages_by_device_id = self._usages_by_device_id(extract_outputs)
+
+        meters_by_id = {}
+        reads_by_device_and_time = {}
+
+        for account in raw_accounts:
+            device_id = account.deviceId
+            if not device_id:
+                logger.warning(f"Skipping account {account} with null device ID")
+                continue
+            account_id = account.accountId
+            # TODO check
+            location_id = None
+            meter_id = account.meterSerial
+            # TODO check
+            endpoint_id = account.registerSerial
+
+            meter = GeneralMeter(
+                org_id=self.org_id,
+                device_id=device_id,
+                account_id=account_id,
+                location_id=location_id,
+                meter_id=meter_id,
+                endpoint_id=endpoint_id,
+                meter_install_date=(
+                    datetime.fromisoformat(account.installationDate)
+                    if account.installationDate
+                    else None
+                ),
+                meter_size=self.map_meter_size(account.meterSize),
+                meter_manufacturer=None,
+                multiplier=None,
+                location_address=None,
+                location_city=None,
+                location_state=None,
+                location_zip=None,
+            )
+            meters_by_id[device_id] = meter
+
+            # Interval reads
+            usages = raw_usages_by_device_id.get(account.deviceId, [])
+            for usage in usages:
+                flowtime = datetime.fromisoformat(usage.usageTime)
+                interval_value, interval_unit = self.map_reading(
+                    float(usage.value),
+                    usage.unit,
+                )
+                read = GeneralMeterRead(
+                    org_id=self.org_id,
+                    device_id=device_id,
+                    account_id=account_id,
+                    location_id=location_id,
+                    flowtime=flowtime,
+                    register_value=None,
+                    register_unit=None,
+                    interval_value=interval_value,
+                    interval_unit=interval_unit,
+                )
+                reads_by_device_and_time[(device_id, flowtime)] = read
+
+            # Tack on register read from latest reading
+            if account.latestReading and account.latestReading.value:
+                register_value, register_unit = self.map_reading(
+                    float(account.latestReading.value),
+                    account.latestReading.unit,
+                )
+                register_read_flowtime = datetime.fromisoformat(
+                    account.latestReading.usageTime
+                )
+                if (device_id, register_read_flowtime) in reads_by_device_and_time:
+                    # Join register read onto the interval read object
+                    existing_read = reads_by_device_and_time[
+                        (device_id, register_read_flowtime)
+                    ]
+                    read = replace(
+                        existing_read,
+                        register_value=register_value,
+                        register_unit=register_unit,
+                    )
+                else:
+                    # Create a new one
+                    read = GeneralMeterRead(
+                        org_id=self.org_id,
+                        device_id=device_id,
+                        account_id=account_id,
+                        location_id=location_id,
+                        flowtime=register_read_flowtime,
+                        register_value=register_value,
+                        register_unit=register_unit,
+                        interval_value=None,
+                        interval_unit=None,
+                    )
+                reads_by_device_and_time[(device_id, register_read_flowtime)] = read
+
+        return list(meters_by_id.values()), list(reads_by_device_and_time.values())
+
+    def _usages_by_device_id(
+        self, extract_outputs: ExtractOutput
+    ) -> Dict[str, List[SubecaReading]]:
+        result = {}
+        raw_usages = self._read_file(extract_outputs, "usages.json")
+        for raw_usage in raw_usages:
+            usage = SubecaReading(**json.loads(raw_usage))
+            if usage.deviceId not in result:
+                result[usage.deviceId] = []
+            result[usage.deviceId].append(usage)
+        return result
 
     def _read_file(self, extract_outputs: ExtractOutput, file: str) -> Generator:
         """

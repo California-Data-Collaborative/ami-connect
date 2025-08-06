@@ -171,6 +171,7 @@ class BaseAMIAdapter(ABC):
             "0.625": "0.625",
             "5/8in": "0.625",
             '5/8"': "0.625",
+            "5/8": "0.625",
             "0.75": "0.75",
             "3/4": "0.75",
             "3/4in": "0.75",
@@ -208,6 +209,7 @@ class BaseAMIAdapter(ABC):
             "12.0": "12",
             '12"': "12",
             "5/8x3/4": "0.625x0.75",
+            "5/8 x 3/4": "0.625x0.75",
             "5/8x3/4in": "0.625x0.75",
             "W-TSCR3": "3",
             "W-TSC4": "4",
@@ -256,7 +258,7 @@ class BaseAMIAdapter(ABC):
             return reading, None
 
         multiplier = 1
-        match original_unit_of_measure:
+        match original_unit_of_measure.upper():
             case GeneralMeterUnitOfMeasure.CUBIC_FEET:
                 multiplier = 1
             case GeneralMeterUnitOfMeasure.HUNDRED_CUBIC_FEET:
