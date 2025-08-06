@@ -346,8 +346,8 @@ class GeneralMeterUnitOfMeasure:
 
     CUBIC_FEET = "CF"
     HUNDRED_CUBIC_FEET = "CCF"
-    GALLON = "Gallon"
-    GALLONS = "Gallons"
+    GALLON = "GALLON"
+    GALLONS = "GALLONS"
     KILO_GALLON = "KGAL"
 
 
