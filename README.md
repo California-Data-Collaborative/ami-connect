@@ -12,13 +12,13 @@ Here are the adapters in this project:
 
 | Adapter          | Implementation Status  | Compatible Sinks  | Documentation |
 |------------------|------------------------|-------------------|-------------------------------------------------|
-| Beacon360        | Complete               | Snowflake         | [Link](./docs/adapters/beacon.md)            |
+| Beacon360        | Complete               | Snowflake         | [Link](./docs/adapters/beacon.md)               |
 | Aclara           | Complete               | Snowflake         | [Link](./docs/adapters/aclara.md)               |
 | Metersense       | Complete               | Snowflake         | [Link](./docs/adapters/metersense.md)           |
 | Sentryx          | Complete               | Snowflake         | [Link](./docs/adapters/sentryx.md)              |
-| Xylem for Moulton Niguel | In Progress    | Snowflake         | [Link](./docs/adapters/xylem_moulton_niguel.md) |
-| Subeca           | In Progress            | Snowflake         | [Link](./docs/adapters/subeca.md)               |
-| Neptune          | Planned                | n/a               | n/a                                             |
+| Xylem for Moulton Niguel | Complete.      | Snowflake         | [Link](./docs/adapters/xylem_moulton_niguel.md) |
+| Subeca           | Complete               | Snowflake         | [Link](./docs/adapters/subeca.md)               |
+| Neptune 360      | Complete               | Snowflake         | [Link](./docs/adapters/neptune.md)              |
 | Harmony          | Planned                | n/a               | n/a                                             |
 
 

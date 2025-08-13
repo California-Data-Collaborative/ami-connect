@@ -107,6 +107,13 @@ class AMIAdapterConfiguration:
                         this_source_secrets.get("database_user"),
                         this_source_secrets.get("database_password"),
                     )
+                case ConfiguredAMISourceType.NEPTUNE.value.type:
+                    secrets = NeptuneSecrets(
+                        this_source_secrets.get("site_id"),
+                        this_source_secrets.get("api_key"),
+                        this_source_secrets.get("client_id"),
+                        this_source_secrets.get("client_secret"),
+                    )
                 case ConfiguredAMISourceType.SENTRYX.value.type:
                     secrets = SentryxSecrets(
                         this_source_secrets.get("sentryx_api_key"),
@@ -161,6 +168,7 @@ class AMIAdapterConfiguration:
                 configured_ssh_tunnel_to_database,
                 secrets,
                 sinks,
+                source.get("external_adapter_location"),
             )
 
             sources.append(configured_source)
@@ -263,6 +271,27 @@ class AMIAdapterConfiguration:
                             database_user=source.secrets.database_user,
                             database_password=source.secrets.database_password,
                             configured_sinks=source.storage_sinks,
+                        )
+                    )
+                case ConfiguredAMISourceType.NEPTUNE.value.type:
+                    # Neptune code is not in this project because of open source limitations
+                    # This code assumes Neptune's code is available at the external_adapter_location
+                    # which we append to the python path
+                    import sys
+
+                    sys.path.append(source.external_adapter_location)
+                    from neptune import NeptuneAdapter
+
+                    adapters.append(
+                        NeptuneAdapter(
+                            source.org_id,
+                            source.timezone,
+                            source.secrets.site_id,
+                            source.secrets.api_key,
+                            source.secrets.client_id,
+                            source.secrets.client_secret,
+                            source.task_output_controller,
+                            source.storage_sinks,
                         )
                     )
                 case ConfiguredAMISourceType.SENTRYX.value.type:
@@ -468,6 +497,14 @@ class MetersenseSecrets:
 
 
 @dataclass
+class NeptuneSecrets:
+    site_id: str
+    api_key: str
+    client_id: str
+    client_secret: str
+
+
+@dataclass
 class SentryxSecrets:
     api_key: str
 
@@ -535,6 +572,9 @@ class ConfiguredAMISourceType(Enum):
     )
     METERSENSE = SourceSchema(
         "metersense", MetersenseSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
+    )
+    NEPTUNE = SourceSchema(
+        "neptune", NeptuneSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
     )
     SENTRYX = SourceSchema(
         "sentryx", SentryxSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
@@ -613,6 +653,7 @@ class ConfiguredAMISource:
         configured_ssh_tunnel_to_database: ConfiguredSSHTunnelToDatabase,
         secrets: Union[Beacon360Secrets, SentryxSecrets],
         sinks: List[ConfiguredStorageSink],
+        external_adapter_location: str,
     ):
         self.type = self._type(type)
         self.org_id = self._org_id(org_id)
@@ -628,6 +669,7 @@ class ConfiguredAMISource:
         )
         self.secrets = self._secrets(secrets)
         self.storage_sinks = self._sinks(sinks)
+        self.external_adapter_location = external_adapter_location
 
     def _type(self, type: str) -> str:
         if ConfiguredAMISourceType.is_valid_type(type):

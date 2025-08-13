@@ -204,6 +204,7 @@ class BaseAMIAdapter(ABC):
             "8.0": "8",
             '8"': "8",
             "10": "10",
+            '10"': "10",
             "10.0": "10",
             "12": "12",
             "12.0": "12",
@@ -241,7 +242,7 @@ class BaseAMIAdapter(ABC):
             "W-UM8": "8",
         }
         result = mapping.get(size)
-        if result is None:
+        if size is not None and result is None:
             logging.info(f"Unable to map meter size: {size}")
         return result
 
