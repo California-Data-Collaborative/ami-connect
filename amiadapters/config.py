@@ -168,6 +168,7 @@ class AMIAdapterConfiguration:
                 configured_ssh_tunnel_to_database,
                 secrets,
                 sinks,
+                source.get("external_adapter_location"),
             )
 
             sources.append(configured_source)
@@ -274,11 +275,12 @@ class AMIAdapterConfiguration:
                     )
                 case ConfiguredAMISourceType.NEPTUNE.value.type:
                     # Neptune code is not in this project because of open source limitations
-                    # This code assumes Neptune's code is available at the directory appended to the python path
+                    # This code assumes Neptune's code is available at the external_adapter_location
+                    # which we append to the python path
                     import sys
 
-                    sys.path.append("../neptune-ami-connect")
-                    from neptune.neptune import NeptuneAdapter
+                    sys.path.append(source.external_adapter_location)
+                    from neptune import NeptuneAdapter
 
                     adapters.append(
                         NeptuneAdapter(
@@ -651,6 +653,7 @@ class ConfiguredAMISource:
         configured_ssh_tunnel_to_database: ConfiguredSSHTunnelToDatabase,
         secrets: Union[Beacon360Secrets, SentryxSecrets],
         sinks: List[ConfiguredStorageSink],
+        external_adapter_location: str,
     ):
         self.type = self._type(type)
         self.org_id = self._org_id(org_id)
@@ -666,6 +669,7 @@ class ConfiguredAMISource:
         )
         self.secrets = self._secrets(secrets)
         self.storage_sinks = self._sinks(sinks)
+        self.external_adapter_location = external_adapter_location
 
     def _type(self, type: str) -> str:
         if ConfiguredAMISourceType.is_valid_type(type):
