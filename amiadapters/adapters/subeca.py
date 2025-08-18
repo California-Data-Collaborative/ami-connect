@@ -337,23 +337,24 @@ class SubecaAdapter(BaseAMIAdapter):
             # Interval reads
             usages = raw_usages_by_device_id.get(account.deviceId, [])
             for usage in usages:
-                flowtime = datetime.fromisoformat(usage.usageTime)
-                interval_value, interval_unit = self.map_reading(
-                    float(usage.value),
-                    usage.unit,
-                )
-                read = GeneralMeterRead(
-                    org_id=self.org_id,
-                    device_id=device_id,
-                    account_id=account_id,
-                    location_id=location_id,
-                    flowtime=flowtime,
-                    register_value=None,
-                    register_unit=None,
-                    interval_value=interval_value,
-                    interval_unit=interval_unit,
-                )
-                reads_by_device_and_time[(device_id, flowtime)] = read
+                if usage.value:
+                    flowtime = datetime.fromisoformat(usage.usageTime)
+                    interval_value, interval_unit = self.map_reading(
+                        float(usage.value),
+                        usage.unit,
+                    )
+                    read = GeneralMeterRead(
+                        org_id=self.org_id,
+                        device_id=device_id,
+                        account_id=account_id,
+                        location_id=location_id,
+                        flowtime=flowtime,
+                        register_value=None,
+                        register_unit=None,
+                        interval_value=interval_value,
+                        interval_unit=interval_unit,
+                    )
+                    reads_by_device_and_time[(device_id, flowtime)] = read
 
             # Tack on register read from latest reading
             if account.latestReading and account.latestReading.value:
