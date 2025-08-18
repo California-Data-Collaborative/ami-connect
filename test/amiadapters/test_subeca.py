@@ -293,6 +293,34 @@ class TestSubecaAdapter(BaseTestCase):
         self.assertEqual(reads[0].interval_value, 1)
         self.assertEqual(reads[0].register_value, 100)
 
+    def test_transform_when_usage_is_empty_string(self):
+        usage_time = "2025-08-01T10:00:00+00:00"
+        account = SubecaAccount(
+            accountId="A1",
+            accountStatus="active",
+            meterSerial="M1",
+            billingRoute="",
+            registerSerial="R1",
+            meterSize="5/8",
+            createdAt="2025-08-01T10:00:00+00:00",
+            deviceId="D1",
+            activeProtocol="LoRaWAN",
+            installationDate="2025-08-01T10:00:00+00:00",
+            latestCommunicationDate="2025-08-02T10:00:00+00:00",
+            latestReading=SubecaReading(
+                deviceId="D1", usageTime=usage_time, unit="cf", value="100"
+            ),
+        )
+        usage = SubecaReading(deviceId="D1", usageTime=usage_time, unit="cf", value="")
+        extract_output = self.make_extract_output([account], [usage])
+
+        meters, reads = self.adapter._transform("run-1", extract_output)
+
+        self.assertEqual(len(meters), 1)
+        self.assertEqual(len(reads), 1)  # Register read added
+        self.assertEqual(reads[0].interval_value, None)
+        self.assertEqual(reads[0].register_value, 100)
+
     def test_transform_meter_with_no_reads_is_still_included(self):
         """Meters should be included even if they have no reads."""
         account = SubecaAccount(
