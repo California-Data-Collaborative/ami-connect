@@ -16,15 +16,18 @@ import pytz
 
 from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.models import GeneralMeter, GeneralMeterRead
-from amiadapters.storage.snowflake import SnowflakeStorageSink
+from amiadapters.storage.snowflake import (
+    SnowflakeStorageSink,
+    SnowflakeMetersUniqueByDeviceIdCheck,
+)
 
 
-class TestSnowflakeUpserts(unittest.TestCase):
+class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
         cls.config = AMIAdapterConfiguration.from_yaml("config.yaml", "secrets.yaml")
-        # Hack!
+        # Hack! Pick an adapter out of the config so we can create a connection to Snowflake.
         adapter = cls.config.adapters()[0]
         cls.snowflake_sink = adapter.storage_sinks[0]
         assert isinstance(cls.snowflake_sink, SnowflakeStorageSink)
@@ -36,6 +39,49 @@ class TestSnowflakeUpserts(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.conn.close()
+
+    def _create_meter(
+        self, org_id="org1", device_id="device1", endpoint_id="130615549"
+    ) -> GeneralMeter:
+        return GeneralMeter(
+            org_id=org_id,
+            device_id=device_id,
+            account_id="303022",
+            location_id="303022",
+            meter_id="1470158170",
+            endpoint_id=endpoint_id,
+            meter_install_date=datetime.datetime(
+                2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
+            ),
+            meter_size="0.625",
+            meter_manufacturer="BADGER",
+            multiplier=1,
+            location_address="5391 E. MYSTREET",
+            location_city="Apple",
+            location_state="CA",
+            location_zip="93727",
+        )
+
+    def _create_read(
+        self,
+        device_id: str = "dev1",
+        account_id: str = "acct1",
+        location_id: str = "loc1",
+    ) -> GeneralMeterRead:
+        return GeneralMeterRead(
+            org_id="org1",
+            device_id=device_id,
+            account_id=account_id,
+            location_id=location_id,
+            flowtime=datetime.datetime(2024, 1, 1, tzinfo=pytz.UTC),
+            register_value=100.0,
+            register_unit="GAL",
+            interval_value=10.0,
+            interval_unit="GAL",
+        )
+
+
+class TestSnowflakeUpserts(BaseSnowflakeIntegrationTestCase):
 
     def setUp(self):
         self.row_active_from = datetime.datetime.now(tz=pytz.UTC)
@@ -159,50 +205,37 @@ class TestSnowflakeUpserts(unittest.TestCase):
 
         self._assert_num_rows(self.test_readings_table, 2)
 
-    def _create_meter(
-        self, org_id="org1", device_id="device1", endpoint_id="130615549"
-    ) -> GeneralMeter:
-        return GeneralMeter(
-            org_id=org_id,
-            device_id=device_id,
-            account_id="303022",
-            location_id="303022",
-            meter_id="1470158170",
-            endpoint_id=endpoint_id,
-            meter_install_date=datetime.datetime(
-                2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
-            ),
-            meter_size="0.625",
-            meter_manufacturer="BADGER",
-            multiplier=1,
-            location_address="5391 E. MYSTREET",
-            location_city="Apple",
-            location_state="CA",
-            location_zip="93727",
-        )
-
-    def _create_read(
-        self,
-        device_id: str = "dev1",
-        account_id: str = "acct1",
-        location_id: str = "loc1",
-    ) -> GeneralMeterRead:
-        return GeneralMeterRead(
-            org_id="org1",
-            device_id=device_id,
-            account_id=account_id,
-            location_id=location_id,
-            flowtime=datetime.datetime(2024, 1, 1, tzinfo=pytz.UTC),
-            register_value=100.0,
-            register_unit="GAL",
-            interval_value=10.0,
-            interval_unit="GAL",
-        )
-
     def _assert_num_rows(self, table_name: str, expected_number_of_rows: int):
         self.cs.execute(f"SELECT COUNT(*) FROM {table_name}")
         result = self.cs.fetchone()[0]
         self.assertEqual(result, expected_number_of_rows)
+
+
+class TestSnowflakeDataQualityChecks(BaseSnowflakeIntegrationTestCase):
+
+    def setUp(self):
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_meters_table} LIKE meters;"
+        )
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_readings_table} LIKE readings;"
+        )
+
+    def test_meter_uniqueness__passes_when_meters_unique(self):
+        check = SnowflakeMetersUniqueByDeviceIdCheck(
+            connection=self.conn,
+            meter_table_name=self.test_meters_table,
+            readings_table_name=self.test_readings_table,
+        )
+        meter1 = self._create_meter(device_id="1")
+        meter2 = self._create_meter(device_id="2")
+        self.snowflake_sink._upsert_meters(
+            [meter1, meter2],
+            self.conn,
+            row_active_from=datetime.datetime.now(),
+            table_name=self.test_meters_table,
+        )
+        self.assertTrue(check.check())
 
 
 if __name__ == "__main__":

@@ -8,8 +8,8 @@ from pytz.tzinfo import DstTzInfo
 from amiadapters.models import GeneralMeterRead
 from amiadapters.models import GeneralMeter
 from amiadapters.config import ConfiguredStorageSink
-from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
-from amiadapters.storage.base import BaseAMIStorageSink
+from amiadapters.outputs.base import ExtractOutput
+from amiadapters.storage.base import BaseAMIStorageSink, BaseAMIDataQualityCheck
 
 
 class RawSnowflakeLoader(ABC):
@@ -54,6 +54,10 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         super().__init__(sink_config)
 
     def store_raw(self, run_id: str, extract_outputs: ExtractOutput):
+        """
+        Store raw data using the specified RawSnowflakeLoader.
+        """
+        # Adapter may choose not to specify a raw data loader. If so, skip it.
         if self.raw_loader is None:
             return
         conn = self.sink_config.connection()
@@ -64,6 +68,9 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
     def store_transformed(
         self, run_id: str, meters: List[GeneralMeter], reads: List[GeneralMeterRead]
     ):
+        """
+        Store transformed data into our generalized tables in Snowflake.
+        """
         conn = self.sink_config.connection()
         self._upsert_meters(meters, conn)
         self._upsert_reads(reads, conn)
@@ -291,3 +298,47 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
 
         result = rows[0][0]
         return datetime.combine(result, time(0, 0))
+
+
+class SnowflakeMetersUniqueByDeviceIdCheck(BaseAMIDataQualityCheck):
+    """
+    Assert that meters are unique by org_id and device_id when their row_active_until is null.
+    """
+
+    def __init__(
+        self,
+        connection,
+        meter_table_name: str = "meters",
+        readings_table_name: str = "readings",
+    ):
+        self.connection = connection
+        self.meter_table_name = meter_table_name
+        self.readings_table_name = readings_table_name
+
+    def name(self) -> str:
+        return "snowflake-meters-unique-by-device-id"
+
+    def check(self) -> bool:
+        """
+        Run the check.
+
+        :return: True if check passes, else False.
+        """
+        sql = f"""
+            SELECT count(distinct device_id)
+            FROM (
+                SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY org_id, device_id
+                    ORDER BY row_active_from
+                ) AS row_num
+                FROM {self.meter_table_name}
+                WHERE row_active_until is null
+            ) as deduped
+            WHERE row_num > 1
+            """
+        result = self.connection.cursor().execute(sql).fetchone()
+        if not result:
+            raise Exception(f"Invalid query response for {self.name()}")
+        row_count = result[0]
+        return row_count == 0
