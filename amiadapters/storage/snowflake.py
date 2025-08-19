@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, time
+import logging
 from typing import List
 
 import pytz
@@ -10,6 +11,8 @@ from amiadapters.models import GeneralMeter
 from amiadapters.config import ConfiguredStorageSink
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.base import BaseAMIStorageSink, BaseAMIDataQualityCheck
+
+logger = logging.getLogger(__name__)
 
 
 class RawSnowflakeLoader(ABC):
@@ -325,7 +328,7 @@ class SnowflakeMetersUniqueByDeviceIdCheck(BaseAMIDataQualityCheck):
         :return: True if check passes, else False.
         """
         sql = f"""
-            SELECT count(distinct device_id)
+            SELECT distinct(deduped.device_id)
             FROM (
                 SELECT *,
                 ROW_NUMBER() OVER (
@@ -337,8 +340,8 @@ class SnowflakeMetersUniqueByDeviceIdCheck(BaseAMIDataQualityCheck):
             ) as deduped
             WHERE row_num > 1
             """
-        result = self.connection.cursor().execute(sql).fetchone()
-        if not result:
-            raise Exception(f"Invalid query response for {self.name()}")
-        row_count = result[0]
+        logger.info("Running meter uniqueness check")
+        result = self.connection.cursor().execute(sql).fetchall()
+        row_count = len(result)
+        logger.info(f"Found {row_count} non-unique meters. First 10: {result[:10]}")
         return row_count == 0

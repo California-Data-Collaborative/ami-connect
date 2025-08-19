@@ -416,7 +416,7 @@ class ConfiguredStorageSink:
             case _:
                 ValueError(f"Unrecognized type {self.type}")
 
-    def checks(self) -> List[str]:
+    def checks(self) -> List:
         """
         Return names of configured data quality checks for this sink.
         """
