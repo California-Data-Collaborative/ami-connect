@@ -19,6 +19,7 @@ from amiadapters.models import GeneralMeter, GeneralMeterRead
 from amiadapters.storage.snowflake import (
     SnowflakeStorageSink,
     SnowflakeMetersUniqueByDeviceIdCheck,
+    SnowflakeReadingsUniqueByDeviceIdAndFlowtimeCheck,
 )
 
 
@@ -225,7 +226,6 @@ class TestSnowflakeDataQualityChecks(BaseSnowflakeIntegrationTestCase):
         check = SnowflakeMetersUniqueByDeviceIdCheck(
             connection=self.conn,
             meter_table_name=self.test_meters_table,
-            readings_table_name=self.test_readings_table,
         )
         meter1 = self._create_meter(device_id="1")
         meter2 = self._create_meter(device_id="2")
@@ -234,6 +234,20 @@ class TestSnowflakeDataQualityChecks(BaseSnowflakeIntegrationTestCase):
             self.conn,
             row_active_from=datetime.datetime.now(),
             table_name=self.test_meters_table,
+        )
+        self.assertTrue(check.check())
+
+    def test_meter_uniqueness__passes_when_meters_unique(self):
+        check = SnowflakeReadingsUniqueByDeviceIdAndFlowtimeCheck(
+            connection=self.conn,
+            readings_table_name=self.test_readings_table,
+        )
+        reading1 = self._create_read(device_id="1")
+        reading2 = self._create_read(device_id="2")
+        self.snowflake_sink._upsert_reads(
+            [reading1, reading2],
+            self.conn,
+            table_name=self.test_readings_table,
         )
         self.assertTrue(check.check())
 

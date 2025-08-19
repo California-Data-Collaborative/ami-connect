@@ -312,11 +312,9 @@ class SnowflakeMetersUniqueByDeviceIdCheck(BaseAMIDataQualityCheck):
         self,
         connection,
         meter_table_name: str = "meters",
-        readings_table_name: str = "readings",
     ):
         self.connection = connection
         self.meter_table_name = meter_table_name
-        self.readings_table_name = readings_table_name
 
     def name(self) -> str:
         return "snowflake-meters-unique-by-device-id"
@@ -344,4 +342,40 @@ class SnowflakeMetersUniqueByDeviceIdCheck(BaseAMIDataQualityCheck):
         result = self.connection.cursor().execute(sql).fetchall()
         row_count = len(result)
         logger.info(f"Found {row_count} non-unique meters. First 10: {result[:10]}")
+        return row_count == 0
+
+
+class SnowflakeReadingsUniqueByDeviceIdAndFlowtimeCheck(BaseAMIDataQualityCheck):
+    """
+    Assert that readings are unique by org_id, device_id, and flowtime.
+    """
+
+    def __init__(
+        self,
+        connection,
+        readings_table_name: str = "readings",
+    ):
+        self.connection = connection
+        self.readings_table_name = readings_table_name
+
+    def name(self) -> str:
+        return "snowflake-readings-unique-by-device-id-and-flowtime"
+
+    def check(self) -> bool:
+        sql = f"""
+            SELECT org_id, device_id, flowtime
+            FROM (
+                SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY org_id, device_id, flowtime
+                    ORDER BY interval_value, register_value
+                ) AS row_num
+                FROM readings
+            ) as deduped
+            WHERE row_num > 1
+            """
+        logger.info("Running readings uniqueness check")
+        result = self.connection.cursor().execute(sql).fetchall()
+        row_count = len(result)
+        logger.info(f"Found non-unique readings. First 10: {result[:10]}")
         return row_count == 0
