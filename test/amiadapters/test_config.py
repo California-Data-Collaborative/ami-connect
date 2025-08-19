@@ -15,6 +15,7 @@ from amiadapters.config import (
 from amiadapters.adapters.metersense import MetersenseAdapter
 from amiadapters.adapters.sentryx import SentryxAdapter
 from amiadapters.adapters.subeca import SubecaAdapter
+from amiadapters.storage.snowflake import SnowflakeStorageSink
 from test.base_test_case import BaseTestCase
 
 
@@ -204,6 +205,15 @@ class TestConfig(BaseTestCase):
         notifier = config.on_failure_sns_notifier()
         self.assertIsInstance(notifier, SnsNotifier)
         self.assertEqual("my-sns-arn", notifier.target_arn)
+
+    @patch("amiadapters.config.ConfiguredStorageSink.connection")
+    def test_can_create_list_of_data_quality_checks(self, mock_connection):
+        config = AMIAdapterConfiguration.from_yaml(
+            self.get_fixture_path("all-config.yaml"),
+            self.get_fixture_path("all-secrets.yaml"),
+        )
+        checks = config.sinks()[0].checks()
+        self.assertEqual(1, len(checks))
 
 
 class TestFindConfigAndSecrets(BaseTestCase):
