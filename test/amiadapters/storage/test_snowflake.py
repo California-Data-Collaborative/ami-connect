@@ -8,7 +8,9 @@ import pytz
 from amiadapters.adapters.beacon import BeaconRawSnowflakeLoader
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
-from amiadapters.storage.snowflake import SnowflakeStorageSink
+from amiadapters.storage.snowflake import (
+    SnowflakeStorageSink,
+)
 from test.base_test_case import BaseTestCase
 from test.amiadapters.test_beacon import beacon_meter_and_read_factory
 

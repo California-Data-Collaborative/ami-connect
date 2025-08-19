@@ -27,3 +27,27 @@ class BaseAMIStorageSink(ABC):
         self, run_id: str, meters: List[GeneralMeter], reads: List[GeneralMeterRead]
     ):
         pass
+
+
+class BaseAMIDataQualityCheck(ABC):
+    """
+    A data quality check for the data stored in this sink. A sink may have many
+    data quality checks. They're run together to ensure the data in the sink meets
+    standard assumptions we've built into our data model.
+    """
+
+    @abstractmethod
+    def name(self) -> str:
+        """
+        Name of this check, hyphenated, used to identify the check in our configuration system.
+        """
+        pass
+
+    @abstractmethod
+    def check(self) -> bool:
+        """
+        Run the check.
+
+        :return: True if check passes, else False.
+        """
+        pass

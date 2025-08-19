@@ -13,10 +13,11 @@ import yaml
 
 class AMIAdapterConfiguration:
 
-    def __init__(self, sources, backfills=None, notifications=None):
+    def __init__(self, sources, backfills=None, notifications=None, sinks=None):
         self._sources = sources
         self._backfills = backfills if backfills is not None else []
         self._notifications = notifications
+        self._sinks = sinks if sinks is not None else []
 
     @classmethod
     def from_yaml(cls, config_file: str, secrets_file: str):
@@ -35,6 +36,7 @@ class AMIAdapterConfiguration:
         for sink in config_yaml.get("sinks", []):
             sink_id = sink.get("id")
             sink_type = sink.get("type")
+            checks = sink.get("checks")
             match sink_type:
                 case ConfiguredStorageSinkType.SNOWFLAKE:
                     sink_secrets_yaml = secrets_yaml.get("sinks", {}).get(sink_id, {})
@@ -50,7 +52,10 @@ class AMIAdapterConfiguration:
                         schema=sink_secrets_yaml.get("schema"),
                     )
                     sink = ConfiguredStorageSink(
-                        ConfiguredStorageSinkType.SNOWFLAKE, sink_id, sink_secrets
+                        ConfiguredStorageSinkType.SNOWFLAKE,
+                        sink_id,
+                        sink_secrets,
+                        data_quality_check_names=checks,
                     )
                 case _:
                     raise ValueError(f"Unrecognized sink type {sink_type}")
@@ -213,7 +218,10 @@ class AMIAdapterConfiguration:
             notifications = None
 
         return AMIAdapterConfiguration(
-            sources=sources, backfills=backfills, notifications=notifications
+            sources=sources,
+            backfills=backfills,
+            notifications=notifications,
+            sinks=all_sinks,
         )
 
     def adapters(self):
@@ -352,6 +360,9 @@ class AMIAdapterConfiguration:
             )
         return None
 
+    def sinks(self) -> List:
+        return self._sinks
+
     def __repr__(self):
         return f"sources=[{", ".join(str(s) for s in self._sources)}]"
 
@@ -377,10 +388,17 @@ class ConfiguredStorageSink:
     creating connections off of the configuration.
     """
 
-    def __init__(self, type: str, id: str, secrets: Union[SnowflakeSecrets]):
+    def __init__(
+        self,
+        type: str,
+        id: str,
+        secrets: Union[SnowflakeSecrets],
+        data_quality_check_names: List = None,
+    ):
         self.type = self._type(type)
         self.id = self._id(id)
         self.secrets = self._secrets(secrets)
+        self.data_quality_check_names = data_quality_check_names or []
 
     def connection(self):
         match self.type:
@@ -397,6 +415,21 @@ class ConfiguredStorageSink:
                 )
             case _:
                 ValueError(f"Unrecognized type {self.type}")
+
+    def checks(self) -> List:
+        """
+        Return names of configured data quality checks for this sink.
+        """
+        from amiadapters.storage.snowflake import SnowflakeMetersUniqueByDeviceIdCheck
+
+        result = []
+        for name in self.data_quality_check_names:
+            if (
+                name == "snowflake-meters-unique-by-device-id"
+                and self.type == ConfiguredStorageSinkType.SNOWFLAKE
+            ):
+                result.append(SnowflakeMetersUniqueByDeviceIdCheck(self.connection()))
+        return result
 
     def _type(self, type: str) -> str:
         if type in {
