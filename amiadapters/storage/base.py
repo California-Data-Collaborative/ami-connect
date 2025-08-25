@@ -36,6 +36,16 @@ class BaseAMIDataQualityCheck(ABC):
     standard assumptions we've built into our data model.
     """
 
+    # Stores class definition of all concrete data quality check implementations
+    all_checks = []
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        BaseAMIDataQualityCheck.all_checks.append(cls)
+
+    def __init__(self, connection):
+        self.connection = connection
+
     @abstractmethod
     def name(self) -> str:
         """
@@ -51,3 +61,21 @@ class BaseAMIDataQualityCheck(ABC):
         :return: True if check passes, else False.
         """
         pass
+
+    @classmethod
+    def get_all_checks_by_name(cls, connection) -> dict:
+        """
+        Automatically find all subclasses, instantiate them,
+        and return as a map of check name to instance of that check.
+        """
+        # This is a hack to make python import the data quality check subclass
+        # definitions, which adds them to cls.all_checks. We do this so that
+        # subclasses are automatically registered, but someday we might decide
+        # that's not be worth the hackery.
+        from amiadapters.storage import snowflake
+
+        result = {}
+        for check in cls.all_checks:
+            instance = check(connection)
+            result[instance.name()] = instance
+        return result
