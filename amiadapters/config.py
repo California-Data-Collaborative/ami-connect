@@ -420,15 +420,18 @@ class ConfiguredStorageSink:
         """
         Return names of configured data quality checks for this sink.
         """
-        from amiadapters.storage.snowflake import SnowflakeMetersUniqueByDeviceIdCheck
+        from amiadapters.storage.base import BaseAMIDataQualityCheck
 
+        conn = self.connection()
+        checks_by_name = BaseAMIDataQualityCheck.get_all_checks_by_name(conn)
         result = []
         for name in self.data_quality_check_names:
-            if (
-                name == "snowflake-meters-unique-by-device-id"
-                and self.type == ConfiguredStorageSinkType.SNOWFLAKE
-            ):
-                result.append(SnowflakeMetersUniqueByDeviceIdCheck(self.connection()))
+            if name in checks_by_name:
+                result.append(checks_by_name[name])
+            else:
+                raise ValueError(
+                    f"Unrecognized data quality check name: {name}. Choices are: {", ".join(checks_by_name.keys())}"
+                )
         return result
 
     def _type(self, type: str) -> str:

@@ -355,7 +355,7 @@ class SnowflakeReadingsUniqueByDeviceIdAndFlowtimeCheck(BaseAMIDataQualityCheck)
         connection,
         readings_table_name: str = "readings",
     ):
-        self.connection = connection
+        super().__init__(connection)
         self.readings_table_name = readings_table_name
 
     def name(self) -> str:
@@ -370,7 +370,7 @@ class SnowflakeReadingsUniqueByDeviceIdAndFlowtimeCheck(BaseAMIDataQualityCheck)
                     PARTITION BY org_id, device_id, flowtime
                     ORDER BY interval_value, register_value
                 ) AS row_num
-                FROM readings
+                FROM {self.readings_table_name}
             ) as deduped
             WHERE row_num > 1
             """
