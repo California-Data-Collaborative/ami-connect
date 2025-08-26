@@ -64,6 +64,9 @@ class BaseAMIAdapter(ABC):
         """
         Public function for extract stage.
         """
+        logger.info(
+            f"Extracting data for range {extract_range_start} to {extract_range_end}"
+        )
         # Use adapter implementation to extract data
         extracted_output = self._extract(run_id, extract_range_start, extract_range_end)
         # Output to intermediate storage, e.g. S3 or local files
