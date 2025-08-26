@@ -40,6 +40,11 @@ class BaseAMIDataQualityCheck(ABC):
     all_checks = []
 
     def __init_subclass__(cls, **kwargs):
+        """
+        This hook is called when python parses any of this class's child classes.
+        We use it to keep track of all child classes so we can automatically instantiate
+        them from the configuration.
+        """
         super().__init_subclass__(**kwargs)
         BaseAMIDataQualityCheck.all_checks.append(cls)
 
@@ -62,6 +67,13 @@ class BaseAMIDataQualityCheck(ABC):
         """
         pass
 
+    @abstractmethod
+    def notify_on_failure(self) -> bool:
+        """
+        :return: True if we should notify users when this check fails, else False.
+        """
+        pass
+
     @classmethod
     def get_all_checks_by_name(cls, connection) -> dict:
         """
@@ -71,7 +83,7 @@ class BaseAMIDataQualityCheck(ABC):
         # This is a hack to make python import the data quality check subclass
         # definitions, which adds them to cls.all_checks. We do this so that
         # subclasses are automatically registered, but someday we might decide
-        # that's not be worth the hackery.
+        # that's not worth the hackery.
         from amiadapters.storage import snowflake
 
         result = {}
