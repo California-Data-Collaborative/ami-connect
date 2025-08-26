@@ -319,6 +319,9 @@ class SnowflakeMetersUniqueByDeviceIdCheck(BaseAMIDataQualityCheck):
     def name(self) -> str:
         return "snowflake-meters-unique-by-device-id"
 
+    def notify_on_failure(self) -> bool:
+        return True
+
     def check(self) -> bool:
         """
         Run the check.
@@ -360,6 +363,9 @@ class SnowflakeReadingsUniqueByDeviceIdAndFlowtimeCheck(BaseAMIDataQualityCheck)
 
     def name(self) -> str:
         return "snowflake-readings-unique-by-device-id-and-flowtime"
+
+    def notify_on_failure(self) -> bool:
+        return True
 
     def check(self) -> bool:
         sql = f"""

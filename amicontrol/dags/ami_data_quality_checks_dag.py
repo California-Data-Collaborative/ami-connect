@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 
 from airflow.decorators import dag, task
 
@@ -9,6 +10,8 @@ from amiadapters.config import (
 )
 
 from amiadapters.storage.base import BaseAMIDataQualityCheck
+
+logger = logging.getLogger(__name__)
 
 config = AMIAdapterConfiguration.from_yaml(find_config_yaml(), find_secrets_yaml())
 on_failure_sns_notifier = config.on_failure_sns_notifier()
@@ -31,7 +34,10 @@ if checks:
         def run_check(data_quality_check: BaseAMIDataQualityCheck):
             check_passed = data_quality_check.check()
             if not check_passed:
-                raise Exception(f"Check {data_quality_check.name()} did not pass")
+                if data_quality_check.notify_on_failure():
+                    raise Exception(f"Check {data_quality_check.name()} did not pass")
+                else:
+                    logger.info(f"Check {data_quality_check.name()} did not pass")
 
         for data_quality_check in checks:
             run_check.override(task_id=f"{data_quality_check.name()}")(
