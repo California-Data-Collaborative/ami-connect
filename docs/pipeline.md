@@ -10,8 +10,8 @@ AMI Connect follows a **common ETL pattern**:
 
 ```mermaid
 flowchart LR
-    A[Extract (BaseAMIAdapter)] --> B[Transform GeneralMeter + GeneralMeterRead]
-    B --> C[Load to Sinks (BaseAMIStorageSink)]
+    A[Extract] --> B[Transform GeneralMeter + GeneralMeterRead]
+    B --> C[Load to Sinks]
     C --> C1[Raw Data]
     C --> C2[Transformed Data]
 ```
