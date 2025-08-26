@@ -385,3 +385,128 @@ class SnowflakeReadingsUniqueByDeviceIdAndFlowtimeCheck(BaseAMIDataQualityCheck)
         row_count = len(result)
         logger.info(f"Found non-unique readings. First 10: {result[:10]}")
         return row_count == 0
+
+
+class SnowflakeReadingsHaveNoDataGapsCheck(BaseAMIDataQualityCheck):
+    """
+    For each org, report days of readings data that fall below the org's normal amount of daily readings.
+    """
+
+    def __init__(
+        self,
+        connection,
+        readings_table_name: str = "readings",
+    ):
+        super().__init__(connection)
+        self.readings_table_name = readings_table_name
+
+    def name(self) -> str:
+        return "snowflake-readings-have-no-data-gaps"
+
+    def notify_on_failure(self) -> bool:
+        """
+        Gaps are occasionally caused by the source, which we can't control, so we just log the gaps
+        and we don't notify.
+        """
+        return False
+
+    def check(self) -> bool:
+        threshold_percentile = 0.99
+        percent_of_threshold_before_reporting_gap = 0.7
+        month_window_size = 2
+
+        # Generate every day between org's min and max flowtime and report row counts that are below threshold
+        # Threshold is calculated by finding Nth percentile of row counts for preceeding and following X months
+        sql = f"""
+            WITH daily_counts AS (
+                SELECT
+                    org_id,
+                    TO_DATE (flowtime) AS day,
+                    COUNT(*) AS row_count
+                FROM
+                    {self.readings_table_name}
+                GROUP BY
+                    org_id,
+                    day
+            ),
+            org_ranges AS (
+                SELECT
+                    org_id,
+                    MIN(TO_DATE (flowtime)) AS min_day,
+                    MAX(TO_DATE (flowtime)) AS max_day
+                FROM
+                    {self.readings_table_name}
+                GROUP BY
+                    org_id
+            ),
+            calendar as (
+                select r.org_id, r.min_day, r.max_day, c.generated_date
+                from org_ranges r
+                cross join (
+                        select -1 + row_number() over(order by 0) as i, start_date + i as generated_date 
+                            from (select MIN(TO_DATE (flowtime)) AS start_date, MAX(TO_DATE (flowtime)) AS end_date from {self.readings_table_name})
+                            join table(generator(rowcount => 10000 )) x
+                            qualify i < 1 + end_date - start_date
+                    ) c
+                    where c.generated_date between r.min_day and r.max_day
+                    order by org_id, generated_date 
+            ),
+            filled AS (
+                SELECT
+                    c.org_id,
+                    c.generated_date as day,
+                    COALESCE(d.row_count, 0) AS row_count
+                FROM
+                    calendar AS c
+                    LEFT JOIN daily_counts AS d ON c.org_id = d.org_id
+                    AND c.generated_date = d.day
+            ),
+            baselines AS (
+                SELECT
+                    f1.org_id,
+                    f1.day,
+                    PERCENTILE_CONT({threshold_percentile}) WITHIN GROUP (
+                    ORDER BY
+                        f2.row_count
+                    ) AS local_threshold
+                FROM
+                    filled AS f1
+                    JOIN filled AS f2 ON f1.org_id = f2.org_id
+                    AND f2.day BETWEEN DATEADD (MONTH, -{month_window_size}, f1.day)
+                    AND DATEADD (MONTH, {month_window_size}, f1.day)
+                    AND f2.day <> f1.day
+                GROUP BY
+                    f1.org_id,
+                    f1.day
+            )
+            SELECT
+                f.org_id,
+                f.day,
+                f.row_count,
+                b.local_threshold,
+                CAST(f.row_count AS FLOAT) / NULLIF(b.local_threshold, 0) AS pct_of_local
+            FROM filled AS f
+            JOIN baselines AS b ON f.org_id = b.org_id
+                AND f.day = b.day
+            WHERE
+                f.row_count = 0
+                OR f.row_count < b.local_threshold * {percent_of_threshold_before_reporting_gap}
+            ORDER BY f.org_id, f.day
+            ;
+            """
+        logger.info(
+            f"Running readings gap check on table {self.readings_table_name}. Will report counts below {percent_of_threshold_before_reporting_gap} * {threshold_percentile}th percentile of surrounding {month_window_size * 2} months"
+        )
+        result = self.connection.cursor().execute(sql).fetchall()
+        count = 0
+        for row in result:
+            # Example row: ('my_org', datetime.date(2025, 8, 25), 100448, Decimal('299104.800'), 0.335828779745427)
+            count += 1
+            org_id = row[0]
+            date = row[1]
+            number_of_rows = row[2]
+            local_threshold = row[3]
+            logger.info(
+                f"Org {org_id} has {number_of_rows} rows on {date}. Reporting threshold is {int(local_threshold * percent_of_threshold_before_reporting_gap)}."
+            )
+        return count == 0
