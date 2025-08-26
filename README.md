@@ -4,9 +4,8 @@ Seamless pipelines for AMI water data, now as easy to access as turning on a tap
 
 ## AMI Adapters
 
-A core function of this project is to provide a set of adapters for various AMI data sources. These adapters allow you to
-access each AMI data source with minimal setup. They are able to extract data from the AMI source and transform it into our
-standard format. They can store that standardized data in various storage sinks, like Snowflake.
+A core function of this project is to provide a set of adapters for various AMI data sources. These adapters access each AMI data source with minimal setup. They're able to extract data and transform it into our
+standard format, then store that standardized data in various storage sinks, like Snowflake.
 
 Here are the adapters in this project:
 
@@ -72,6 +71,14 @@ cp ./config.yaml.example ./config.yaml
 cp ./secrets.yaml.example ./secrets.yaml
 ```
 
+### Running the pipeline locally
+
+The `./run.py` script is somewhat of a CLI for the project. As of now, it's set up to run the pipeline on your laptop. It will extract data from the sources in your local config, transform, then load the data into your configured sinks. Run with:
+
+```
+python run.py
+```
+
 ### Deploy
 
 Use the `deploy.sh` script to deploy new code to your AMI Connect pipeline. As of this writing, the script
@@ -128,7 +135,7 @@ airflow standalone
 ```
 Watch for the `admin` user and its password in `stdout`. Use those credentials to login. You should see our DAGs!
 
-## How to add a new Adapter
+### How to add a new Adapter
 
 Adapters integrate an AMI data source with our pipeline. In general, when you create one, you'll need to define
 how it extracts data from the AMI data source, how it transforms that data into our generalized format, and (optionally) how it stores raw extracted data into storage sinks.
