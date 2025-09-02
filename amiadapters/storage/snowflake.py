@@ -182,9 +182,10 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         insert_to_temp_table_sql = f"""
             INSERT INTO {temp_table_name} (
                 org_id, device_id, account_id, location_id, flowtime, 
-                register_value, register_unit, interval_value, interval_unit
+                register_value, register_unit, interval_value, interval_unit,
+                battery, install_date, connection, estimated
             ) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         rows = [self._meter_read_tuple(m) for m in reads]
         conn.cursor().executemany(insert_to_temp_table_sql, rows)
@@ -193,9 +194,12 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             MERGE INTO {table_name} AS target
             USING (
                 -- Use GROUP BY to ensure there are no duplicate rows before merge
-                SELECT org_id, device_id, flowtime, max(account_id) as account_id, max(location_id) as location_id, 
+                SELECT org_id, device_id, flowtime, 
+                    max(account_id) as account_id, max(location_id) as location_id, 
                     max(register_value) as register_value, max(register_unit) as register_unit,
-                    max(interval_value) as interval_value, max(interval_unit) as interval_unit
+                    max(interval_value) as interval_value, max(interval_unit) as interval_unit,
+                    max(battery) as battery, max(install_date) as install_date,
+                    max(connection) as connection, max(estimated) as estimated
                 FROM {temp_table_name}
                 GROUP BY org_id, device_id, flowtime
             ) AS source
@@ -209,12 +213,17 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     target.register_value = source.register_value,
                     target.register_unit = source.register_unit,
                     target.interval_value = source.interval_value,
-                    target.interval_unit = source.interval_unit
+                    target.interval_unit = source.interval_unit,
+                    target.battery = source.battery,
+                    target.install_date = source.install_date,
+                    target.connection = source.connection,
+                    target.estimated = source.estimated
             WHEN NOT MATCHED THEN
                 INSERT (org_id, device_id, account_id, location_id, flowtime, 
-                        register_value, register_unit, interval_value, interval_unit) 
-                        VALUES (source.org_id, source.device_id, source.account_id, source.location_id, source.flowtime, 
-                    source.register_value, source.register_unit, source.interval_value, source.interval_unit)
+                        register_value, register_unit, interval_value, interval_unit, battery, install_date, connection, estimated) 
+                    VALUES (source.org_id, source.device_id, source.account_id, source.location_id, source.flowtime, 
+                            source.register_value, source.register_unit, source.interval_value, source.interval_unit,
+                            source.battery, source.install_date, source.connection, source.estimated)
         """
         conn.cursor().execute(merge_sql)
 
@@ -229,6 +238,10 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             read.register_unit,
             read.interval_value,
             read.interval_unit,
+            read.battery,
+            read.install_date,
+            read.connection,
+            read.estimated,
         ]
         return tuple(result)
 

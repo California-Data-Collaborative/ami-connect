@@ -154,6 +154,10 @@ class TestSnowflakeStorageSink(BaseTestCase):
                 register_unit="CF",
                 interval_value=None,
                 interval_unit=None,
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             ),
             GeneralMeterRead(
                 org_id="this-utility",
@@ -167,6 +171,10 @@ class TestSnowflakeStorageSink(BaseTestCase):
                 register_unit="CF",
                 interval_value=None,
                 interval_unit=None,
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             ),
         ]
 
@@ -178,7 +186,9 @@ class TestSnowflakeStorageSink(BaseTestCase):
                 -- Use GROUP BY to ensure there are no duplicate rows before merge
                 SELECT org_id, device_id, flowtime, max(account_id) as account_id, max(location_id) as location_id, 
                     max(register_value) as register_value, max(register_unit) as register_unit,
-                    max(interval_value) as interval_value, max(interval_unit) as interval_unit
+                    max(interval_value) as interval_value, max(interval_unit) as interval_unit,
+                    max(battery) as battery, max(install_date) as install_date, 
+                    max(connection) as connection, max(estimated) as estimated
                 FROM temp_readings
                 GROUP BY org_id, device_id, flowtime
             ) AS source
@@ -192,12 +202,16 @@ class TestSnowflakeStorageSink(BaseTestCase):
                     target.register_value = source.register_value,
                     target.register_unit = source.register_unit,
                     target.interval_value = source.interval_value,
-                    target.interval_unit = source.interval_unit
+                    target.interval_unit = source.interval_unit,
+                    target.battery = source.battery,
+                    target.install_date = source.install_date,
+                    target.connection = source.connection,
+                    target.estimated = source.estimated
             WHEN NOT MATCHED THEN
                 INSERT (org_id, device_id, account_id, location_id, flowtime, 
-                        register_value, register_unit, interval_value, interval_unit) 
+                        register_value, register_unit, interval_value, interval_unit, battery, install_date, connection, estimated) 
                         VALUES (source.org_id, source.device_id, source.account_id, source.location_id, source.flowtime, 
-                    source.register_value, source.register_unit, source.interval_value, source.interval_unit)
+                    source.register_value, source.register_unit, source.interval_value, source.interval_unit, source.battery, source.install_date, source.connection, source.estimated)
         """
         called_query = self.mock_cursor.execute.call_args[0][0]
 
@@ -219,6 +233,10 @@ class TestSnowflakeStorageSink(BaseTestCase):
             register_unit="CF",
             interval_value=None,
             interval_unit=None,
+            battery=None,
+            install_date=None,
+            connection=None,
+            estimated=None,
         )
 
         with self.assertRaises(ValueError):

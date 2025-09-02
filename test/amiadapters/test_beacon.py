@@ -381,6 +381,10 @@ class TestBeacon360Adapter(BaseTestCase):
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             ),
             GeneralMeterRead(
                 org_id="this-org",
@@ -394,6 +398,10 @@ class TestBeacon360Adapter(BaseTestCase):
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)
@@ -474,6 +482,10 @@ class TestBeacon360Adapter(BaseTestCase):
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             ),
             GeneralMeterRead(
                 org_id="this-org",
@@ -487,6 +499,10 @@ class TestBeacon360Adapter(BaseTestCase):
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)

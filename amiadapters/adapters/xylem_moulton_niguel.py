@@ -359,6 +359,10 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
                 register_unit=None,
                 interval_value=interval_value,
                 interval_unit=interval_unit,
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             )
             reads_by_device_and_time[(device_id, flowtime)] = read
 
@@ -396,6 +400,10 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
                     register_unit=register_unit,
                     interval_value=None,
                     interval_unit=None,
+                    battery=None,
+                    install_date=None,
+                    connection=None,
+                    estimated=None,
                 )
             reads_by_device_and_time[(device_id, flowtime)] = read
 

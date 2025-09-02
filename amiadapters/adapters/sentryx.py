@@ -361,6 +361,10 @@ class SentryxAdapter(BaseAMIAdapter):
                     register_unit=register_unit,
                     interval_value=None,
                     interval_unit=None,
+                    battery=None,
+                    install_date=None,
+                    connection=None,
+                    estimated=None,
                 )
                 meter_reads.append(read)
 

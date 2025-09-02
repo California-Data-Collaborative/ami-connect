@@ -377,6 +377,10 @@ class Beacon360Adapter(BaseAMIAdapter):
                 register_unit=register_unit,
                 interval_value=interval_value,
                 interval_unit=interval_unit,
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             )
             # Reads are unique by org_id, device_id, and flowtime. This ensures we do not include duplicates in our output.
             key = f"{read.device_id}-{read.flowtime}"
