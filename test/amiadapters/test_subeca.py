@@ -289,6 +289,8 @@ class TestSubecaAdapter(BaseTestCase):
 
         self.assertEqual(len(meters), 1)
         self.assertEqual(meters[0].device_id, "D1")
+        self.assertEqual(meters[0].account_id, "A1")
+        self.assertEqual(meters[0].location_id, "A1")
         self.assertEqual(len(reads), 1)  # Register read added
         self.assertEqual(reads[0].interval_value, 1)
         self.assertEqual(reads[0].register_value, 100)
