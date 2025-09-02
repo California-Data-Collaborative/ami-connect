@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 import json
 import logging
-from typing import Dict, Generator, List, Set, Tuple
+from typing import Dict, Generator, List, Set, Tuple, Union
 
 import oracledb
 from pytz.tzinfo import DstTzInfo
@@ -565,7 +565,7 @@ class MetersenseAdapter(BaseAMIAdapter):
                 battery=None,
                 install_date=None,
                 connection=None,
-                estimated=None,
+                estimated=self._map_status_flag(raw_interval_read),
             )
             reads_by_device_and_time[key] = read
 
@@ -583,6 +583,7 @@ class MetersenseAdapter(BaseAMIAdapter):
                 raw_register_read.read_value,
                 raw_register_read.uom,  # Expected to be CCF
             )
+            estimated = self._map_status_flag(raw_register_read)
             key = (
                 device_id,
                 flowtime,
@@ -590,10 +591,19 @@ class MetersenseAdapter(BaseAMIAdapter):
             if key in reads_by_device_and_time:
                 # Join register read onto the interval read object
                 old_read = reads_by_device_and_time[key]
+                # Combine estimated flags from interval and register reads into one value
+                if (
+                    old_read.estimated == 1
+                    or self._map_status_flag(raw_register_read) == 1
+                ):
+                    estimated = 1
+                else:
+                    estimated = 0
                 read = replace(
                     old_read,
                     register_value=register_value,
                     register_unit=register_unit,
+                    estimated=estimated,
                 )
             else:
                 account_id, location_id = self._get_account_and_location_for_read(
@@ -615,7 +625,7 @@ class MetersenseAdapter(BaseAMIAdapter):
                     battery=None,
                     install_date=None,
                     connection=None,
-                    estimated=None,
+                    estimated=self._map_status_flag(raw_register_read),
                 )
             reads_by_device_and_time[key] = read
 
@@ -669,6 +679,22 @@ class MetersenseAdapter(BaseAMIAdapter):
                 # The most recent record
                 account = accounts[0]
         return account, location
+
+    def _map_status_flag(
+        self, raw_read: Union[MetersenseIntervalRead, MetersenseRegisterRead]
+    ) -> int:
+        """
+        Raw reads have a "status" indicator that tell us whether a read was estimated. The expected values are:
+
+        1 = Passed Validation
+        2 = Failed Validation
+        3 = Estimated
+        4 = This value appears not to be in use
+        5 = Accepted
+
+        Return 1 if the read was estimated, else 0.
+        """
+        return 1 if raw_read.status == "3" else 0
 
     def _read_file(self, extract_outputs: ExtractOutput, file: str) -> Generator:
         """
