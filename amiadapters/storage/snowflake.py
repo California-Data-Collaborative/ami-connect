@@ -507,6 +507,6 @@ class SnowflakeReadingsHaveNoDataGapsCheck(BaseAMIDataQualityCheck):
             number_of_rows = row[2]
             local_threshold = row[3]
             logger.info(
-                f"Org {org_id} has {number_of_rows} rows on {date}. Reporting threshold is {int(local_threshold * percent_of_threshold_before_reporting_gap)}."
+                f"Org {org_id} has {number_of_rows} rows on {date}. Reporting threshold is {float(local_threshold) * float(percent_of_threshold_before_reporting_gap)}."
             )
         return count == 0
