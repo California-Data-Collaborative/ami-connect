@@ -30,6 +30,7 @@ class Beacon360MeterAndRead:
     """
 
     Account_ID: str
+    Battery_Level: str
     Current_Leak_Rate: str
     Current_Leak_Start_Date: str
     Demand_Zone_ID: str
@@ -75,6 +76,7 @@ class Beacon360MeterAndRead:
     SA_Start_Date: str
     Service_Point_Class_Code: str
     Service_Point_Class_Code_Normalized: str
+    Signal_Strength: str
 
 
 # Columns we'll request from Beacon 360 API
@@ -300,7 +302,7 @@ class Beacon360Adapter(BaseAMIAdapter):
         for f in previous_cache_files:
             os.remove(f)
             logger.info(f"Deleted old cache file {f}")
-        print(cache_file)
+
         with open(cache_file, "w") as f:
             f.write(report)
         logger.info(f"Cached report contents at {cache_file}")
@@ -377,10 +379,16 @@ class Beacon360Adapter(BaseAMIAdapter):
                 register_unit=register_unit,
                 interval_value=interval_value,
                 interval_unit=interval_unit,
-                battery=None,
-                install_date=None,
-                connection=None,
-                estimated=None,
+                battery=meter_and_read.Battery_Level,
+                install_date=self.datetime_from_iso_str(
+                    meter_and_read.Endpoint_Install_Date, self.org_timezone
+                ),
+                connection=meter_and_read.Signal_Strength,
+                estimated=(
+                    int(meter_and_read.Estimated_Flag)
+                    if meter_and_read.Estimated_Flag is not None
+                    else None
+                ),
             )
             # Reads are unique by org_id, device_id, and flowtime. This ensures we do not include duplicates in our output.
             key = f"{read.device_id}-{read.flowtime}"

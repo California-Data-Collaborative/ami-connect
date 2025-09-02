@@ -74,6 +74,7 @@ def beacon_meter_and_read_factory(
 ) -> Beacon360MeterAndRead:
     return Beacon360MeterAndRead(
         Account_ID=account_id,
+        Battery_Level="good",
         Endpoint_SN=endpoint_id,
         Estimated_Flag="0",
         Flow="5.0",
@@ -103,7 +104,7 @@ def beacon_meter_and_read_factory(
         Current_Leak_Start_Date="",
         Demand_Zone_ID="",
         Dials="",
-        Endpoint_Install_Date="",
+        Endpoint_Install_Date="2024-08-01 00:59",
         Location_Continuous_Flow="",
         Location_Latitude="",
         Location_Longitude="",
@@ -119,6 +120,7 @@ def beacon_meter_and_read_factory(
         SA_Start_Date="",
         Service_Point_Class_Code="",
         Service_Point_Class_Code_Normalized="",
+        Signal_Strength="marginal",
     )
 
 
@@ -381,10 +383,12 @@ class TestBeacon360Adapter(BaseTestCase):
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
-                battery=None,
-                install_date=None,
-                connection=None,
-                estimated=None,
+                battery="good",
+                install_date=datetime.datetime(
+                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
+                connection="marginal",
+                estimated=0,
             ),
             GeneralMeterRead(
                 org_id="this-org",
@@ -398,10 +402,12 @@ class TestBeacon360Adapter(BaseTestCase):
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
-                battery=None,
-                install_date=None,
-                connection=None,
-                estimated=None,
+                battery="good",
+                install_date=datetime.datetime(
+                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
+                connection="marginal",
+                estimated=0,
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)
@@ -482,10 +488,12 @@ class TestBeacon360Adapter(BaseTestCase):
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
-                battery=None,
-                install_date=None,
-                connection=None,
-                estimated=None,
+                battery="good",
+                install_date=datetime.datetime(
+                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
+                connection="marginal",
+                estimated=0,
             ),
             GeneralMeterRead(
                 org_id="this-org",
@@ -499,10 +507,12 @@ class TestBeacon360Adapter(BaseTestCase):
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
-                battery=None,
-                install_date=None,
-                connection=None,
-                estimated=None,
+                battery="good",
+                install_date=datetime.datetime(
+                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                ),
+                connection="marginal",
+                estimated=0,
             ),
         ]
         self.assertListEqual(expected_reads, transformed_reads)

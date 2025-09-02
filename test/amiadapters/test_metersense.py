@@ -202,7 +202,7 @@ class TestMetersenseAdapter(BaseTestCase):
             read_30min_int=None,
             read_15min_int=None,
             read_5min_int=None,
-            status="status",
+            status="3",
             read_version=1,
             read_dtm=read_dtm,
             read_value=0.5,
@@ -294,6 +294,7 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual("1001", read.location_id)
         self.assertEqual(1050.0, read.register_value)
         self.assertEqual(50.0, read.interval_value)
+        self.assertEqual(1, read.estimated)
 
     def test_missing_meter_view(self):
         meter = self._meter_factory()
