@@ -34,28 +34,7 @@ will have a populated `ROW_ACTIVE_FROM` and `ROW_ACTIVE_UNTIL` denoting the time
 
 For a given `ORG_ID`, rows with `ROW_ACTIVE_UNTIL = NULL` should be unique per `DEVICE_ID`.
 
-
-```sql
-create or replace TABLE METERS (
-  ORG_ID VARCHAR(16777216),
-  DEVICE_ID VARCHAR(16777216) NOT NULL,
-  ACCOUNT_ID VARCHAR(16777216),
-  LOCATION_ID VARCHAR(16777216),
-  METER_ID VARCHAR(16777216),
-  ENDPOINT_ID VARCHAR(16777216),
-  METER_INSTALL_DATE TIMESTAMP_TZ(9),
-  METER_SIZE VARCHAR(16777216),
-  METER_MANUFACTURER VARCHAR(16777216),
-  MULTIPLIER FLOAT,
-  LOCATION_ADDRESS VARCHAR(16777216),
-  LOCATION_CITY VARCHAR(16777216),
-  LOCATION_STATE VARCHAR(16777216),
-  LOCATION_ZIP VARCHAR(16777216),
-  ROW_ACTIVE_FROM TIMESTAMP_TZ(9) NOT NULL,
-  ROW_ACTIVE_UNTIL TIMESTAMP_TZ(9),
-  UNIQUE (ORG_ID, DEVICE_ID, ROW_ACTIVE_FROM)
-);
-```
+`meters.sql` contains the create table statement for the `meters` table.
 
 #### Notes
 - **Versioning**: `ROW_ACTIVE_UNTIL IS NULL` identifies the current version of a meter. Combine `ROW_ACTIVE_FROM` and `ROW_ACTIVE_UNTIL` to see what the meter looked like at a time in the past.
@@ -66,20 +45,7 @@ create or replace TABLE METERS (
 ### `READINGS`
 Timeseries records of water usage, reported by meter (DEVICE_ID) with optional account and location context. We aim for hourly granularity in this timeseries, though that is dependent on the AMI data provider.
 
-```sql
-create or replace TABLE READINGS (
-  ORG_ID VARCHAR(16777216),
-  ACCOUNT_ID VARCHAR(16777216),
-  LOCATION_ID VARCHAR(16777216),
-  DEVICE_ID VARCHAR(16777216) NOT NULL,
-  FLOWTIME TIMESTAMP_TZ(9) NOT NULL,
-  REGISTER_VALUE FLOAT,
-  REGISTER_UNIT VARCHAR(16777216),
-  INTERVAL_VALUE FLOAT,
-  INTERVAL_UNIT VARCHAR(16777216),
-  UNIQUE (ORG_ID, DEVICE_ID, FLOWTIME)
-);
-```
+`readings.sql` contains the create table statement for the `readings` table.
 
 #### Notes
 - **REGISTER_VALUE**: Total cumulative usage (e.g., since install).
@@ -122,6 +88,10 @@ create or replace TABLE READINGS (
 | REGISTER_UNIT    | VARCHAR           | Unit of `REGISTER_VALUE` (e.g., CCF, GAL). |
 | INTERVAL_VALUE   | FLOAT             | Usage in time interval (e.g., past hour). |
 | INTERVAL_UNIT    | VARCHAR           | Unit of `INTERVAL_VALUE`. (e.g., CCF, GAL). |
+| BATTERY          | VARCHAR           | Strength of meter's battery at the time of this read. |
+| INSTALL_DATE     | TIMESTAMP_TZ(9)   | Time that meter which took this read was installed. |
+| CONNECTION       | VARCHAR           | Strength of meter's internet/satellite/etc connection at the time of this read. |
+| ESTIMATED        | INT               | Indicates whether this read was estimated by the AMI provider. Values are 1 if estimated else 0. |
 
 ---
 
