@@ -68,6 +68,7 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
         device_id: str = "dev1",
         account_id: str = "acct1",
         location_id: str = "loc1",
+        estimated: int = 0,
     ) -> GeneralMeterRead:
         return GeneralMeterRead(
             org_id="org1",
@@ -79,6 +80,10 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
             register_unit="GAL",
             interval_value=10.0,
             interval_unit="GAL",
+            battery="good",
+            install_date=None,
+            connection=None,
+            estimated=estimated,
         )
 
 
@@ -177,7 +182,9 @@ class TestSnowflakeUpserts(BaseSnowflakeIntegrationTestCase):
             [read_initial], self.conn, table_name=self.test_readings_table
         )
 
-        read_updated = self._create_read(account_id="acct2", location_id="loc2")
+        read_updated = self._create_read(
+            account_id="acct2", location_id="loc2", estimated=1
+        )
 
         self.snowflake_sink._upsert_reads(
             [read_updated], self.conn, table_name=self.test_readings_table
@@ -190,6 +197,7 @@ class TestSnowflakeUpserts(BaseSnowflakeIntegrationTestCase):
         self.assertEqual(updated_row[1], "acct2")  # account_id
         self.assertEqual(updated_row[2], "loc2")  # location_id
         self.assertEqual(updated_row[5], 100.0)  # register_value
+        self.assertEqual(updated_row[11], 1)  # estimated
 
     def test_upsert_reads_inserts_new_row_when_not_matched(self):
         self._assert_num_rows(self.test_readings_table, 0)
