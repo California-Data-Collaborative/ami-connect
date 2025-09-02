@@ -242,6 +242,10 @@ class TestMetersenseAdapter(BaseTestCase):
                 register_unit="CF",
                 interval_value=10.0,
                 interval_unit="CF",
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             ),
             reads[0],
         )

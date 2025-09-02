@@ -240,6 +240,10 @@ class AclaraAdapter(BaseAMIAdapter):
                 register_unit=register_unit,
                 interval_value=None,
                 interval_unit=None,
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             )
             # Reads are unique by org_id, device_id, and flowtime. This ensures we do not include duplicates in our output.
             key = f"{read.device_id}-{read.flowtime}"

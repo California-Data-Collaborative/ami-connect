@@ -103,6 +103,10 @@ class TestLocalTaskOutputController(BaseTestCase):
                 register_unit="CCF",
                 interval_value=None,
                 interval_unit=None,
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             ),
             GeneralMeterRead(
                 org_id="org456",
@@ -116,6 +120,10 @@ class TestLocalTaskOutputController(BaseTestCase):
                 register_unit="CCF",
                 interval_value=None,
                 interval_unit=None,
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             ),
         ]
         self.controller.write_transformed_meter_reads("run123", reads)

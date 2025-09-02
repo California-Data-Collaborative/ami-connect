@@ -19,6 +19,10 @@ class GeneralMeterRead:
         register_unit: Unit of register_value measurement
         interval_value: Value of measured consumption in the time interval since the last reading.
         interval_unit: Unit of interval_value measurement
+        battery: Indication of meter's batter strength at time of reading
+        install_date: Date of installation for meter used to record the reading
+        estimated: 1 if reading was estimated by the AMI source, else 0
+        connection: Indication of meter's connection quality at time of reading
     """
 
     org_id: str
@@ -30,6 +34,10 @@ class GeneralMeterRead:
     register_unit: str
     interval_value: float
     interval_unit: str
+    battery: str
+    install_date: datetime
+    estimated: int
+    connection: str
 
 
 @dataclasses.dataclass(frozen=True)

@@ -154,6 +154,10 @@ class TestSnowflakeStorageSink(BaseTestCase):
                 register_unit="CF",
                 interval_value=None,
                 interval_unit=None,
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             ),
             GeneralMeterRead(
                 org_id="this-utility",
@@ -167,6 +171,10 @@ class TestSnowflakeStorageSink(BaseTestCase):
                 register_unit="CF",
                 interval_value=None,
                 interval_unit=None,
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
             ),
         ]
 
@@ -219,6 +227,10 @@ class TestSnowflakeStorageSink(BaseTestCase):
             register_unit="CF",
             interval_value=None,
             interval_unit=None,
+            battery=None,
+            install_date=None,
+            connection=None,
+            estimated=None,
         )
 
         with self.assertRaises(ValueError):
