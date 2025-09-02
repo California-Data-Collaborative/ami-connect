@@ -306,8 +306,7 @@ class SubecaAdapter(BaseAMIAdapter):
                 logger.warning(f"Skipping account {account} with null device ID")
                 continue
             account_id = account.accountId
-            # TODO check
-            location_id = None
+            location_id = account.accountId
             meter_id = account.meterSerial
             # TODO check
             endpoint_id = account.registerSerial
