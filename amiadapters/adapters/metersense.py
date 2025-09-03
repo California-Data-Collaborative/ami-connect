@@ -583,7 +583,6 @@ class MetersenseAdapter(BaseAMIAdapter):
                 raw_register_read.read_value,
                 raw_register_read.uom,  # Expected to be CCF
             )
-            estimated = self._map_status_flag(raw_register_read)
             key = (
                 device_id,
                 flowtime,
@@ -591,19 +590,10 @@ class MetersenseAdapter(BaseAMIAdapter):
             if key in reads_by_device_and_time:
                 # Join register read onto the interval read object
                 old_read = reads_by_device_and_time[key]
-                # Combine estimated flags from interval and register reads into one value
-                if (
-                    old_read.estimated == 1
-                    or self._map_status_flag(raw_register_read) == 1
-                ):
-                    estimated = 1
-                else:
-                    estimated = 0
                 read = replace(
                     old_read,
                     register_value=register_value,
                     register_unit=register_unit,
-                    estimated=estimated,
                 )
             else:
                 account_id, location_id = self._get_account_and_location_for_read(
