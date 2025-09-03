@@ -268,9 +268,7 @@ class MetersenseAdapter(BaseAMIAdapter):
             )
 
             logger.info("Successfully connected to Oracle Database")
-
             cursor = connection.cursor()
-
             files = self._query_tables(cursor, extract_range_start, extract_range_end)
 
         return ExtractOutput(files)
@@ -285,26 +283,28 @@ class MetersenseAdapter(BaseAMIAdapter):
         """
         files = {}
         tables = [
-            ("ACCOUNT_SERVICES", MetersenseAccountService, None, None),
+            ("ACCOUNT_SERVICES", MetersenseAccountService, None, None, None),
             (
                 "INTERVALREADS",
                 MetersenseIntervalRead,
                 extract_range_start,
                 extract_range_end,
+                "READ_DT",  # READ_DT has an index we can take advantage of, READ_DTM seemingly doesn't
             ),
-            ("LOCATIONS", MetersenseLocation, None, None),
-            ("METERS", MetersenseMeter, None, None),
-            ("METERS_VIEW", MetersenseMetersView, None, None),
-            ("METER_LOCATION_XREF", MetersenseMeterLocationXref, None, None),
+            ("LOCATIONS", MetersenseLocation, None, None, None),
+            ("METERS", MetersenseMeter, None, None, None),
+            ("METERS_VIEW", MetersenseMetersView, None, None, None),
+            ("METER_LOCATION_XREF", MetersenseMeterLocationXref, None, None, None),
             (
                 "REGISTERREADS",
                 MetersenseRegisterRead,
                 extract_range_start,
                 extract_range_end,
+                "READ_DTM",
             ),
         ]
-        for table, row_type, start_date, end_date in tables:
-            rows = self._extract_table(cursor, table, row_type, start_date, end_date)
+        for table, row_type, start_date, end_date, date_column_name in tables:
+            rows = self._extract_table(cursor, table, row_type, start_date, end_date, date_column_name)
             text = "\n".join(json.dumps(i, cls=DataclassJSONEncoder) for i in rows)
             files[f"{table.lower()}.json"] = text
         return files
@@ -316,6 +316,7 @@ class MetersenseAdapter(BaseAMIAdapter):
         row_type,
         extract_range_start: datetime,
         extract_range_end: datetime,
+        date_column_name: str,
     ) -> List:
         """
         Query for data from a table in the Oracle database and prep for output.
@@ -324,10 +325,8 @@ class MetersenseAdapter(BaseAMIAdapter):
         kwargs = {}
 
         # Reads should be filtered by date range
-        if extract_range_start and extract_range_end:
-            query += (
-                f" AND READ_DTM BETWEEN :extract_range_start AND :extract_range_end "
-            )
+        if extract_range_start and extract_range_end and date_column_name:
+            query += f" AND {date_column_name} BETWEEN :extract_range_start AND :extract_range_end "
             kwargs["extract_range_start"] = extract_range_start
             kwargs["extract_range_end"] = extract_range_end
 
