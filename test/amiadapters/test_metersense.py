@@ -202,7 +202,7 @@ class TestMetersenseAdapter(BaseTestCase):
             read_30min_int=None,
             read_15min_int=None,
             read_5min_int=None,
-            status="3",
+            status="3",  # Estimated read
             read_version=1,
             read_dtm=read_dtm,
             read_value=0.5,
