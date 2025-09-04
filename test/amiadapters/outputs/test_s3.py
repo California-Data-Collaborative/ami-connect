@@ -1,4 +1,6 @@
 import datetime
+import gzip
+import io
 import json
 from unittest.mock import MagicMock, call
 
@@ -34,12 +36,16 @@ class TestS3TaskOutputController(BaseTestCase):
             call(
                 Bucket="test-bucket",
                 Key="my-prefix/run-001/org-abc/e/file1.txt",
-                Body=b"data1",
+                Body=self._gzip("data1"),
+                ContentEncoding="gzip",
+                ContentType="application/json",
             ),
             call(
                 Bucket="test-bucket",
                 Key="my-prefix/run-001/org-abc/e/file2.txt",
-                Body=b"data2",
+                Body=self._gzip("data2"),
+                ContentEncoding="gzip",
+                ContentType="application/json",
             ),
         ]
         self.assertEqual(expected, calls)
@@ -52,14 +58,14 @@ class TestS3TaskOutputController(BaseTestCase):
             ]
         }
         self.mock_s3.get_object.side_effect = lambda Bucket, Key: {
-            "Body": MagicMock(read=lambda: b"test-content-" + Key.encode())
+            "Body": MagicMock(read=lambda: self._gzip("test-content"))
         }
 
         result = self.controller.read_extract_outputs("run-001")
         self.assertIsInstance(result, ExtractOutput)
         self.assertEqual(len(result.get_outputs()), 2)
         self.assertTrue("file1.txt" in result.get_outputs())
-        self.assertTrue(result.get_outputs()["file1.txt"].startswith("test-content-"))
+        self.assertEqual(result.get_outputs()["file1.txt"], "test-content")
 
     def test_write_and_read_transformed_meters(self):
         meters = [
@@ -105,7 +111,7 @@ class TestS3TaskOutputController(BaseTestCase):
         # Simulate download
         data = "\n".join(json.dumps(m, cls=GeneralModelJSONEncoder) for m in meters)
         self.mock_s3.get_object.return_value = {
-            "Body": MagicMock(read=lambda: data.encode())
+            "Body": MagicMock(read=lambda: self._gzip(data))
         }
 
         result = self.controller.read_transformed_meters("runid")
@@ -154,10 +160,17 @@ class TestS3TaskOutputController(BaseTestCase):
         # Simulate download
         data = "\n".join(json.dumps(r, cls=GeneralModelJSONEncoder) for r in reads)
         self.mock_s3.get_object.return_value = {
-            "Body": MagicMock(read=lambda: data.encode())
+            "Body": MagicMock(read=lambda: self._gzip(data))
         }
 
         result = self.controller.read_transformed_meter_reads("runid")
         self.assertEqual(len(result), 2)
         self.assertEqual(result[1].device_id, "2")
         self.assertEqual(result[1].register_value, 227.6)
+
+    def _gzip(self, content: str) -> bytes:
+        buf = io.BytesIO()
+        with gzip.GzipFile(fileobj=buf, mode="wb") as gz:
+            gz.write(content.encode("utf-8"))
+        buf.seek(0)
+        return buf.read()
