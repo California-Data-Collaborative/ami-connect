@@ -48,7 +48,6 @@ touch environments/<your workspace>/<your workspace>.tfvars
 aws_profile = "my-aws-profile-name-associated-with-local-credentials"
 aws_region = "us-west-2"
 airflow_db_password = "myairflowdbpwd"
-ssh_ip_allowlist = ["my.ip.address/32"]
 airflow_hostname = "my-ami-connect-domain.com"
 ami_connect_s3_bucket_name = "my-s3-bucket-name"
 ```
