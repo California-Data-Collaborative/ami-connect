@@ -20,11 +20,6 @@ variable "airflow_hostname" {
   type        = string
 }
 
-variable "ssh_ip_allowlist" {
-  description = "IP CIDR blocks that can SSH into our AWS resources. ex: [192.168.1.1/32]"
-  type        = list(string)
-}
-
 variable "ami_connect_s3_bucket_name" {
   description = "Name for S3 bucket used for intermediate task outputs. Must be a globally unique name, so include your org name, e.g. my-company-ami-connect-bucket."
   type        = string
