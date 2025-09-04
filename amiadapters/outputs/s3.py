@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import gzip
+import io
 from typing import List
 
 import boto3
@@ -29,14 +31,6 @@ class S3TaskOutputController(BaseTaskOutputController):
         aws_profile_name: str = None,
         s3_client=None,
     ):
-        """
-        bucket_name: S3 bucket to use
-        org_id: identifier for the organization
-        s3_prefix: optional S3 prefix (acts like a root folder inside the bucket)
-        aws_profile_name: optional profile name used to locate credentials. Meant for local development, not for prod.
-                          Prod should use IAM role we configure with Terraform.
-        s3_client: optionally pass in S3 client instead of creating it here. Meant for testing
-        """
         if not bucket_name or not org_id:
             raise Exception(
                 f"Missing required parameter. bucket_name:{bucket_name} org_id:{org_id}"
@@ -45,6 +39,7 @@ class S3TaskOutputController(BaseTaskOutputController):
         self.bucket_name = bucket_name
         self.org_id = org_id
         self.s3_prefix = s3_prefix.strip("/")
+
         if s3_client is None:
             if aws_profile_name:
                 session = boto3.Session(profile_name=aws_profile_name)
@@ -73,25 +68,25 @@ class S3TaskOutputController(BaseTaskOutputController):
         return ExtractOutput(outputs)
 
     def write_transformed_meters(self, run_id: str, meters: List[GeneralMeter]):
-        key = self._s3_key(run_id, self.TRANSFORM, "meters.json")
+        key = self._s3_key(run_id, self.TRANSFORM, "meters.json.gz")
         logger.info(f"Uploading {len(meters)} meters to s3://{self.bucket_name}/{key}")
         data = "\n".join(json.dumps(m, cls=GeneralModelJSONEncoder) for m in meters)
         self._upload_string_to_s3(key, data)
 
     def read_transformed_meters(self, run_id: str) -> List[GeneralMeter]:
-        key = self._s3_key(run_id, self.TRANSFORM, "meters.json")
+        key = self._s3_key(run_id, self.TRANSFORM, "meters.json.gz")
         logger.info(f"Downloading meters from s3://{self.bucket_name}/{key}")
         text = self._download_string_from_s3(key)
         return [GeneralMeter(**json.loads(line)) for line in text.strip().split("\n")]
 
     def write_transformed_meter_reads(self, run_id: str, reads: List[GeneralMeterRead]):
-        key = self._s3_key(run_id, self.TRANSFORM, "reads.json")
+        key = self._s3_key(run_id, self.TRANSFORM, "reads.json.gz")
         logger.info(f"Uploading {len(reads)} reads to s3://{self.bucket_name}/{key}")
         data = "\n".join(json.dumps(r, cls=GeneralModelJSONEncoder) for r in reads)
         self._upload_string_to_s3(key, data)
 
     def read_transformed_meter_reads(self, run_id: str) -> List[GeneralMeterRead]:
-        key = self._s3_key(run_id, self.TRANSFORM, "reads.json")
+        key = self._s3_key(run_id, self.TRANSFORM, "reads.json.gz")
         logger.info(f"Downloading reads from s3://{self.bucket_name}/{key}")
         text = self._download_string_from_s3(key)
         return [
@@ -103,10 +98,22 @@ class S3TaskOutputController(BaseTaskOutputController):
         return "/".join(part.strip("/") for part in parts if part)
 
     def _upload_string_to_s3(self, key: str, content: str):
+        # gzip compress the string
+        buf = io.BytesIO()
+        with gzip.GzipFile(fileobj=buf, mode="wb") as gz:
+            gz.write(content.encode("utf-8"))
+        buf.seek(0)
+
+        put_args = {
+            "Bucket": self.bucket_name,
+            "Key": key,
+            "Body": buf.read(),
+            "ContentEncoding": "gzip",
+            "ContentType": "application/json",
+        }
+
         try:
-            self.s3.put_object(
-                Bucket=self.bucket_name, Key=key, Body=content.encode("utf-8")
-            )
+            self.s3.put_object(**put_args)
         except ClientError as e:
             logger.error(f"Failed to upload to S3 at {key}: {e}")
             raise
@@ -114,7 +121,9 @@ class S3TaskOutputController(BaseTaskOutputController):
     def _download_string_from_s3(self, key: str) -> str:
         try:
             response = self.s3.get_object(Bucket=self.bucket_name, Key=key)
-            return response["Body"].read().decode("utf-8")
+            compressed = response["Body"].read()
+            with gzip.GzipFile(fileobj=io.BytesIO(compressed), mode="rb") as gz:
+                return gz.read().decode("utf-8")
         except ClientError as e:
             logger.error(f"Failed to download from S3 at {key}: {e}")
             raise
