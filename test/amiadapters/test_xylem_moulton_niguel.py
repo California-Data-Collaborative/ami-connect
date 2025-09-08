@@ -203,7 +203,7 @@ class TestMetersenseAdapter(BaseTestCase):
                 org_id="this-org",
                 device_id="M1",
                 account_id="67890",
-                location_id="100",
+                location_id="100-1",
                 meter_id="M1",
                 endpoint_id="ERT1",
                 meter_install_date=datetime.datetime(
@@ -227,7 +227,7 @@ class TestMetersenseAdapter(BaseTestCase):
                 org_id="this-org",
                 device_id="M1",
                 account_id="67890",
-                location_id="100",
+                location_id="100-1",
                 flowtime=datetime.datetime(
                     2023,
                     1,
@@ -287,8 +287,8 @@ class TestMetersenseAdapter(BaseTestCase):
         meters, reads = self.adapter._transform("run1", extract_outputs)
         self.assertEqual(len(meters), 1)
         self.assertEqual(len(reads), 2)
-        self.assertEqual("current-address", reads[0].location_id)
-        self.assertEqual("current-address", reads[1].location_id)
+        self.assertEqual("current-address-1", reads[0].location_id)
+        self.assertEqual("current-address-1", reads[1].location_id)
         self.assertEqual("current-account", reads[0].account_id)
         self.assertEqual("current-account", reads[1].account_id)
 
