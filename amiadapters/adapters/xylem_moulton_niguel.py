@@ -284,7 +284,11 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
                 # Take the first, which is most recently active
                 account_id = customers[0].account_id
 
-            location_id = service_point.service_address if service_point else None
+            location_id = None
+            if service_point is not None:
+                location_id = self._create_location_id(
+                    service_point.service_address, service_point.service_point
+                )
 
             meter = GeneralMeter(
                 org_id=self.org_id,
@@ -424,7 +428,12 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
             ):
                 matching_meter = meter
                 break
-        location_id = matching_meter.service_address if matching_meter else None
+
+        location_id = None
+        if matching_meter is not None:
+            location_id = self._create_location_id(
+                matching_meter.service_address, matching_meter.service_point
+            )
 
         account_id = None
         if matching_meter:
@@ -436,6 +445,9 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
                     account_id = customer.account_id
                     break
         return location_id, account_id
+
+    def _create_location_id(self, service_address: str, service_point: str) -> str:
+        return f"{service_address}-{service_point}"
 
     def _parse_flowtime(self, raw_flowtime: str) -> datetime:
         if "T" in raw_flowtime:
