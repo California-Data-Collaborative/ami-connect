@@ -688,6 +688,11 @@ class XylemMoultonNiguelRawSnowflakeLoader(RawSnowflakeLoader):
         unique_by: list of field names used with org_id to uniquely identify a row in the base table
         """
         text = extract_outputs.from_file(extract_output_filename)
+        if not text:
+            logger.info(
+                f"No data found for {extract_output_filename}, skipping raw load"
+            )
+            return
         raw_data = [raw_dataclass(**json.loads(d)) for d in text.strip().split("\n")]
         temp_table = f"temp_{table}"
         fields = [f.lower() for f in raw_dataclass.__dataclass_fields__.keys()]
