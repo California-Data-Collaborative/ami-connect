@@ -34,6 +34,7 @@ echo "Copying files to $HOSTNAME..."
 scp -i "$PEM_PATH" $PROD_CONFIG "ec2-user@$HOSTNAME:/home/ec2-user/config.yaml"
 scp -i "$PEM_PATH" $PROD_SECRETS "ec2-user@$HOSTNAME:/home/ec2-user/secrets.yaml"
 scp -i "$PEM_PATH" requirements.txt "ec2-user@$HOSTNAME:/home/ec2-user/"
+scp -i "$PEM_PATH" start-airflow.sh "ec2-user@$HOSTNAME:/home/ec2-user/"
 scp -i "$PEM_PATH" -r amiadapters "ec2-user@$HOSTNAME:/home/ec2-user/"
 scp -i "$PEM_PATH" -r amicontrol/dags "ec2-user@$HOSTNAME:/home/ec2-user/"
 
