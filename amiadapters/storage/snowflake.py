@@ -271,6 +271,10 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         """
         Find the end day of the range we should backfill. Try to automatically calculate
         the oldest day in the range that we've already backfilled.
+
+        org_id: organization's ID
+        min_date: earliest possible date that we might backfill
+        max_date: oldest possible date that we might backfill
         """
         conn = self.sink_config.connection()
 
@@ -278,9 +282,15 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         # We will use that as a threshold for what we consider "already backfilled"
         percentile_query = """
         SELECT PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY num_readings) AS nth_percentile
-        FROM (select count(*) as num_readings FROM readings WHERE org_id = ? GROUP BY date(flowtime))
+        FROM (
+            SELECT count(*) as num_readings 
+            FROM readings WHERE org_id = ? AND flowtime > ? AND flowtime < ? 
+            GROUP BY date(flowtime)
+        )
         """
-        percentile_result = conn.cursor().execute(percentile_query, (org_id,))
+        percentile_result = conn.cursor().execute(
+            percentile_query, (org_id, min_date, max_date)
+        )
         percentile_rows = [i for i in percentile_result]
         if len(percentile_rows) != 1:
             threshold = 0
@@ -293,7 +303,8 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         # Find the oldest day in the range that we've already backfilled
         query = """
         SELECT MIN(flow_date) from (
-            SELECT DATE(flowtime) as flow_date FROM readings 
+            SELECT DATE(flowtime) as flow_date 
+            FROM readings 
             WHERE org_id = ? AND flowtime > ? AND flowtime < ?
             GROUP BY DATE(flowtime)
             HAVING COUNT(*) > ?
