@@ -135,6 +135,10 @@ class AclaraAdapter(BaseAMIAdapter):
         files_to_download = files_for_date_range(
             all_files_on_server, extract_range_start, extract_range_end
         )
+        if not files_to_download:
+            raise Exception(
+                f"No files found on server for range {extract_range_start} to {extract_range_end}"
+            )
         os.makedirs(self.local_download_directory, exist_ok=True)
         for file in files_to_download:
             local_csv = f"{self.local_download_directory}/{file}"

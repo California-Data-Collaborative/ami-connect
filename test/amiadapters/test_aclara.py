@@ -90,6 +90,23 @@ class TestAclaraAdapter(BaseTestCase):
             "/remote/2024-01-01.csv", "/tmp/downloads/2024-01-01.csv"
         )
 
+    @patch("os.makedirs")
+    @patch("os.path.exists")
+    @patch("amiadapters.adapters.aclara.files_for_date_range")
+    def test_errors_if_no_files_to_download(
+        self, mock_files_for_date_range, mock_exists, mock_makedirs
+    ):
+        sftp_mock = MagicMock()
+        sftp_mock.listdir.return_value = ["2024-01-01.csv", "2024-01-02.csv"]
+        mock_files_for_date_range.return_value = []
+        mock_exists.return_value = False  # Pretend files do not exist locally
+
+        # Run
+        with self.assertRaises(Exception) as e:
+            self.adapter._download_meter_and_read_files_for_date_range(
+                sftp_mock, datetime(2024, 1, 1), datetime(2024, 1, 2)
+            )
+
     @patch("builtins.open", new_callable=mock_open)
     def test_parse_downloaded_files(self, mock_file):
         mock_csv_content = (
