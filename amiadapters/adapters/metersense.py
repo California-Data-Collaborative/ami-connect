@@ -272,7 +272,9 @@ class MetersenseAdapter(BaseAMIAdapter):
             cursor = connection.cursor()
 
             files = self._query_tables(cursor, extract_range_start, extract_range_end)
+        import pdb
 
+        pdb.set_trace()
         return ExtractOutput(files)
 
     def _query_tables(

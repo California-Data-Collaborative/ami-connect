@@ -147,6 +147,28 @@ class TestExtractRangeCalculator(BaseTestCase):
         self.assertEqual(result_end, expected_end)
         mock_datetime.now.assert_called_once()
 
+    @patch("amiadapters.adapters.base.datetime")
+    def test_calculate_extract_range__honors_default_interval_param(
+        self, mock_datetime
+    ):
+        default_interval_days = 5
+        calculator = ExtractRangeCalculator(
+            org_id="my_org", storage_sinks=[], default_interval_days=5
+        )
+
+        end = datetime(2024, 1, 1)
+        result_start, result_end = calculator.calculate_extract_range(
+            None, end, backfill_params=None
+        )
+
+        # Expected values
+        expected_end = end
+        expected_start = end - timedelta(days=default_interval_days)
+
+        # Verify results
+        self.assertEqual(result_start, expected_start)
+        self.assertEqual(result_end, expected_end)
+
     def test_calculate_extract_range__start_none_end_provided(self):
         # Provide end date
         end_date = datetime(2025, 4, 22, 12, 0, 0)
