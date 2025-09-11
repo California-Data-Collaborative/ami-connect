@@ -120,12 +120,22 @@ class BaseAMIAdapter(ABC):
         max_date: caps how far forward we will backfill
         interval_days: the number of days of data we should backfill
         """
-        range_calculator = ExtractRangeCalculator(self.org_id, self.storage_sinks)
+        range_calculator = ExtractRangeCalculator(
+            self.org_id, self.storage_sinks, self.default_extract_interval_days()
+        )
         calculated_start, calculated_end = range_calculator.calculate_extract_range(
             start, end, backfill_params=backfill_params
         )
         self._validate_extract_range(calculated_start, calculated_end)
         return calculated_start, calculated_end
+
+    def default_extract_interval_days(self):
+        """
+        For extract tasks with an unspecified start and/or end date, we calculate the extract range.
+        This function determines the range size for this adapter type. Daily standard runs will use this
+        range. Override it if your adapter needs a different interval size for daily runs.
+        """
+        return 2
 
     def load_raw(self, run_id: str):
         """
@@ -361,9 +371,20 @@ class ExtractRangeCalculator:
     task.
     """
 
-    def __init__(self, org_id: str, storage_sinks: List[BaseAMIStorageSink]):
+    def __init__(
+        self,
+        org_id: str,
+        storage_sinks: List[BaseAMIStorageSink],
+        default_interval_days,
+    ):
+        """
+        org_id: the org ID
+        storage_sinks: sinks configured for this run. We use the Snowflake sink if we need to smartly calculate a range for backfills.
+        default_interval_days: number of days in a range, used if range size hasn't been explicitly told to us
+        """
         self.org_id = org_id
         self.storage_sinks = storage_sinks
+        self.default_interval_days = default_interval_days
 
     def calculate_extract_range(
         self, start: datetime, end: datetime, backfill_params: Backfill
@@ -384,11 +405,13 @@ class ExtractRangeCalculator:
                 backfill_params.interval_days,
             )
         else:
+            # Make sure our start and end are of type datetime
             if isinstance(start, str):
                 start = datetime.fromisoformat(start)
             if isinstance(end, str):
                 end = datetime.fromisoformat(end)
 
+            # If start or end hasn't been explicitly specified, we have to calculate it
             if start is None or end is None:
                 start, end = self._default_date_range(start, end)
 
@@ -424,14 +447,12 @@ class ExtractRangeCalculator:
         return start, end
 
     def _default_date_range(self, start: datetime, end: datetime):
-        default_number_of_days = 2
-
         if start is None and end is None:
             end = datetime.now()
-            start = end - timedelta(days=default_number_of_days)
+            start = end - timedelta(days=self.default_interval_days)
         elif start is not None and end is None:
-            end = start + timedelta(days=default_number_of_days)
+            end = start + timedelta(days=self.default_interval_days)
         elif start is None and end is not None:
-            start = end - timedelta(days=default_number_of_days)
+            start = end - timedelta(days=self.default_interval_days)
 
         return start, end
