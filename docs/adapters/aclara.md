@@ -20,6 +20,11 @@ sources:
   sftp_local_known_hosts_file: ./known-hosts
 ```
 
+The `./known-hosts` file is a special SSH known hosts file that should contain info about the Aclara server at `sftp_host`.
+If your SFTP connection opens but then shuts immediately, you may have an issue with known hosts. We've worked around it in
+the past by running `ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())` in the pipeline code one time, but you don't want to
+run with this option in production as it posts security risks.
+
 Secrets:
 ```yaml
 sources:

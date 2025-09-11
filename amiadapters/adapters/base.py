@@ -256,7 +256,7 @@ class BaseAMIAdapter(ABC):
         }
         result = mapping.get(size)
         if size is not None and result is None:
-            logging.info(f"Unable to map meter size: {size}")
+            logger.info(f"Unable to map meter size: {size}")
         return result
 
     def map_reading(

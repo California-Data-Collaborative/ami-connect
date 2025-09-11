@@ -16,6 +16,7 @@ from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterR
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -89,7 +90,7 @@ class AclaraAdapter(BaseAMIAdapter):
         extract_range_start: datetime,
         extract_range_end: datetime,
     ):
-        logging.info(
+        logger.info(
             f"Connecting to Aclara SFTP for data between {extract_range_start} and {extract_range_end}"
         )
         downloaded_files = []
@@ -137,7 +138,7 @@ class AclaraAdapter(BaseAMIAdapter):
         for file in files_to_download:
             local_csv = f"{self.local_download_directory}/{file}"
             downloaded_files.append(local_csv)
-            logging.info(
+            logger.info(
                 f"Downloading {file} from FTP at {self.sftp_host} to {local_csv}"
             )
             sftp.get(self.sftp_meter_and_reads_folder + "/" + file, local_csv)

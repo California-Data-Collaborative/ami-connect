@@ -267,7 +267,7 @@ class MetersenseAdapter(BaseAMIAdapter):
             remote_host=self.database_host,
             remote_port=self.database_port,
         ) as ctx:
-            logging.info("Created SSH tunnel")
+            logger.info("Created SSH tunnel")
             connection = oracledb.connect(
                 user=self.database_user,
                 password=self.database_password,
