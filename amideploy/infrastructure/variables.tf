@@ -20,6 +20,11 @@ variable "airflow_hostname" {
   type        = string
 }
 
+variable "ami_connect_airflow_server_instance_size" {
+  description = "EC2 instance size for the server that runs Airflow and our DAG tasks."
+  type        = string
+}
+
 variable "ami_connect_s3_bucket_name" {
   description = "Name for S3 bucket used for intermediate task outputs. Must be a globally unique name, so include your org name, e.g. my-company-ami-connect-bucket."
   type        = string
