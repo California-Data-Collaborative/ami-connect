@@ -247,6 +247,13 @@ class MetersenseAdapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"metersense-{self.org_id}"
 
+    def default_extract_interval_days(self):
+        """
+        We've seen in some cases that Metersense meter reads aren't fully represented in the source until two days
+        after the flowtime. We set our standard extract range to 3+ days to cover this lag.
+        """
+        return 3
+
     def _extract(
         self,
         run_id: str,

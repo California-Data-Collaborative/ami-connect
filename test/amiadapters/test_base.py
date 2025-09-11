@@ -125,7 +125,9 @@ class TestExtractRangeCalculator(BaseTestCase):
         self.snowflake_sink = MagicMock(spec=SnowflakeStorageSink)
         self.snowflake_sink.calculate_end_of_backfill_range.return_value = 3
         sinks = [self.snowflake_sink]
-        self.calculator = ExtractRangeCalculator(org_id="my_org", storage_sinks=sinks)
+        self.calculator = ExtractRangeCalculator(
+            org_id="my_org", storage_sinks=sinks, default_interval_days=2
+        )
 
     @patch("amiadapters.adapters.base.datetime")
     def test_calculate_extract_range__both_dates_none(self, mock_datetime):

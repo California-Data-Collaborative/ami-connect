@@ -120,12 +120,22 @@ class BaseAMIAdapter(ABC):
         max_date: caps how far forward we will backfill
         interval_days: the number of days of data we should backfill
         """
-        range_calculator = ExtractRangeCalculator(self.org_id, self.storage_sinks)
+        range_calculator = ExtractRangeCalculator(
+            self.org_id, self.storage_sinks, self.default_extract_interval_days()
+        )
         calculated_start, calculated_end = range_calculator.calculate_extract_range(
             start, end, backfill_params=backfill_params
         )
         self._validate_extract_range(calculated_start, calculated_end)
         return calculated_start, calculated_end
+
+    def default_extract_interval_days(self):
+        """
+        For extract tasks with an unspecified start and/or end date, we calculate the extract range.
+        This function determines the range size for this adapter type. Daily standard runs will use this
+        range. Override it if your adapter needs a different interval size for daily runs.
+        """
+        return 2
 
     def load_raw(self, run_id: str):
         """
@@ -365,7 +375,7 @@ class ExtractRangeCalculator:
         self,
         org_id: str,
         storage_sinks: List[BaseAMIStorageSink],
-        default_interval_days: int = 2,
+        default_interval_days,
     ):
         """
         org_id: the org ID
