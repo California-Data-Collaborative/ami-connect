@@ -129,11 +129,16 @@ class AclaraAdapter(BaseAMIAdapter):
         downloaded_files = []
         # Get the list of remote files
         all_files_on_server = sftp.listdir(self.sftp_meter_and_reads_folder)
-        # NOTE: the files often contain readings from 1-2 days before the date in their filename.
+        logger.info(f"Found {len(all_files_on_server)} total files on server")
+        # The files often contain readings from 1-2 days before the date in their filename.
         # We've chosen to include those readings in the extract.
         files_to_download = files_for_date_range(
             all_files_on_server, extract_range_start, extract_range_end
         )
+        if not files_to_download:
+            raise Exception(
+                f"No files found on server for range {extract_range_start} to {extract_range_end}"
+            )
         os.makedirs(self.local_download_directory, exist_ok=True)
         for file in files_to_download:
             local_csv = f"{self.local_download_directory}/{file}"
