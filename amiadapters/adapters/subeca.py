@@ -92,7 +92,7 @@ class SubecaAdapter(BaseAMIAdapter):
         extract_range_start: datetime,
         extract_range_end: datetime,
     ) -> ExtractOutput:
-        logging.info(
+        logger.info(
             f"Retrieving Subeca data between {extract_range_start} and {extract_range_end}"
         )
         account_ids = self._extract_all_account_ids()
