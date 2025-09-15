@@ -3,18 +3,17 @@ CLI for AMI Connect that uses Typer (https://typer.tiangolo.com/) under the hood
 
 Run from root directory with:
 
-    python cli.py
+    python cli.py --help
 
 """
 
+from datetime import datetime
 import logging
 from typing_extensions import Annotated
 
-import snowflake.connector
 import typer
 
 from amiadapters.config import AMIAdapterConfiguration
-from amiadapters.run import run_pipeline
 
 DEFAULT_CONFIG_PATH = "./config.yaml"
 DEFAULT_SECRETS_PATH = "./secrets.yaml"
@@ -26,47 +25,79 @@ app = typer.Typer()
 
 
 @app.command()
-def init(
-    config: Annotated[str, typer.Argument()] = DEFAULT_CONFIG_PATH,
-    secrets: Annotated[str, typer.Argument()] = DEFAULT_SECRETS_PATH,
+def run(
+    config_file: Annotated[
+        str, typer.Option(help="Path to local config file.")
+    ] = DEFAULT_CONFIG_PATH,
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+    start_date: Annotated[
+        datetime, typer.Option(help="Start date in YYYY-MM-DD format.")
+    ] = None,
+    end_date: Annotated[
+        datetime, typer.Option(help="Start date in YYYY-MM-DD format.")
+    ] = None,
+    org_ids: Annotated[
+        list[str],
+        typer.Option(
+            help="Filter to specified org_ids. Runs all configured orgs by default."
+        ),
+    ] = None,
 ):
     """
-    CLI for AMI Connect system.
+    Run AMI API adapters to fetch AMI data, then shape it into generalized format, then store it.
     """
-    logging.info(
-        f"Creating Snowflake tables with credentials from {config} and {secrets}"
-    )
-    config = AMIAdapterConfiguration.from_yaml(config, secrets)
-    _init_snowflake(config)
-    
+    config = AMIAdapterConfiguration.from_yaml(config_file, secrets_file)
 
+    adapters = config.adapters()
+    if org_ids:
+        adapters = [a for a in adapters if a.org_id in org_ids]
 
-def _init_snowflake(config: AMIAdapterConfiguration):
-    snowflake_conn = snowflake.connector.connect(
-        account=config.secrets.account,
-        user=config.secrets.user,
-        password=config.secrets.password,
-        warehouse=config.secrets.warehouse,
-        database=config.secrets.database,
-        schema=config.secrets.schema,
-        role=config.secrets.role,
-        paramstyle="qmark",
+    run_id = f"run-{datetime.now().isoformat()}"
+
+    logger.info(
+        f"Running AMI Connect for adapters {", ".join(a.name() for a in adapters)} with parameters start_date={start_date} end_date={end_date}"
     )
-    logging.info(
-        f"Creating Snowflake tables with credentials from {config} and {secrets}"
-    )
+
+    for adapter in adapters:
+        start, end = adapter.calculate_extract_range(
+            start_date,
+            end_date,
+        )
+        logger.info(f"Extracting data for {adapter.name()} from {start} to {end}")
+        adapter.extract_and_output(run_id, start, end)
+        logger.info(f"Extracted data for {adapter.name()}")
+
+        logger.info(f"Transforming data for {adapter.name()}")
+        adapter.transform_and_output(run_id)
+        logger.info(f"Transformed data for {adapter.name()}")
+
+        logger.info(f"Loading raw data for {adapter.name()}")
+        adapter.load_raw(run_id)
+        logger.info(f"Loaded raw data for {adapter.name()}")
+
+        logger.info(f"Loading transformed data for {adapter.name()}")
+        adapter.load_transformed(run_id)
+        logger.info(f"Loaded transformed data for {adapter.name()}")
+
+    logger.info(f"Finished for {len(adapters)} adapters")
 
 
 @app.command()
-def run(
-    config: Annotated[str, typer.Argument()] = DEFAULT_CONFIG_PATH,
-    secrets: Annotated[str, typer.Argument()] = DEFAULT_SECRETS_PATH,
+def download_intermediate_output(
+    filename: str,
+    config_file: Annotated[
+        str, typer.Option(help="Path to local config file.")
+    ] = DEFAULT_CONFIG_PATH,
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
 ):
     """
-    CLI for AMI Connect system.
+    Download intermediate output file of provided name.
     """
-
-    run_pipeline("./config.yaml", "./secrets.yaml")
+    return
 
 
 if __name__ == "__main__":
