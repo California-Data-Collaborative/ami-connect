@@ -1,6 +1,6 @@
 import datetime
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytz
 
@@ -257,6 +257,40 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual("dbu", self.adapter.database_user)
         self.assertEqual("dbp", self.adapter.database_password)
         self.assertEqual(3, self.adapter.default_extract_interval_days())
+
+    @patch("amiadapters.adapters.metersense.open_ssh_tunnel")
+    @patch("amiadapters.adapters.metersense.oracledb.connect")
+    def test_extract_returns_expected_files(self, mock_connect, mock_open_tunnel):
+        # Mock the SSH tunnel context manager
+        mock_ctx = MagicMock()
+        mock_ctx.local_bind_port = 1234
+        mock_open_tunnel.return_value.__enter__.return_value = mock_ctx
+
+        # Mock DB connection + cursor
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        # Return empty results from SQL queries
+        mock_cursor.fetchall.return_value = []
+
+        # Run
+        result = self.adapter._extract(
+            run_id="test-run",
+            extract_range_start=datetime.datetime(2023, 1, 1),
+            extract_range_end=datetime.datetime(2023, 1, 2),
+        )
+
+        # Check that files contain JSON
+        files = result.get_outputs()
+        self.assertTrue("account_services.json" in files)
+        self.assertTrue("intervalreads.json" in files)
+
+        # Ensure mocks were called
+        mock_open_tunnel.assert_called_once()
+        mock_connect.assert_called_once()
+        mock_cursor.execute.assert_called()
 
     def test_transform(self):
         meter = self._meter_factory()
