@@ -71,12 +71,17 @@ cp ./config.yaml.example ./config.yaml
 cp ./secrets.yaml.example ./secrets.yaml
 ```
 
-### Running the pipeline locally
+### CLI and Running the pipeline locally
 
-The `./run.py` script is somewhat of a CLI for the project. As of now, it's set up to run the pipeline on your laptop. It will extract data from the sources in your local config, transform, then load the data into your configured sinks. Run with:
+The `./cli.py` CLI will run the pipeline on your laptop. It will extract data from the sources in your local config, transform, then load the data into your configured sinks. Run with:
 
 ```
-python run.py
+python cli.py run
+```
+
+The CLI can do other admin and debugging tasks, too. Learn more with 
+```
+python cli.py --help
 ```
 
 ### Deploy

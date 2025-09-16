@@ -13,8 +13,16 @@ import yaml
 
 class AMIAdapterConfiguration:
 
-    def __init__(self, sources, backfills=None, notifications=None, sinks=None):
+    def __init__(
+        self,
+        sources,
+        task_output_controller,
+        backfills=None,
+        notifications=None,
+        sinks=None,
+    ):
         self._sources = sources
+        self._task_output_controller = task_output_controller
         self._backfills = backfills if backfills is not None else []
         self._notifications = notifications
         self._sinks = sinks if sinks is not None else []
@@ -219,6 +227,7 @@ class AMIAdapterConfiguration:
 
         return AMIAdapterConfiguration(
             sources=sources,
+            task_output_controller=task_output_controller,
             backfills=backfills,
             notifications=notifications,
             sinks=all_sinks,
@@ -362,6 +371,9 @@ class AMIAdapterConfiguration:
 
     def sinks(self) -> List:
         return self._sinks
+
+    def task_output_controller(self):
+        return self._task_output_controller
 
     def __repr__(self):
         return f"sources=[{", ".join(str(s) for s in self._sources)}]"

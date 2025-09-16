@@ -51,3 +51,11 @@ class BaseTaskOutputController(ABC):
     @abstractmethod
     def read_transformed_meter_reads(self) -> List[GeneralMeterRead]:
         pass
+
+    @abstractmethod
+    def download_for_path(self, path: str, output_directory: str):
+        """
+        Given a path to task outputs, download all files to the output_directory. Useful for
+        debugging.
+        """
+        pass
