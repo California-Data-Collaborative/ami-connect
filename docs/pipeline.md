@@ -89,7 +89,7 @@ All ETL logic lives in the **`amiadapters`** package:
 
 1. Download the repo to your development environment. Set it up using instructions in the main `README.md`.
 2. Define your sources, sinks, and output controller in `config.yaml` and `secrets.yaml`.  
-3. Run the pipeline with our CLI, `run.py`.
+3. Run the pipeline with our CLI, `cli.py`.
 
 ---
 
