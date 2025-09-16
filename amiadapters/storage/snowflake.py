@@ -278,6 +278,25 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         """
         conn = self.sink_config.connection()
 
+        # Temporary hack for Long Beach backfill, remove after finished
+        if org_id == "cadc_long_beach":
+            earliest = (
+                conn.cursor()
+                .execute(
+                    "select earliest from backfills where org_id = 'cadc_long_beach'"
+                )
+                .fetchall()[0][0]
+            )
+            logger.info(f"Earliest end date of backfill for {org_id} is {earliest}")
+            from datetime import timedelta
+
+            next_end = earliest - timedelta(days=3)
+            conn.cursor().execute(
+                f"update backfills set earliest = '{next_end}' where org_id = 'cadc_long_beach'"
+            ).fetchall()[0][0]
+            logger.info(f"Set earliest to {next_end.isoformat()}")
+            return earliest
+
         # Calculate nth percentile of number of readings per day
         # We will use that as a threshold for what we consider "already backfilled"
         percentile_query = """
