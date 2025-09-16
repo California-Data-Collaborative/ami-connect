@@ -3,6 +3,7 @@ import logging
 import os
 import gzip
 import io
+import shutil
 from typing import List
 
 import boto3
@@ -92,6 +93,42 @@ class S3TaskOutputController(BaseTaskOutputController):
         return [
             GeneralMeterRead(**json.loads(line)) for line in text.strip().split("\n")
         ]
+
+    def download_for_path(
+        self, path: str, output_directory: str, decompress: bool = True
+    ):
+        """
+        Download any S3 objects under the provided path prefix. Works for either
+        a prefix or actual object key.
+        """
+        paginator = self.s3.get_paginator("list_objects_v2")
+        i = 0
+        for page in paginator.paginate(Bucket=self.bucket_name, Prefix=path):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                # Keep relative path
+                relative_path = os.path.relpath(key, path)
+                local_path = os.path.join(output_directory, relative_path)
+                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                if decompress:
+                    # Download into memory and decompress
+                    logger.info(
+                        f"Downloading and decompressing s3://{self.bucket_name}/{key} → {local_path}"
+                    )
+                    obj_stream = self.s3.get_object(Bucket=self.bucket_name, Key=key)[
+                        "Body"
+                    ]
+                    with gzip.open(obj_stream, "rb") as gz, open(
+                        local_path, "wb"
+                    ) as out_f:
+                        shutil.copyfileobj(gz, out_f)
+                else:
+                    logger.info(
+                        f"Downloading s3://{self.bucket_name}/{key} → {local_path}"
+                    )
+                    self.s3.download_file(self.bucket_name, key, local_path)
+                i += 1
+        logger.info(f"Downloaded {i} files from {path}")
 
     def _s3_key(self, run_id: str, stage: str, name: str) -> str:
         parts = [self.s3_prefix, run_id, self.org_id, stage, name]

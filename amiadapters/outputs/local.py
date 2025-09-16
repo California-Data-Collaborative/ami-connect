@@ -90,6 +90,9 @@ class LocalTaskOutputController(BaseTaskOutputController):
         logger.info(f"Read {len(reads)} meter reads from {path}")
         return reads
 
+    def download_for_path(self, path: str, output_directory: str):
+        logger.info(f"Not implemented for LocalTaskOutputController")
+
     def _base_dir(self, run_id: str) -> str:
         return os.path.join(self.output_folder, run_id, self.org_id)
 

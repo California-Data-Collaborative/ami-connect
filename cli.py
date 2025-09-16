@@ -13,7 +13,12 @@ from typing_extensions import Annotated
 
 import typer
 
-from amiadapters.config import AMIAdapterConfiguration
+from amiadapters.config import (
+    AMIAdapterConfiguration,
+    ConfiguredTaskOutputControllerType,
+)
+from amiadapters.outputs.local import LocalTaskOutputController
+from amiadapters.outputs.s3 import S3TaskOutputController
 
 DEFAULT_CONFIG_PATH = "./config.yaml"
 DEFAULT_SECRETS_PATH = "./secrets.yaml"
@@ -86,7 +91,12 @@ def run(
 
 @app.command()
 def download_intermediate_output(
-    filename: str,
+    path: Annotated[
+        str,
+        typer.Argument(
+            help="Path or prefix of path to files for download. If S3, can be anything after the bucket name, e.g. for s3://my-ami-connect-bucket/intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 you may enter intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 ."
+        ),
+    ],
     config_file: Annotated[
         str, typer.Option(help="Path to local config file.")
     ] = DEFAULT_CONFIG_PATH,
@@ -95,9 +105,32 @@ def download_intermediate_output(
     ] = DEFAULT_SECRETS_PATH,
 ):
     """
-    Download intermediate output file of provided name.
+    Download intermediate output file(s) of provided name.
     """
-    return
+    config = AMIAdapterConfiguration.from_yaml(config_file, secrets_file)
+
+    # This code should not live here. It's copied from the base adapter class and it shouldn't live there either.
+    configured_task_output_controller = config.task_output_controller()
+    if (
+        configured_task_output_controller.type
+        == ConfiguredTaskOutputControllerType.LOCAL
+    ):
+        controller = LocalTaskOutputController(
+            configured_task_output_controller.output_folder, None
+        )
+    elif (
+        configured_task_output_controller.type == ConfiguredTaskOutputControllerType.S3
+    ):
+        controller = S3TaskOutputController(
+            configured_task_output_controller.s3_bucket_name,
+            "placeholder",
+            aws_profile_name=configured_task_output_controller.dev_aws_profile_name,
+        )
+    else:
+        raise ValueError(
+            f"Task output configuration with invalid type {configured_task_output_controller.type}"
+        )
+    controller.download_for_path(path, "./output", decompress=True)
 
 
 if __name__ == "__main__":
