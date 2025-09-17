@@ -132,6 +132,45 @@ def download_intermediate_output(
         )
     controller.download_for_path(path, "./output", decompress=True)
 
+@app.command()
+def test_admin_db_connection():
+    import psycopg2
+    from amiadapters.adapters.connections import open_ssh_tunnel
+    # with open_ssh_tunnel(
+    #         ssh_tunnel_server_host="44.224.234.123",
+    #         ssh_tunnel_username="ec2-user",
+    #         ssh_tunnel_key_path="/Users/matthewdowell/work/current/ami-connect/amideploy/configuration/cadc-airflow-key.pem",
+    #         remote_host="ami-connect-airflow-db.czcee66yq7ja.us-west-2.rds.amazonaws.com",
+    #         remote_port=5432,
+    #     ) as ctx:
+    #         logger.info("Created SSH tunnel")
+    #         connection = psycopg2.connect(
+    #             user='airflow_user',
+    #             password='',
+    #             host="0.0.0.0",
+    #             port=ctx.local_bind_port,
+    #             dbname='airflow',
+    #         )
+
+    
+    connection = psycopg2.connect(
+                user='airflow_user',
+                password='',
+                host="ami-connect-airflow-db.czcee66yq7ja.us-west-2.rds.amazonaws.com",
+                port=5432,
+                # dbname='airflow_db',
+            )
+
+    # connection = psycopg2.connect(
+    #             user='postgres',
+    #             password='',
+    #             host="database-test-cnx-2.cluster-czcee66yq7ja.us-west-2.rds.amazonaws.com",
+    #             port=5432,
+    #             # dbname='airflow_db',
+    #         )
+
+    logger.info("Successfully connected to database")
+
 
 if __name__ == "__main__":
     app()
