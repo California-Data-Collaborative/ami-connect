@@ -258,7 +258,7 @@ resource "aws_security_group" "airflow_db_sg" {
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = [aws_security_group.airflow_server_sg.id]
   }
 
   egress {
@@ -291,7 +291,6 @@ resource "aws_db_instance" "ami_connect_airflow_metastore" {
   vpc_security_group_ids     = [aws_security_group.airflow_db_sg.id]
   skip_final_snapshot        = false
   final_snapshot_identifier  = "final-snapshot-ami-connect-airflow-db"
-  publicly_accessible = true
 
   tags = {
     Name = var.ami_connect_tag
