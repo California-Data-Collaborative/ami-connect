@@ -13,7 +13,7 @@ from amiadapters.configuration.base import (
     create_snowflake_connection,
     create_snowflake_from_secrets_file,
 )
-from amiadapters.configuration.database import load_database_config
+from amiadapters.configuration.database import get_configuration
 
 
 class AMIAdapterConfiguration:
@@ -74,7 +74,7 @@ class AMIAdapterConfiguration:
             role=snowflake_credentials["role"],
         )
 
-        sources, sinks, task_output, notifications, backfills = load_database_config(
+        sources, sinks, task_output, notifications, backfills = get_configuration(
             connection
         )
 

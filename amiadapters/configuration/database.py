@@ -1,7 +1,7 @@
 from typing import Dict, List, Tuple
 
 
-def load_database_config(snowflake_connection) -> Tuple[
+def get_configuration(snowflake_connection) -> Tuple[
     List[Dict],
     List[Dict],
     Dict,

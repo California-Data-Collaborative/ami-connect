@@ -9,6 +9,7 @@ Run from root directory with:
 
 from datetime import datetime
 import logging
+from pprint import pprint
 from typing_extensions import Annotated
 
 import typer
@@ -18,6 +19,7 @@ from amiadapters.config import (
     ConfiguredTaskOutputControllerType,
 )
 from amiadapters.configuration.base import (
+    get_configuration,
     update_task_output_configuration,
 )
 from amiadapters.outputs.local import LocalTaskOutputController
@@ -30,6 +32,9 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 app = typer.Typer()
+# Sub-apps
+config_app = typer.Typer(help="Configure the pipeline")
+app.add_typer(config_app, name="config")
 
 
 @app.command()
@@ -143,7 +148,33 @@ def download_intermediate_output(
     controller.download_for_path(path, "./output", decompress=True)
 
 
-@app.command()
+########################################################################################
+# Config commands
+########################################################################################
+@config_app.command()
+def get(
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+):
+    """
+    Get configuration from database.
+    """
+    sources, sinks, task_output, notifications, backfills = get_configuration(
+        None, secrets_file
+    )
+    pprint(
+        {
+            "sources": sources,
+            "sinks": sinks,
+            "task_output": task_output,
+            "notifications": notifications,
+            "backfills": backfills,
+        }
+    )
+
+
+@config_app.command()
 def update_task_output(
     bucket_name: Annotated[
         str,

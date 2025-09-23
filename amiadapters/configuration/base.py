@@ -8,10 +8,17 @@ from amiadapters.configuration import database
 logger = logging.getLogger(__name__)
 
 
+def get_configuration(config_file: str, secrets_file: str) -> dict:
+    if _use_database_for_config(config_file, secrets_file):
+        logger.info(f"Getting configuration from database.")
+        connection = create_snowflake_from_secrets_file(secrets_file)
+        return database.get_configuration(connection)
+
+
 def update_task_output_configuration(
     config_file: str, secrets_file: str, new_task_output_configuration
 ):
-    if config_file is None:
+    if _use_database_for_config(config_file, secrets_file):
         logger.info(
             f"Updating task output configuration in database to {new_task_output_configuration}"
         )
@@ -19,6 +26,10 @@ def update_task_output_configuration(
         database.update_task_output_configuration(
             connection, new_task_output_configuration
         )
+
+
+def _use_database_for_config(config_file: str, secrets_file: str) -> bool:
+    return config_file is None
 
 
 def create_snowflake_connection(

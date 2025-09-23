@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import yaml
 
-from amiadapters.configuration.database import load_database_config
+from amiadapters.configuration.database import get_configuration
 from test.base_test_case import BaseTestCase
 
 
@@ -118,7 +118,7 @@ class TestDatabase(BaseTestCase):
     def test_load_database_config(self, mock_fetch_table):
         mock_fetch_table.side_effect = self.fake_fetch
 
-        sources, sinks, task_output, notifications, backfills = load_database_config(
+        sources, sinks, task_output, notifications, backfills = get_configuration(
             MagicMock()
         )
 
