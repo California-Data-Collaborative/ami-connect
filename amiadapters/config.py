@@ -10,7 +10,7 @@ from pytz.tzinfo import DstTzInfo
 import snowflake.connector
 import yaml
 
-from amiadapters.config.database import load_database_config
+from amiadapters.configuration.database import load_database_config
 
 
 class AMIAdapterConfiguration:
@@ -29,7 +29,6 @@ class AMIAdapterConfiguration:
         self._notifications = notifications
         self._sinks = sinks if sinks is not None else []
 
-    # TODO add a from_database function, it will have to recreate the dict from the yaml function maybe?
     @classmethod
     def from_yaml(cls, config_file: str, secrets_file: str):
         """
@@ -72,14 +71,9 @@ class AMIAdapterConfiguration:
             role=snowflake_credentials["role"],
         )
 
-        sinks = []
-        task_output = {}
-        notifications = {}
-        backfills = []
-
-        import pdb
-
-        pdb.set_trace()
+        sources, sinks, task_output, notifications, backfills = load_database_config(
+            connection
+        )
 
         return cls._make_instance(
             sources,

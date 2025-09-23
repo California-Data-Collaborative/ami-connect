@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 import yaml
@@ -105,8 +105,8 @@ class TestDatabase(BaseTestCase):
                 {
                     "id": 1,
                     "org_id": "my_aclara_utility",
-                    "start_date": datetime(2023, 1, 1),
-                    "end_date": datetime(2025, 7, 5),
+                    "start_date": date(2023, 1, 1),
+                    "end_date": date(2025, 7, 5),
                     "interval_days": 3,
                     "schedule": "45 */2 * * *",
                 }
@@ -121,18 +121,8 @@ class TestDatabase(BaseTestCase):
             MagicMock()
         )
 
-        # Clean up database fields that aren't used so we can test against the YAML
-        for source in sources:
-            del source["id"]
-
         with open(self.get_fixture_path("all-config.yaml"), "r") as f:
             expected = yaml.safe_load(f)
-
-        from pprint import pprint
-
-        pprint(task_output)
-        pprint("expected:")
-        pprint(expected["task_output"])
 
         self.maxDiff = None
         self.assertEqual(expected["sources"], sources)

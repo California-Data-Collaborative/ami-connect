@@ -37,7 +37,6 @@ def load_database_config(snowflake_connection) -> Tuple[
     sources = []
     for row in all_config["configuration_sources"]:
         source = {}
-        source["id"] = row["id"]
         source["type"] = row["type"]
         source["org_id"] = row["org_id"]
         source["timezone"] = row["timezone"]
@@ -98,7 +97,25 @@ def load_database_config(snowflake_connection) -> Tuple[
     task_output["local_output_path"] = row["local_output_path"]
 
     notifications = {}
+    for row in all_config["configuration_notifications"]:
+        notification = {}
+        event_type = row["event_type"]
+        match event_type:
+            case "dag_failure":
+                notification["sns_arn"] = row["sns_arn"]
+            case _:
+                pass
+        notifications[event_type] = notification
+
     backfills = []
+    for row in all_config["configuration_backfills"]:
+        backfill = {}
+        backfill["org_id"] = row["org_id"]
+        backfill["start_date"] = row["start_date"]
+        backfill["end_date"] = row["end_date"]
+        backfill["interval_days"] = row["interval_days"]
+        backfill["schedule"] = row["schedule"]
+        backfills.append(backfill)
 
     return sources, sinks, task_output, notifications, backfills
 
