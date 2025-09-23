@@ -15,6 +15,44 @@ def get_configuration(config_file: str, secrets_file: str) -> dict:
         return database.get_configuration(connection)
 
 
+def add_source_configuration(
+    config_file: str, secrets_file: str, new_source_configuration: dict
+):
+    if _use_database_for_config(config_file, secrets_file):
+        logger.info(f"Adding sources in database with {new_source_configuration}")
+        connection = create_snowflake_from_secrets_file(secrets_file)
+        return database.update_source_configuration(
+            connection, new_source_configuration
+        )
+
+
+def update_source_configuration(
+    config_file: str, secrets_file: str, new_source_configuration: dict
+):
+    if _use_database_for_config(config_file, secrets_file):
+        logger.info(f"Updating sources in database with {new_source_configuration}")
+        connection = create_snowflake_from_secrets_file(secrets_file)
+        return database.update_source_configuration(
+            connection, new_source_configuration
+        )
+
+
+def update_sink_configuration(
+    config_file: str, secrets_file: str, new_sink_configuration: dict
+):
+    if _use_database_for_config(config_file, secrets_file):
+        logger.info(f"Updating sinks in database with {new_sink_configuration}")
+        connection = create_snowflake_from_secrets_file(secrets_file)
+        return database.update_sink_configuration(connection, new_sink_configuration)
+
+
+def remove_sink_configuration(config_file: str, secrets_file: str, id: str):
+    if _use_database_for_config(config_file, secrets_file):
+        logger.info(f"Removing sink {id} from database.")
+        connection = create_snowflake_from_secrets_file(secrets_file)
+        return database.remove_sink_configuration(connection, id)
+
+
 def update_task_output_configuration(
     config_file: str, secrets_file: str, new_task_output_configuration
 ):

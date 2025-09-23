@@ -1,13 +1,24 @@
 from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import call, MagicMock, patch
 
 import yaml
 
-from amiadapters.configuration.database import get_configuration
+from amiadapters.configuration.database import (
+    get_configuration,
+    remove_sink_configuration,
+    update_sink_configuration,
+    update_task_output_configuration,
+)
 from test.base_test_case import BaseTestCase
 
 
 class TestDatabase(BaseTestCase):
+
+    def setUp(self):
+        # Create a mock connection and cursor
+        self.mock_connection = MagicMock()
+        self.mock_cursor = MagicMock()
+        self.mock_connection.cursor.return_value = self.mock_cursor
 
     def fake_fetch(self, cursor, table_name):
         if table_name == "configuration_sources":
@@ -115,7 +126,7 @@ class TestDatabase(BaseTestCase):
         raise Exception(table_name)
 
     @patch("amiadapters.configuration.database._fetch_table")
-    def test_load_database_config(self, mock_fetch_table):
+    def test_get_database_config(self, mock_fetch_table):
         mock_fetch_table.side_effect = self.fake_fetch
 
         sources, sinks, task_output, notifications, backfills = get_configuration(
@@ -132,3 +143,124 @@ class TestDatabase(BaseTestCase):
         self.assertEqual(expected["task_output"]["bucket"], task_output["bucket"])
         self.assertEqual(expected["notifications"], notifications)
         self.assertEqual(expected["backfills"], backfills)
+
+    def test_update_task_output_configuration_valid_s3_configuration_executes_queries(
+        self,
+    ):
+        config = {
+            "type": "s3",
+            "s3_bucket": "my-bucket",
+            "local_output_path": None,
+        }
+
+        update_task_output_configuration(self.mock_connection, config)
+
+        # Ensure TRUNCATE then INSERT are executed
+        expected_calls = [
+            call.execute("TRUNCATE TABLE configuration_task_outputs"),
+            call.execute(
+                """
+        INSERT INTO configuration_task_outputs (type, s3_bucket, local_output_path)
+        VALUES (?, ?, ?)
+        """,
+                ["s3", "my-bucket", None],
+            ),
+        ]
+        self.mock_cursor.assert_has_calls(expected_calls)
+
+    def test_update_task_output_configuration_valid_local_configuration_executes_queries(
+        self,
+    ):
+        config = {
+            "type": "local",
+            "s3_bucket": None,
+            "local_output_path": "/tmp/data",
+        }
+
+        update_task_output_configuration(self.mock_connection, config)
+
+        self.mock_cursor.execute.assert_any_call(
+            "TRUNCATE TABLE configuration_task_outputs"
+        )
+        self.mock_cursor.execute.assert_any_call(
+            """
+        INSERT INTO configuration_task_outputs (type, s3_bucket, local_output_path)
+        VALUES (?, ?, ?)
+        """,
+            ["local", None, "/tmp/data"],
+        )
+
+    def test_update_task_output_configuration_missing_type_raises(self):
+        config = {"s3_bucket": "bucket", "local_output_path": None}
+        with self.assertRaises(ValueError) as cm:
+            update_task_output_configuration(self.mock_connection, config)
+        self.assertIn("missing field: type", str(cm.exception))
+
+    def test_update_task_output_configuration_missing_s3_bucket_raises(self):
+        config = {"type": "s3", "s3_bucket": None, "local_output_path": None}
+        with self.assertRaises(ValueError) as cm:
+            update_task_output_configuration(self.mock_connection, config)
+        self.assertIn("missing field: s3_bucket", str(cm.exception))
+
+    def test_update_task_output_configuration_missing_local_output_path_raises(self):
+        config = {"type": "local", "s3_bucket": None, "local_output_path": None}
+        with self.assertRaises(ValueError) as cm:
+            update_task_output_configuration(self.mock_connection, config)
+        self.assertIn("missing field: local_output_path", str(cm.exception))
+
+    def test_update_sink_configuration_missing_id_raises_value_error(self):
+        config = {"type": "snowflake"}
+        with self.assertRaisesRegex(
+            ValueError, "Sink configuration is missing field: id"
+        ):
+            update_sink_configuration(self.mock_connection, config)
+
+    def test_update_sink_configuration_missing_type_raises_value_error(self):
+        config = {"id": "sink1"}
+        with self.assertRaisesRegex(
+            ValueError, "Sink configuration is missing field: type"
+        ):
+            update_sink_configuration(self.mock_connection, config)
+
+    def test_update_sink_configuration_invalid_type_raises_value_error(self):
+        config = {"id": "sink1", "type": "mysql"}
+        with self.assertRaisesRegex(ValueError, "Unrecognized sink type: mysql"):
+            update_sink_configuration(self.mock_connection, config)
+
+    def test_update_sink_configuration_valid_snowflake_configuration_executes_merge(
+        self,
+    ):
+        config = {"id": "SINK1", "type": "snowflake"}
+
+        update_sink_configuration(self.mock_connection, config)
+
+        self.mock_cursor.execute.assert_called_once()
+        sql, params = self.mock_cursor.execute.call_args[0]
+        self.assertIn("MERGE INTO configuration_sinks", sql)
+        self.assertEqual(params, ("sink1", "snowflake"))
+
+    def test_update_sink_configuration_id_and_type_are_lowercased_before_insert(self):
+        config = {"id": "Cadc_Snowflake", "type": "SnowFlake"}
+
+        update_sink_configuration(self.mock_connection, config)
+
+        _, params = self.mock_cursor.execute.call_args[0]
+        self.assertEqual(params, ("cadc_snowflake", "snowflake"))
+
+    def test_remove_sink_configuration_missing_id_raises_value_error(self):
+        with self.assertRaisesRegex(ValueError, "Missing field: id"):
+            remove_sink_configuration(self.mock_connection, "")
+
+    def test_remove_sink_configuration_valid_id_executes_delete(self):
+        remove_sink_configuration(self.mock_connection, "SINK1")
+
+        self.mock_cursor.execute.assert_called_once()
+        sql, params = self.mock_cursor.execute.call_args[0]
+        self.assertIn("DELETE FROM configuration_sinks", sql)
+        self.assertEqual(params, ("sink1",))  # should be lowercased
+
+    def test_remove_sink_configuration_id_is_lowercased_before_delete(self):
+        remove_sink_configuration(self.mock_connection, "Cadc_Snowflake")
+
+        _, params = self.mock_cursor.execute.call_args[0]
+        self.assertEqual(params, ("cadc_snowflake",))

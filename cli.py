@@ -19,7 +19,11 @@ from amiadapters.config import (
     ConfiguredTaskOutputControllerType,
 )
 from amiadapters.configuration.base import (
+    add_source_configuration,
     get_configuration,
+    remove_sink_configuration,
+    update_sink_configuration,
+    update_source_configuration,
     update_task_output_configuration,
 )
 from amiadapters.outputs.local import LocalTaskOutputController
@@ -30,6 +34,7 @@ DEFAULT_SECRETS_PATH = "./secrets.yaml"
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("snowflake.connector").setLevel(logging.WARNING)
 
 app = typer.Typer()
 # Sub-apps
@@ -172,6 +177,124 @@ def get(
             "backfills": backfills,
         }
     )
+
+
+@config_app.command()
+def add_source(
+    org_id: Annotated[
+        str,
+        typer.Argument(
+            help="Often source's organization name and is used as unique identifier."
+        ),
+    ],
+    type: Annotated[
+        str,
+        typer.Argument(help="Adapter type."),
+    ],
+    timezone: Annotated[
+        str,
+        typer.Argument(
+            help="Timezone in which meter read timestamps and other timestamps are represented for this source."
+        ),
+    ],
+    # Type-specific configurations
+    use_raw_data_cache: Annotated[
+        bool,
+        typer.Option(
+            help="If pipeline should use raw data cache. Applicable to types: [beacon_360, sentryx]"
+        ),
+    ] = None,
+    sftp_host: Annotated[
+        str, typer.Option(help="Applicable to types: [aclara]")
+    ] = None,
+    sftp_remote_data_directory: Annotated[
+        str, typer.Option(help="Applicable to types: [aclara]")
+    ] = None,
+    sftp_local_download_directory: Annotated[
+        str, typer.Option(help="Applicable to types: [aclara]")
+    ] = None,
+    sftp_local_known_hosts_file: Annotated[
+        str, typer.Option(help="Applicable to types: [aclara]")
+    ] = None,
+    ssh_tunnel_server_host: Annotated[
+        str,
+        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
+    ] = None,
+    ssh_tunnel_key_path: Annotated[
+        str,
+        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
+    ] = None,
+    database_host: Annotated[
+        str,
+        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
+    ] = None,
+    database_port: Annotated[
+        str,
+        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
+    ] = None,
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+):
+    """
+    Adds a new source with provided configuration. Different adapter types require specific configuration
+    which you can provide as optional arguments to this command.
+    """
+    new_sink_configuration = {
+        "org_id": org_id,
+        "type": type,
+        "timezone": timezone,
+        "use_raw_data_cache": use_raw_data_cache,
+        "sftp_host": sftp_host,
+        "sftp_remote_data_directory": sftp_remote_data_directory,
+        "sftp_local_known_hosts_file": sftp_local_known_hosts_file,
+        "sftp_local_download_directory": sftp_local_download_directory,
+        "ssh_tunnel_server_host": ssh_tunnel_server_host,
+        "ssh_tunnel_key_path": ssh_tunnel_key_path,
+        "database_host": database_host,
+        "database_port": database_port,
+    }
+    add_source_configuration(None, secrets_file, new_sink_configuration)
+
+
+@config_app.command()
+def add_sink(
+    id: Annotated[
+        str,
+        typer.Argument(help="Name of sink used as unique identifier."),
+    ],
+    type: Annotated[
+        str,
+        typer.Argument(help="Sink type. Options are: [snowflake]"),
+    ],
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+):
+    """
+    Adds or updates a sink with provided configuration.
+    """
+    new_sink_configuration = {
+        "id": id,
+        "type": type,
+    }
+    update_sink_configuration(None, secrets_file, new_sink_configuration)
+
+
+@config_app.command()
+def remove_sink(
+    id: Annotated[
+        str,
+        typer.Argument(help="Name of sink that should be removed from pipeline."),
+    ],
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+):
+    """
+    Removes a sink from the pipeline. Sink must not be used by any sources.
+    """
+    remove_sink_configuration(None, secrets_file, id)
 
 
 @config_app.command()
