@@ -7,9 +7,12 @@ import pathlib
 from airflow.providers.amazon.aws.notifications.sns import SnsNotifier
 from pytz import timezone, UTC
 from pytz.tzinfo import DstTzInfo
-import snowflake.connector
 import yaml
 
+from amiadapters.configuration.base import (
+    create_snowflake_connection,
+    create_snowflake_from_secrets_file,
+)
 from amiadapters.configuration.database import load_database_config
 
 
@@ -61,7 +64,7 @@ class AMIAdapterConfiguration:
             secrets = yaml.safe_load(f)
         # When we have better secrets management, find a better way of accessing this information
         snowflake_credentials = list(secrets["sinks"].values())[0]
-        connection = _create_snowflake_connection(
+        connection = create_snowflake_connection(
             account=snowflake_credentials["account"],
             user=snowflake_credentials["user"],
             password=snowflake_credentials["password"],
@@ -478,7 +481,7 @@ class ConfiguredStorageSink:
     def connection(self):
         match self.type:
             case ConfiguredStorageSinkType.SNOWFLAKE:
-                return _create_snowflake_connection(
+                return create_snowflake_connection(
                     account=self.secrets.account,
                     user=self.secrets.user,
                     password=self.secrets.password,
@@ -883,39 +886,3 @@ def find_secrets_yaml() -> str:
     if not pathlib.Path.exists(p):
         raise Exception(f"Path to secrets does not exist: {p}")
     return p
-
-
-def _create_snowflake_connection(
-    account: str = None,
-    user: str = None,
-    password: str = None,
-    warehouse: str = None,
-    database: str = None,
-    schema: str = None,
-    role: str = None,
-):
-    return snowflake.connector.connect(
-        account=account,
-        user=user,
-        password=password,
-        warehouse=warehouse,
-        database=database,
-        schema=schema,
-        role=role,
-        paramstyle="qmark",
-    )
-
-
-###########################################################################################
-# Configuration management APIs
-###########################################################################################
-def get_configuration():
-    pass
-
-
-def update_configuration():
-    pass
-
-
-def remove_configuration():
-    pass

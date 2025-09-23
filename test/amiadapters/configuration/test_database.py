@@ -8,6 +8,7 @@ from test.base_test_case import BaseTestCase
 
 
 class TestDatabase(BaseTestCase):
+
     def fake_fetch(self, cursor, table_name):
         if table_name == "configuration_sources":
             return [

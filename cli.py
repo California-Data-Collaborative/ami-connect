@@ -17,6 +17,9 @@ from amiadapters.config import (
     AMIAdapterConfiguration,
     ConfiguredTaskOutputControllerType,
 )
+from amiadapters.configuration.base import (
+    update_task_output_configuration,
+)
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
 
@@ -138,6 +141,27 @@ def download_intermediate_output(
             f"Task output configuration with invalid type {configured_task_output_controller.type}"
         )
     controller.download_for_path(path, "./output", decompress=True)
+
+
+@app.command()
+def update_task_output(
+    bucket_name: Annotated[
+        str,
+        typer.Argument(help="Name of S3 bucket used for task output."),
+    ],
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+):
+    """
+    Updates task output configuration in database. Assumes you're using S3 task output.
+    """
+    new_task_output_configuration = {
+        "type": "s3",
+        "s3_bucket": bucket_name,
+        "local_output_path": None,
+    }
+    update_task_output_configuration(None, secrets_file, new_task_output_configuration)
 
 
 if __name__ == "__main__":

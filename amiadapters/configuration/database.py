@@ -123,5 +123,41 @@ def load_database_config(snowflake_connection) -> Tuple[
 def _fetch_table(cursor, table_name):
     """Fetch all rows from a configuration table and return as list of dicts."""
     cursor.execute(f"SELECT * FROM {table_name}")
-    columns = [col[0] for col in cursor.description]
+    columns = [col[0].lower() for col in cursor.description]
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def update_task_output_configuration(connection, task_output_configuration: dict):
+    # Validate
+    if not task_output_configuration["type"]:
+        raise ValueError(f"Task output configuration is missing field: type")
+    if (
+        task_output_configuration["type"] == "s3"
+        and not task_output_configuration["s3_bucket"]
+    ):
+        raise ValueError(
+            f"Task output configuration with type s3 is missing field: s3_bucket"
+        )
+    if (
+        task_output_configuration["type"] == "local"
+        and not task_output_configuration["local_output_path"]
+    ):
+        raise ValueError(
+            f"Task output configuration with type local is missing field: local_output_path"
+        )
+
+    cursor = connection.cursor()
+    # Remove existing row
+    cursor.execute("TRUNCATE TABLE configuration_task_outputs")
+    # Insert the new row
+    cursor.execute(
+        """
+        INSERT INTO configuration_task_outputs (type, s3_bucket, local_output_path)
+        VALUES (?, ?, ?)
+        """,
+        [
+            task_output_configuration["type"],
+            task_output_configuration["s3_bucket"],
+            task_output_configuration["local_output_path"],
+        ],
+    )
