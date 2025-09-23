@@ -54,3 +54,14 @@ sinks:
 task_output:
   type: s3
   bucket: my-bucket
+
+notifications:
+  dag_failure:
+    sns_arn: my-sns-arn
+
+backfills:
+- org_id: my_aclara_utility
+  start_date: 2023-01-01
+  end_date: 2025-07-05
+  interval_days: 3
+  schedule: "45 */2 * * *"

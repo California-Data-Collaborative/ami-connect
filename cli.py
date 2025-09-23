@@ -31,9 +31,7 @@ app = typer.Typer()
 
 @app.command()
 def run(
-    config_file: Annotated[
-        str, typer.Option(help="Path to local config file.")
-    ] = DEFAULT_CONFIG_PATH,
+    config_file: Annotated[str, typer.Option(help="Path to local config file.")] = None,
     secrets_file: Annotated[
         str, typer.Option(help="Path to local secrets file.")
     ] = DEFAULT_SECRETS_PATH,
@@ -53,7 +51,16 @@ def run(
     """
     Run AMI API adapters to fetch AMI data, then shape it into generalized format, then store it.
     """
-    config = AMIAdapterConfiguration.from_yaml(config_file, secrets_file)
+    if config_file is not None:
+        logger.info(
+            f"Loading configuration from YAML at {config_file} and {secrets_file}"
+        )
+        config = AMIAdapterConfiguration.from_yaml(config_file, secrets_file)
+    else:
+        logger.info(
+            f"Loading configuration from database using credentials from {secrets_file}"
+        )
+        config = AMIAdapterConfiguration.from_database(secrets_file)
 
     adapters = config.adapters()
     if org_ids:

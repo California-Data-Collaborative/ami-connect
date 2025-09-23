@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-import os
 from typing import List, Dict, Union
 import pathlib
 
@@ -10,6 +9,8 @@ from pytz import timezone, UTC
 from pytz.tzinfo import DstTzInfo
 import snowflake.connector
 import yaml
+
+from amiadapters.config.database import load_database_config
 
 
 class AMIAdapterConfiguration:
@@ -56,15 +57,29 @@ class AMIAdapterConfiguration:
         Given a Snowflake connection to an AMI Connect schema, query the configuration tables to get this
         pipeline's config.
         """
-        sources = []
+        # For now, load secrets from YAML. In the near future we will load from a more secure source.
+        with open(secrets_file, "r") as f:
+            secrets = yaml.safe_load(f)
+        # When we have better secrets management, find a better way of accessing this information
+        snowflake_credentials = list(secrets["sinks"].values())[0]
+        connection = _create_snowflake_connection(
+            account=snowflake_credentials["account"],
+            user=snowflake_credentials["user"],
+            password=snowflake_credentials["password"],
+            warehouse=snowflake_credentials["warehouse"],
+            database=snowflake_credentials["database"],
+            schema=snowflake_credentials["schema"],
+            role=snowflake_credentials["role"],
+        )
+
         sinks = []
         task_output = {}
         notifications = {}
         backfills = []
 
-        # For now, load secrets from YAML. In the near future we will load from a more secure source.
-        with open(secrets_file, "r") as f:
-            secrets = yaml.safe_load(f)
+        import pdb
+
+        pdb.set_trace()
 
         return cls._make_instance(
             sources,
@@ -877,13 +892,13 @@ def find_secrets_yaml() -> str:
 
 
 def _create_snowflake_connection(
-    account: str,
-    user: str,
-    password: str,
-    warehouse: str,
-    database: str,
-    schema: str,
-    role: str,
+    account: str = None,
+    user: str = None,
+    password: str = None,
+    warehouse: str = None,
+    database: str = None,
+    schema: str = None,
+    role: str = None,
 ):
     return snowflake.connector.connect(
         account=account,
@@ -901,4 +916,12 @@ def _create_snowflake_connection(
 # Configuration management APIs
 ###########################################################################################
 def get_configuration():
+    pass
+
+
+def update_configuration():
+    pass
+
+
+def remove_configuration():
     pass

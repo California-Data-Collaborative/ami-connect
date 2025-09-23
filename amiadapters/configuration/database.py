@@ -1,0 +1,110 @@
+from typing import Dict, List, Tuple
+
+
+def load_database_config(snowflake_connection) -> Tuple[
+    List[Dict],
+    List[Dict],
+    Dict,
+    Dict,
+    List[Dict],
+    Dict,
+]:
+    """
+    Given a Snowflake connection, load all raw configuration objects from the database.
+    We return as dicts and lists to match the YAML config system's API.
+    """
+    tables = [
+        "configuration_sources",
+        "configuration_source_sinks",
+        "configuration_sinks",
+        "configuration_sink_checks",
+        "configuration_task_outputs",
+        "configuration_notifications",
+        "configuration_backfills",
+    ]
+    all_config = {}
+    cursor = snowflake_connection.cursor()
+    for table in tables:
+        all_config[table] = _fetch_table(cursor, table)
+
+    sinks_by_source_id = {}
+    for row in all_config["configuration_source_sinks"]:
+        source_id = row["source_id"]
+        if source_id not in sinks_by_source_id:
+            sinks_by_source_id[source_id] = []
+        sinks_by_source_id[source_id].append(row["sink_id"])
+
+    sources = []
+    for row in all_config["configuration_sources"]:
+        source = {}
+        source["id"] = row["id"]
+        source["type"] = row["type"]
+        source["org_id"] = row["org_id"]
+        source["timezone"] = row["timezone"]
+        source["sinks"] = sinks_by_source_id.get(row["id"], [])
+        type_specific_config = row["config"]
+        match row["type"]:
+            case "beacon_360" | "sentryx":
+                source["use_raw_data_cache"] = type_specific_config.get(
+                    "use_raw_data_cache", False
+                )
+            case "aclara":
+                source["sftp_host"] = type_specific_config.get("sftp_host")
+                source["sftp_remote_data_directory"] = type_specific_config.get(
+                    "sftp_remote_data_directory"
+                )
+                source["sftp_local_download_directory"] = type_specific_config.get(
+                    "sftp_local_download_directory"
+                )
+                source["sftp_local_known_hosts_file"] = type_specific_config.get(
+                    "sftp_local_known_hosts_file"
+                )
+            case "metersense" | "xylem_moulton_niguel":
+                source["ssh_tunnel_server_host"] = type_specific_config.get(
+                    "ssh_tunnel_server_host"
+                )
+                source["ssh_tunnel_key_path"] = type_specific_config.get(
+                    "ssh_tunnel_key_path"
+                )
+                source["database_host"] = type_specific_config.get("database_host")
+                source["database_port"] = type_specific_config.get("database_port")
+            case _:
+                pass
+        sources.append(source)
+
+    checks_by_sink_id = {}
+    for row in all_config["configuration_sink_checks"]:
+        sink_id = row["sink_id"]
+        if sink_id not in checks_by_sink_id:
+            checks_by_sink_id[sink_id] = []
+        checks_by_sink_id[sink_id].append(row["check_name"])
+
+    sinks = []
+    for row in all_config["configuration_sinks"]:
+        sink = {}
+        sink["id"] = row["id"]
+        sink["type"] = row["type"]
+        sink["checks"] = checks_by_sink_id.get(row["id"])
+        sinks.append(sink)
+
+    if len(all_config["configuration_task_outputs"]) != 1:
+        raise ValueError(
+            f"Expected one row for configuration_task_outputs, got {len(all_config["configuration_task_outputs"])}"
+        )
+    task_output = {}
+    row = all_config["configuration_task_outputs"][0]
+    task_output["type"] = row["type"]
+    task_output["bucket"] = row["s3_bucket"]
+    task_output["local_output_path"] = row["local_output_path"]
+
+    notifications = {}
+    backfills = []
+
+    return sources, sinks, task_output, notifications, backfills
+
+
+def _fetch_table(cursor, table_name):
+    """Fetch all rows from a configuration table and return as list of dicts."""
+    cursor.execute(f"SELECT * FROM {table_name}")
+    columns = [col[0] for col in cursor.description]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]
