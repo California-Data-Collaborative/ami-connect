@@ -188,12 +188,13 @@ class Beacon360Adapter(BaseAMIAdapter):
         if generate_report_response.status_code == 429:
             # Rate limit exceeded
             t = generate_report_response.json()
-            secs_to_wait = int(t["args"][2])
-            time_to_resume = datetime.now() + timedelta(seconds=secs_to_wait)
-            logger.warning(
-                f"need to wait {secs_to_wait} seconds until {time_to_resume} ({t})"
-            )
-            raise Exception("Rate limit exceeded")
+            if len(t.get("args", [])) > 2:
+                secs_to_wait = int(t["args"][2])
+                time_to_resume = datetime.now() + timedelta(seconds=secs_to_wait)
+                logger.warning(
+                    f"need to wait {secs_to_wait} seconds until {time_to_resume} ({t})"
+                )
+            raise Exception(f"Rate limit exceeded. Message from Beacon API: {t}")
         elif generate_report_response.status_code != 202:
             logger.error(
                 f"error when requesting report. status code: {generate_report_response.status_code}"
