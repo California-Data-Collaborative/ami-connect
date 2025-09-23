@@ -21,9 +21,7 @@ def add_source_configuration(
     if _use_database_for_config(config_file, secrets_file):
         logger.info(f"Adding sources in database with {new_source_configuration}")
         connection = create_snowflake_from_secrets_file(secrets_file)
-        return database.update_source_configuration(
-            connection, new_source_configuration
-        )
+        return database.add_source_configuration(connection, new_source_configuration)
 
 
 def update_source_configuration(

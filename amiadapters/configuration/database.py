@@ -133,104 +133,119 @@ def _fetch_table(cursor, table_name):
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 
-def update_source_configuration(connection, source_configuration: dict):
+def add_source_configuration(connection, source_configuration: dict):
     # Validate
     if not source_configuration.get("org_id"):
         raise ValueError(f"Source configuration is missing field: org_id")
     org_id = source_configuration["org_id"].lower()
 
     cursor = connection.cursor()
-    result = cursor.execute(
+    existing = _get_source_by_org_id(cursor, org_id)
+    if len(existing) != 0:
+        raise Exception(f"Source with org_id {org_id} already exists")
+
+    # Insert new source
+    if not source_configuration.get("type"):
+        raise ValueError(f"Source configuration is missing field: type")
+    if not source_configuration.get("timezone"):
+        raise ValueError(f"Source configuration is missing field: timezone")
+    if not source_configuration["timezone"] in pytz.all_timezones:
+        raise ValueError(f"Invalid timezone: {source_configuration["timezone"]}")
+
+    source_type = source_configuration["type"].lower()
+    config = _create_source_configuration_object_for_type(
+        source_type, source_configuration
+    )
+
+    logger.info(
+        f"Adding new source with type={type} org_id={org_id} timezone={source_configuration["timezone"]} config={config}"
+    )
+    cursor.execute(
         """
-        SELECT s.type, s.org_id, s.timezone, s.config
-        FROM configuration_sources s
-        WHERE s.org_id = ?
+        INSERT INTO configuration_sources (type, org_id, timezone, config)
+        SELECT ?, ?, ?, PARSE_JSON(?);
     """,
-        (org_id,),
-    ).fetchall()
-    if len(result) > 1:
-        raise Exception(f"Invalid state: more than one source with org_id {org_id}")
+        (source_type, org_id, source_configuration["timezone"], json.dumps(config)),
+    )
 
-    if not result:
-        # Insert new source
-        if not source_configuration.get("type"):
-            raise ValueError(f"Source configuration is missing field: type")
-        if not source_configuration.get("timezone"):
-            raise ValueError(f"Source configuration is missing field: timezone")
-        if not source_configuration["timezone"] in pytz.all_timezones:
-            raise ValueError(f"Invalid timezone: {source_configuration["timezone"]}")
-        source_type = source_configuration["type"].lower()
-        # Type-specific configs
-        match source_type:
-            case "aclara":
-                config = {}
-                for field in [
-                    "sftp_host",
-                    "sftp_remote_data_directory",
-                    "sftp_local_download_directory",
-                    "sftp_local_known_hosts_file",
-                ]:
-                    if not source_configuration.get(field):
-                        raise ValueError(
-                            f"Source configuration is missing field: {field}"
-                        )
-                    config[field] = source_configuration[field]
-            case "beacon_360" | "sentryx":
-                config = {
-                    "use_raw_data_cache": source_configuration.get(
-                        "use_raw_data_cache", False
-                    )
-                }
-            case "metersense" | "xylem_moulton_niguel":
-                config = {}
-                for field in [
-                    "ssh_tunnel_server_host",
-                    "ssh_tunnel_key_path",
-                    "database_host",
-                    "database_port",
-                ]:
-                    if not source_configuration.get(field):
-                        raise ValueError(
-                            f"Source configuration is missing field: {field}"
-                        )
-                    config[field] = source_configuration[field]
-            case "subeca":
-                config = {}
-            case _:
-                config = {}
-        logger.info(
-            f"Adding new source with type={type} org_id={org_id} timezone={source_configuration["timezone"]} config={config}"
-        )
-        cursor.execute(
-            """
-            INSERT INTO configuration_sources (type, org_id, timezone, config)
-            SELECT ?, ?, ?, PARSE_JSON(?);
-        """,
-            (source_type, org_id, source_configuration["timezone"], json.dumps(config)),
-        )
-    else:
-        existing_source = result[0][0]
-        import pdb
+    if sink_ids := source_configuration.get("sinks"):
+        # Validate
+        for sink_id in sink_ids:
+            sinks_with_id = cursor.execute(
+                """
+                SELECT s.id
+                FROM configuration_sinks s
+                WHERE s.id = ?
+            """,
+                (sink_id,),
+            ).fetchall()
+            if len(sinks_with_id) != 1:
+                raise Exception(
+                    f"There should be one sink with id {sink_id}. Got {len(sinks_with_id)}"
+                )
 
-        pdb.set_trace()
-        # Update
-        cursor.execute(
-            """
-            MERGE INTO configuration_sinks AS target
-            USING (
-                SELECT ? AS id, ? AS type
-            ) AS source
-            ON target.id = source.id
-            WHEN MATCHED THEN
-                UPDATE SET
-                    type = source.type
-            WHEN NOT MATCHED THEN
-                INSERT (id, type)
-                VALUES (source.id, source.type);
+        source = _get_source_by_org_id(cursor, org_id)[0]
+        source_id = source[0]
 
-        """,
-            (sink_id, sink_type),
-        )
+        # Associate sink with source
+        for sink_id in sink_ids:
+            cursor.execute(
+                """
+                MERGE INTO configuration_source_sinks AS target
+                USING (
+                    SELECT ? AS source_id, ? AS sink_id
+                ) AS source
+                ON target.source_id = source.source_id AND target.sink_id = source.sink_id
+                WHEN NOT MATCHED THEN
+                    INSERT (source_id, sink_id)
+                    VALUES (source.source_id, source.sink_id);
+
+            """,
+                (source_id, sink_id),
+            )
+
+
+def _create_source_configuration_object_for_type(
+    source_type: str, source_configuration: str
+) -> dict:
+    """
+    Each adapter type has special configuration that we represent as an object in the database.
+    This function parses the source_configuration argument into that object.
+    """
+    match source_type:
+        case "aclara":
+            config = {}
+            for field in [
+                "sftp_host",
+                "sftp_remote_data_directory",
+                "sftp_local_download_directory",
+                "sftp_local_known_hosts_file",
+            ]:
+                if not source_configuration.get(field):
+                    raise ValueError(f"Source configuration is missing field: {field}")
+                config[field] = source_configuration[field]
+        case "beacon_360" | "sentryx":
+            config = {
+                "use_raw_data_cache": source_configuration.get(
+                    "use_raw_data_cache", False
+                )
+            }
+        case "metersense" | "xylem_moulton_niguel":
+            config = {}
+            for field in [
+                "ssh_tunnel_server_host",
+                "ssh_tunnel_key_path",
+                "database_host",
+                "database_port",
+            ]:
+                if not source_configuration.get(field):
+                    raise ValueError(f"Source configuration is missing field: {field}")
+                config[field] = source_configuration[field]
+        case "subeca":
+            config = {}
+        case _:
+            config = {}
+    return config
 
 
 def remove_source_configuration(connection, org_id: str):
@@ -334,3 +349,14 @@ def update_task_output_configuration(connection, task_output_configuration: dict
             task_output_configuration["local_output_path"],
         ],
     )
+
+
+def _get_source_by_org_id(cursor, org_id: str) -> List[List]:
+    return cursor.execute(
+        """
+        SELECT s.id, s.type, s.org_id, s.timezone, s.config
+        FROM configuration_sources s
+        WHERE s.org_id = ?
+    """,
+        (org_id,),
+    ).fetchall()

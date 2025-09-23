@@ -10,6 +10,7 @@ Run from root directory with:
 from datetime import datetime
 import logging
 from pprint import pprint
+from typing import List
 from typing_extensions import Annotated
 
 import typer
@@ -232,6 +233,12 @@ def add_source(
         str,
         typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
     ] = None,
+    sinks: Annotated[
+        List[str],
+        typer.Option(
+            help="Collection of sink IDs where data from this source should be stored."
+        ),
+    ] = None,
     secrets_file: Annotated[
         str, typer.Option(help="Path to local secrets file.")
     ] = DEFAULT_SECRETS_PATH,
@@ -253,6 +260,7 @@ def add_source(
         "ssh_tunnel_key_path": ssh_tunnel_key_path,
         "database_host": database_host,
         "database_port": database_port,
+        "sinks": sinks or [],
     }
     add_source_configuration(None, secrets_file, new_sink_configuration)
 
