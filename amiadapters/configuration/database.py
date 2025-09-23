@@ -290,18 +290,9 @@ def remove_sink_configuration(connection, id: str):
         raise ValueError(f"Missing field: id")
     sink_id = id.lower()
     cursor = connection.cursor()
-    result = cursor.execute(
-        """
-        SELECT s.org_id
-        FROM configuration_source_sinks ss
-        JOIN configuration_sources s ON ss.source_id = s.id
-        WHERE ss.sink_id = ?
-    """,
-        (sink_id,),
-    ).fetchall()
+    result = _get_sink_by_id(cursor, sink_id)
     if result:
-
-        connected_sources = ", ".join(r[0] for r in result)
+        connected_sources = ", ".join(str(r[0]) for r in result)
         raise ValueError(
             f"Cannot remove sink {id} because it's connected to sources: {connected_sources}"
         )
@@ -359,4 +350,16 @@ def _get_source_by_org_id(cursor, org_id: str) -> List[List]:
         WHERE s.org_id = ?
     """,
         (org_id,),
+    ).fetchall()
+
+
+def _get_sink_by_id(cursor, sink_id: str) -> List[List]:
+    return cursor.execute(
+        """
+        SELECT s.org_id
+        FROM configuration_source_sinks ss
+        JOIN configuration_sources s ON ss.source_id = s.id
+        WHERE ss.sink_id = ?
+    """,
+        (sink_id,),
     ).fetchall()
