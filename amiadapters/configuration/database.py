@@ -158,7 +158,7 @@ def add_source_configuration(connection, source_configuration: dict):
     )
 
     logger.info(
-        f"Adding new source with type={type} org_id={org_id} timezone={source_configuration["timezone"]} config={config}"
+        f"Adding new source with type={source_type} org_id={org_id} timezone={source_configuration["timezone"]} config={config}"
     )
     cursor.execute(
         """
@@ -266,7 +266,14 @@ def _create_source_configuration_object_for_type(
 
 
 def remove_source_configuration(connection, org_id: str):
-    pass
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        DELETE FROM configuration_sources
+        WHERE org_id = ?
+        """, (org_id,)
+    )
+    # TODO it did not remove source_sink rows.
 
 
 def update_sink_configuration(connection, sink_configuration: dict):
@@ -375,7 +382,7 @@ def _get_sink_by_id(cursor, sink_id: str) -> List[List]:
         """
         SELECT s.id, s.type
         FROM configuration_sinks s
-        WHERE s.org_id = ?
+        WHERE s.id = ?
     """,
         (sink_id,),
     ).fetchall()

@@ -9,10 +9,7 @@ from pytz import timezone, UTC
 from pytz.tzinfo import DstTzInfo
 import yaml
 
-from amiadapters.configuration.base import (
-    create_snowflake_connection,
-    create_snowflake_from_secrets_file,
-)
+from amiadapters.configuration.base import create_snowflake_connection
 from amiadapters.configuration.database import get_configuration
 
 

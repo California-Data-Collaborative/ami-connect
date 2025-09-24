@@ -23,6 +23,7 @@ from amiadapters.configuration.base import (
     add_source_configuration,
     get_configuration,
     remove_sink_configuration,
+    remove_source_configuration,
     update_sink_configuration,
     update_source_configuration,
     update_task_output_configuration,
@@ -361,6 +362,24 @@ def update_source(
     if sinks is not None:
         new_sink_configuration["sinks"] = sinks
     update_source_configuration(None, secrets_file, new_sink_configuration)
+
+
+@config_app.command()
+def remove_source(
+    org_id: Annotated[
+        str,
+        typer.Argument(
+            help="Often source's organization name and is used as unique identifier."
+        ),
+    ],
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+):
+    """
+    Remove source from configuration, including all associated configuration.
+    """
+    remove_source_configuration(None, secrets_file, org_id)
 
 
 @config_app.command()

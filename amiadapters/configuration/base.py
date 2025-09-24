@@ -34,6 +34,16 @@ def update_source_configuration(
             connection, new_source_configuration
         )
 
+def remove_source_configuration(
+    config_file: str, secrets_file: str, org_id: str
+):
+    if _use_database_for_config(config_file, secrets_file):
+        logger.info(f"Removing source from database with org_id {org_id}")
+        connection = create_snowflake_from_secrets_file(secrets_file)
+        return database.remove_source_configuration(
+            connection, org_id
+        )
+
 
 def update_sink_configuration(
     config_file: str, secrets_file: str, new_sink_configuration: dict
