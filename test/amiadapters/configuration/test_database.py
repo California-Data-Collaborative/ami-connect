@@ -358,15 +358,6 @@ class TestDatabase(BaseTestCase):
         self.mock_cursor.execute.return_value.fetchall.return_value = [(1,)]
         add_source_configuration(self.mock_connection, source_config)
 
-        merge_call = """
-                MERGE INTO configuration_source_sinks AS target
-                USING (
-                    SELECT ? AS source_id, ? AS sink_id
-                ) AS source
-                ON target.source_id = source.source_id AND target.sink_id = source.sink_id
-                WHEN NOT MATCHED THEN
-                    INSERT (source_id, sink_id)
-                    VALUES (source.source_id, source.sink_id);
-
-            """
-        self.mock_cursor.execute.assert_any_call(merge_call, (123, "cadc_snowflake"))
+        sql, params = self.mock_cursor.execute.call_args[0]
+        self.assertIn("MERGE INTO configuration_source_sinks", sql)
+        self.assertEqual(params, (123, "cadc_snowflake"))

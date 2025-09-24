@@ -266,6 +266,104 @@ def add_source(
 
 
 @config_app.command()
+def update_source(
+    org_id: Annotated[
+        str,
+        typer.Argument(
+            help="Often source's organization name and is used as unique identifier."
+        ),
+    ],
+    type: Annotated[str, typer.Option(help="Adapter type.")] = None,
+    timezone: Annotated[
+        str,
+        typer.Option(
+            help="Timezone in which meter read timestamps and other timestamps are represented for this source."
+        ),
+    ] = None,
+    # Type-specific configurations
+    use_raw_data_cache: Annotated[
+        bool,
+        typer.Option(
+            help="If pipeline should use raw data cache. Applicable to types: [beacon_360, sentryx]"
+        ),
+    ] = None,
+    sftp_host: Annotated[
+        str, typer.Option(help="Applicable to types: [aclara]")
+    ] = None,
+    sftp_remote_data_directory: Annotated[
+        str, typer.Option(help="Applicable to types: [aclara]")
+    ] = None,
+    sftp_local_download_directory: Annotated[
+        str, typer.Option(help="Applicable to types: [aclara]")
+    ] = None,
+    sftp_local_known_hosts_file: Annotated[
+        str, typer.Option(help="Applicable to types: [aclara]")
+    ] = None,
+    ssh_tunnel_server_host: Annotated[
+        str,
+        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
+    ] = None,
+    ssh_tunnel_key_path: Annotated[
+        str,
+        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
+    ] = None,
+    database_host: Annotated[
+        str,
+        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
+    ] = None,
+    database_port: Annotated[
+        str,
+        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
+    ] = None,
+    sinks: Annotated[
+        List[str],
+        typer.Option(
+            help="Collection of sink IDs where data from this source should be stored."
+        ),
+    ] = None,
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+):
+    """
+    Adds a new source with provided configuration. Different adapter types require specific configuration
+    which you can provide as optional arguments to this command.
+    """
+    new_sink_configuration = {"org_id": org_id}
+    if type is not None:
+        new_sink_configuration["type"] = type
+    if timezone is not None:
+        new_sink_configuration["timezone"] = timezone
+    if use_raw_data_cache is not None:
+        new_sink_configuration["use_raw_data_cache"] = use_raw_data_cache
+    if sftp_host is not None:
+        new_sink_configuration["sftp_host"] = sftp_host
+    if sftp_remote_data_directory is not None:
+        new_sink_configuration["sftp_remote_data_directory"] = (
+            sftp_remote_data_directory
+        )
+    if sftp_local_known_hosts_file is not None:
+        new_sink_configuration["sftp_local_known_hosts_file"] = (
+            sftp_local_known_hosts_file
+        )
+    if sftp_local_download_directory is not None:
+        new_sink_configuration["sftp_local_download_directory"] = (
+            sftp_local_download_directory
+        )
+    if ssh_tunnel_server_host is not None:
+        new_sink_configuration["ssh_tunnel_server_host"] = ssh_tunnel_server_host
+    if ssh_tunnel_key_path is not None:
+        new_sink_configuration["ssh_tunnel_key_path"] = ssh_tunnel_key_path
+    if database_host is not None:
+        new_sink_configuration["database_host"] = database_host
+    if database_port is not None:
+        new_sink_configuration["database_port"] = database_port
+    if sinks is not None:
+        new_sink_configuration["sinks"] = sinks
+    update_source_configuration(None, secrets_file, new_sink_configuration)
+
+
+@config_app.command()
 def add_sink(
     id: Annotated[
         str,

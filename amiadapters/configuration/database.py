@@ -169,44 +169,61 @@ def add_source_configuration(connection, source_configuration: dict):
     )
 
     if sink_ids := source_configuration.get("sinks"):
-        # Validate
-        for sink_id in sink_ids:
-            sinks_with_id = cursor.execute(
-                """
-                SELECT s.id
-                FROM configuration_sinks s
-                WHERE s.id = ?
-            """,
-                (sink_id,),
-            ).fetchall()
-            if len(sinks_with_id) != 1:
-                raise Exception(
-                    f"There should be one sink with id {sink_id}. Got {len(sinks_with_id)}"
-                )
+        _associate_sinks_with_source(cursor, org_id, sink_ids)
 
-        source = _get_source_by_org_id(cursor, org_id)[0]
-        source_id = source[0]
 
-        # Associate sink with source
-        for sink_id in sink_ids:
-            cursor.execute(
-                """
-                MERGE INTO configuration_source_sinks AS target
-                USING (
-                    SELECT ? AS source_id, ? AS sink_id
-                ) AS source
-                ON target.source_id = source.source_id AND target.sink_id = source.sink_id
-                WHEN NOT MATCHED THEN
-                    INSERT (source_id, sink_id)
-                    VALUES (source.source_id, source.sink_id);
+def update_source_configuration(connection, source_configuration: dict):
+    # Validate
+    if not source_configuration.get("org_id"):
+        raise ValueError(f"Source configuration is missing field: org_id")
+    org_id = source_configuration["org_id"].lower()
 
-            """,
-                (source_id, sink_id),
-            )
+    cursor = connection.cursor()
+    existing = _get_source_by_org_id(cursor, org_id)
+    if len(existing) != 1:
+        raise Exception(
+            f"Expected to find one source with org_id {org_id}, got {len(existing)}"
+        )
+
+    # Update with new source
+    source = {
+        "id": existing[0][0],
+        "type": existing[0][1],
+        "org_id": existing[0][2],
+        "timezone": existing[0][3],
+        "config": json.loads(existing[0][4]),
+    }
+    if source_type := source_configuration.get("type"):
+        source["type"] = source_type.lower()
+    if timezone := source_configuration.get("timezone"):
+        source["timezone"] = timezone
+    new_config = _create_source_configuration_object_for_type(
+        source["type"], source_configuration, require_all_fields=False
+    )
+    for key, value in [x for x in new_config.items()]:
+        # Remove any None's unless they were explicitly set in the source_configuration argument
+        if value is None and key not in source_configuration:
+            del new_config[key]
+    source["config"].update(new_config)
+
+    logger.info(f"Updating source with {org_id} with values {source}")
+    cursor.execute(
+        """
+        UPDATE configuration_sources
+        SET 
+            type = ?,
+            timezone = ?,
+            config = PARSE_JSON(?)
+        WHERE org_id = ?;
+        """,
+        (source["type"], source["timezone"], json.dumps(source["config"]), org_id),
+    )
+    if sink_ids := source_configuration.get("sinks"):
+        _associate_sinks_with_source(cursor, org_id, sink_ids)
 
 
 def _create_source_configuration_object_for_type(
-    source_type: str, source_configuration: str
+    source_type: str, source_configuration: str, require_all_fields=True
 ) -> dict:
     """
     Each adapter type has special configuration that we represent as an object in the database.
@@ -221,9 +238,9 @@ def _create_source_configuration_object_for_type(
                 "sftp_local_download_directory",
                 "sftp_local_known_hosts_file",
             ]:
-                if not source_configuration.get(field):
+                if not source_configuration.get(field) and require_all_fields:
                     raise ValueError(f"Source configuration is missing field: {field}")
-                config[field] = source_configuration[field]
+                config[field] = source_configuration.get(field)
         case "beacon_360" | "sentryx":
             config = {
                 "use_raw_data_cache": source_configuration.get(
@@ -238,9 +255,9 @@ def _create_source_configuration_object_for_type(
                 "database_host",
                 "database_port",
             ]:
-                if not source_configuration.get(field):
+                if not source_configuration.get(field) and require_all_fields:
                     raise ValueError(f"Source configuration is missing field: {field}")
-                config[field] = source_configuration[field]
+                config[field] = source_configuration.get(field)
         case "subeca":
             config = {}
         case _:
@@ -363,3 +380,40 @@ def _get_sink_by_id(cursor, sink_id: str) -> List[List]:
     """,
         (sink_id,),
     ).fetchall()
+
+
+def _associate_sinks_with_source(cursor, org_id: str, sink_ids: List[str]):
+    # Validate
+    for sink_id in sink_ids:
+        sinks_with_id = cursor.execute(
+            """
+            SELECT s.id
+            FROM configuration_sinks s
+            WHERE s.id = ?
+        """,
+            (sink_id,),
+        ).fetchall()
+        if len(sinks_with_id) != 1:
+            raise Exception(
+                f"Expected one sink with id {sink_id}, got {len(sinks_with_id)}"
+            )
+
+    source = _get_source_by_org_id(cursor, org_id)[0]
+    source_id = source[0]
+
+    # Associate sink with source
+    for sink_id in sink_ids:
+        cursor.execute(
+            """
+            MERGE INTO configuration_source_sinks AS target
+            USING (
+                SELECT ? AS source_id, ? AS sink_id
+            ) AS source
+            ON target.source_id = source.source_id AND target.sink_id = source.sink_id
+            WHEN NOT MATCHED THEN
+                INSERT (source_id, sink_id)
+                VALUES (source.source_id, source.sink_id);
+
+        """,
+            (source_id, sink_id),
+        )
