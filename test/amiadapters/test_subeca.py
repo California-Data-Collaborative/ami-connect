@@ -74,6 +74,7 @@ class TestSubecaAdapter(BaseTestCase):
         self.adapter = SubecaAdapter(
             org_id="this-utility",
             org_timezone=pytz.timezone("Africa/Algiers"),
+            api_url="my-url",
             api_key="test-key",
             configured_task_output_controller=ConfiguredLocalTaskOutputController(
                 "/tmp/output"
@@ -84,6 +85,7 @@ class TestSubecaAdapter(BaseTestCase):
         self.end_date = datetime.datetime(2024, 1, 3, 0, 0)
 
     def test_init(self):
+        self.assertEqual("my-url", self.adapter.api_url)
         self.assertEqual("test-key", self.adapter.api_key)
         self.assertEqual("this-utility", self.adapter.org_id)
         self.assertEqual(pytz.timezone("Africa/Algiers"), self.adapter.org_timezone)

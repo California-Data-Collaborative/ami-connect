@@ -2,6 +2,7 @@ sources:
 - type: subeca
   org_id: my_utility
   timezone: America/Los_Angeles
+  api_url: my_url
   sinks:
   - my_snowflake_instance
 

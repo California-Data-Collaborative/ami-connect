@@ -177,6 +177,7 @@ class AMIAdapterConfiguration:
                 source.get("use_raw_data_cache"),
                 task_output_controller,
                 source.get("utility_name"),
+                source.get("api_url"),
                 configured_sftp,
                 configured_ssh_tunnel_to_database,
                 secrets,
@@ -327,6 +328,7 @@ class AMIAdapterConfiguration:
                         SubecaAdapter(
                             source.org_id,
                             source.timezone,
+                            source.api_url,
                             source.secrets.api_key,
                             source.task_output_controller,
                             source.storage_sinks,
@@ -697,6 +699,7 @@ class ConfiguredAMISource:
             ConfiguredLocalTaskOutputController, ConfiguredS3TaskOutputController
         ],
         utility_name: str,
+        api_url: str,
         configured_sftp: ConfiguredSftp,
         configured_ssh_tunnel_to_database: ConfiguredSSHTunnelToDatabase,
         secrets: Union[Beacon360Secrets, SentryxSecrets],
@@ -711,6 +714,7 @@ class ConfiguredAMISource:
             task_output_controller
         )
         self.utility_name = utility_name
+        self.api_url = api_url
         self.configured_sftp = self._configured_sftp(configured_sftp)
         self.configured_ssh_tunnel_to_database = (
             self._configured_ssh_tunnel_to_database(configured_ssh_tunnel_to_database)

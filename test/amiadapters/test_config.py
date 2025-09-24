@@ -158,6 +158,7 @@ class TestConfig(BaseTestCase):
         self.assertEqual("my_utility", source.org_id)
         self.assertEqual("America/Los_Angeles", str(source.timezone))
         self.assertEqual("outputs", source.task_output_controller.output_folder)
+        self.assertEqual("my_url", source.api_url)
         self.assertEqual("key", source.secrets.api_key)
         self.assertEqual(1, len(source.storage_sinks))
         self.assertEqual([], config._backfills)
