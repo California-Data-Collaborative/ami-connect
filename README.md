@@ -61,6 +61,12 @@ python -m unittest
 
 ### Configuration
 
+# TODO FILL THIS OUT WITH DATABASE INFO
+
+```
+python cli.py config add-source cadc_coastside aclara America/Los_Angeles --sftp-host dmz.aclarahosting.com --sftp-remote-data-directory ./CaDC --sftp-local-download-directory ./output --sftp-local-known-hosts-file ./known-hosts --sinks cadc_snowflake
+```
+
 We use two YAML files to configure the pipeline:
 - `config.yaml`, which tells the pipeline which AMI data sources should be queried during a run and which storage sinks should receive the data.
 - `secrets.yaml`, which houses all secrets.

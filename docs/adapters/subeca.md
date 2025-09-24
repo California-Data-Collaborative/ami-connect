@@ -10,6 +10,7 @@ sources:
 - type: subeca
   org_id: my_utility
   timezone: America/Los_Angeles
+  api_url: my-source-name.api.subeca.online
 ```
 
 Secrets:

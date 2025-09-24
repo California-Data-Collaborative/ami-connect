@@ -1,14 +1,16 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import List, Union
+from typing import List, Dict, Union
 import pathlib
 
 from airflow.providers.amazon.aws.notifications.sns import SnsNotifier
 from pytz import timezone, UTC
 from pytz.tzinfo import DstTzInfo
-import snowflake.connector
 import yaml
+
+from amiadapters.configuration.base import create_snowflake_connection
+from amiadapters.configuration.database import get_configuration
 
 
 class AMIAdapterConfiguration:
@@ -34,20 +36,79 @@ class AMIAdapterConfiguration:
         Check config.yaml.example and secrets.yaml.example for examples.
         """
         with open(config_file, "r") as f:
-            config_yaml = yaml.safe_load(f)
+            config = yaml.safe_load(f)
 
         with open(secrets_file, "r") as f:
-            secrets_yaml = yaml.safe_load(f)
+            secrets = yaml.safe_load(f)
 
+        return cls._make_instance(
+            config.get("sources", []),
+            config.get("sinks", []),
+            config.get("task_output", {}),
+            config.get("notifications", {}),
+            config.get("backfills", []),
+            secrets,
+        )
+
+    @classmethod
+    def from_database(cls, secrets_file: str):
+        """
+        Given a Snowflake connection to an AMI Connect schema, query the configuration tables to get this
+        pipeline's config.
+        """
+        # For now, load secrets from YAML. In the near future we will load from a more secure source.
+        with open(secrets_file, "r") as f:
+            secrets = yaml.safe_load(f)
+        # When we have better secrets management, find a better way of accessing this information
+        snowflake_credentials = list(secrets["sinks"].values())[0]
+        connection = create_snowflake_connection(
+            account=snowflake_credentials["account"],
+            user=snowflake_credentials["user"],
+            password=snowflake_credentials["password"],
+            warehouse=snowflake_credentials["warehouse"],
+            database=snowflake_credentials["database"],
+            schema=snowflake_credentials["schema"],
+            role=snowflake_credentials["role"],
+        )
+
+        sources, sinks, task_output, notifications, backfills = get_configuration(
+            connection
+        )
+
+        return cls._make_instance(
+            sources,
+            sinks,
+            task_output,
+            notifications,
+            backfills,
+            secrets,
+        )
+
+    @classmethod
+    def _make_instance(
+        cls,
+        configured_sources: List[Dict],
+        configured_sinks: List[Dict],
+        configured_task_output: Dict,
+        configured_notifications: Dict,
+        configured_backfills: List[Dict],
+        configured_secrets: Dict,
+    ):
+        """
+        Other static constructors get their data from YAML, a database, etc. then call this function
+        to create our internal config object.
+        """
         # Parse all configured storage sinks
         all_sinks = []
-        for sink in config_yaml.get("sinks", []):
+        for sink in configured_sinks:
             sink_id = sink.get("id")
             sink_type = sink.get("type")
             checks = sink.get("checks")
             match sink_type:
                 case ConfiguredStorageSinkType.SNOWFLAKE:
-                    sink_secrets_yaml = secrets_yaml.get("sinks", {}).get(sink_id, {})
+                    sink_secrets_yaml = configured_secrets.get("sinks", {}).get(
+                        sink_id, {}
+                    )
                     if not sink_secrets_yaml:
                         raise ValueError(f"Found no secrets for sink {sink_id}")
                     sink_secrets = SnowflakeSecrets(
@@ -72,26 +133,25 @@ class AMIAdapterConfiguration:
         all_sinks_by_id = {s.id: sink for s in all_sinks}
 
         # Task output controller
-        task_output_config = config_yaml.get("task_output")
-        if task_output_config is None:
+        if configured_task_output is None:
             raise ValueError("Missing task_output in configuration")
-        task_output_type = task_output_config.get("type")
+        task_output_type = configured_task_output.get("type")
         match task_output_type:
             case ConfiguredTaskOutputControllerType.LOCAL:
                 task_output_controller = ConfiguredLocalTaskOutputController(
-                    task_output_config.get("output_folder"),
+                    configured_task_output.get("output_folder"),
                 )
             case ConfiguredTaskOutputControllerType.S3:
                 task_output_controller = ConfiguredS3TaskOutputController(
-                    task_output_config.get("dev_profile"),
-                    task_output_config.get("bucket"),
+                    configured_task_output.get("dev_profile"),
+                    configured_task_output.get("bucket"),
                 )
             case _:
                 raise ValueError(f"Unrecognized task output type {task_output_type}")
 
         # Parse all configured sources
         sources = []
-        for source in config_yaml.get("sources", []):
+        for source in configured_sources:
             org_id = source.get("org_id")
             type = source.get("type")
 
@@ -99,7 +159,7 @@ class AMIAdapterConfiguration:
                 raise ValueError(f"Cannot have duplicate org_id: {org_id}")
 
             # Parse secrets for data source
-            this_source_secrets = secrets_yaml.get("sources", {}).get(org_id)
+            this_source_secrets = configured_secrets.get("sources", {}).get(org_id)
             if this_source_secrets is None:
                 raise ValueError(f"No secrets found for org_id: {org_id}")
             match type:
@@ -189,7 +249,7 @@ class AMIAdapterConfiguration:
 
         # Backfills
         backfills = []
-        for backfill_config in config_yaml.get("backfills", []):
+        for backfill_config in configured_backfills:
             org_id = backfill_config.get("org_id")
             start_date = backfill_config.get("start_date")
             end_date = backfill_config.get("end_date")
@@ -217,8 +277,9 @@ class AMIAdapterConfiguration:
             )
 
         # Notifications
-        notification_config = config_yaml.get("notifications", {})
-        on_failure_sns_arn = notification_config.get("dag_failure", {}).get("sns_arn")
+        on_failure_sns_arn = configured_notifications.get("dag_failure", {}).get(
+            "sns_arn"
+        )
         if on_failure_sns_arn:
             notifications = ConfiguredNotifications(
                 on_failure_sns_arn=on_failure_sns_arn
@@ -417,7 +478,7 @@ class ConfiguredStorageSink:
     def connection(self):
         match self.type:
             case ConfiguredStorageSinkType.SNOWFLAKE:
-                return snowflake.connector.connect(
+                return create_snowflake_connection(
                     account=self.secrets.account,
                     user=self.secrets.user,
                     password=self.secrets.password,
@@ -425,7 +486,6 @@ class ConfiguredStorageSink:
                     database=self.secrets.database,
                     schema=self.secrets.schema,
                     role=self.secrets.role,
-                    paramstyle="qmark",
                 )
             case _:
                 ValueError(f"Unrecognized type {self.type}")

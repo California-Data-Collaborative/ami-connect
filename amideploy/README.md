@@ -84,7 +84,7 @@ Now that your servers are created, you'll need to configure them to run Airflow.
 
 Access the Airflow EC2's private key, store it on your machine, and prep it for SSH:
 ```
-terraform output airflow_server_private_key_pem > ../configuration/airflow-key.pem
+terraform output -raw airflow_server_private_key_pem > ../configuration/airflow-key.pem
 chmod 600 ../configuration/airflow-key.pem
 ```
 
