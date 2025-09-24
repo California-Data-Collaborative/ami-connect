@@ -307,7 +307,7 @@ def remove_sink_configuration(connection, id: str):
         raise ValueError(f"Missing field: id")
     sink_id = id.lower()
     cursor = connection.cursor()
-    result = _get_sink_by_id(cursor, sink_id)
+    result = _get_sources_associated_with_sink_id(cursor, sink_id)
     if result:
         connected_sources = ", ".join(str(r[0]) for r in result)
         raise ValueError(
@@ -373,6 +373,17 @@ def _get_source_by_org_id(cursor, org_id: str) -> List[List]:
 def _get_sink_by_id(cursor, sink_id: str) -> List[List]:
     return cursor.execute(
         """
+        SELECT s.id, s.type
+        FROM configuration_sinks s
+        WHERE s.org_id = ?
+    """,
+        (sink_id,),
+    ).fetchall()
+
+
+def _get_sources_associated_with_sink_id(cursor, sink_id: str) -> List[List]:
+    return cursor.execute(
+        """
         SELECT s.org_id
         FROM configuration_source_sinks ss
         JOIN configuration_sources s ON ss.source_id = s.id
@@ -385,14 +396,7 @@ def _get_sink_by_id(cursor, sink_id: str) -> List[List]:
 def _associate_sinks_with_source(cursor, org_id: str, sink_ids: List[str]):
     # Validate
     for sink_id in sink_ids:
-        sinks_with_id = cursor.execute(
-            """
-            SELECT s.id
-            FROM configuration_sinks s
-            WHERE s.id = ?
-        """,
-            (sink_id,),
-        ).fetchall()
+        sinks_with_id = _get_sink_by_id(cursor, sink_id)
         if len(sinks_with_id) != 1:
             raise Exception(
                 f"Expected one sink with id {sink_id}, got {len(sinks_with_id)}"

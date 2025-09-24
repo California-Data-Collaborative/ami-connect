@@ -9,6 +9,7 @@ from amiadapters.configuration.database import (
     get_configuration,
     remove_sink_configuration,
     update_sink_configuration,
+    update_source_configuration,
     update_task_output_configuration,
 )
 from test.base_test_case import BaseTestCase
@@ -259,7 +260,7 @@ class TestDatabase(BaseTestCase):
         with self.assertRaisesRegex(ValueError, "Missing field: id"):
             remove_sink_configuration(self.mock_connection, "")
 
-    @patch("amiadapters.configuration.database._get_sink_by_id")
+    @patch("amiadapters.configuration.database._get_sources_associated_with_sink_id")
     def test_remove_sink_error_if_attached_to_source(self, mock_get_sink):
         mock_get_sink.return_value = [
             [
@@ -269,7 +270,7 @@ class TestDatabase(BaseTestCase):
         with self.assertRaises(ValueError):
             remove_sink_configuration(self.mock_connection, "Cadc_Snowflake")
 
-    @patch("amiadapters.configuration.database._get_sink_by_id")
+    @patch("amiadapters.configuration.database._get_sources_associated_with_sink_id")
     def test_remove_sink_configuration_valid_id_executes_delete(self, mock_get_sink):
         mock_get_sink.return_value = []
         remove_sink_configuration(self.mock_connection, "SINK1")
@@ -279,7 +280,7 @@ class TestDatabase(BaseTestCase):
         self.assertIn("DELETE FROM configuration_sinks", sql)
         self.assertEqual(params, ("sink1",))  # should be lowercased
 
-    @patch("amiadapters.configuration.database._get_sink_by_id")
+    @patch("amiadapters.configuration.database._get_sources_associated_with_sink_id")
     def test_remove_sink_configuration_id_is_lowercased_before_delete(
         self, mock_get_sink
     ):
@@ -361,3 +362,99 @@ class TestDatabase(BaseTestCase):
         sql, params = self.mock_cursor.execute.call_args[0]
         self.assertIn("MERGE INTO configuration_source_sinks", sql)
         self.assertEqual(params, (123, "cadc_snowflake"))
+
+    def test_update_source_configuration_missing_org_id_raises_value_error(self):
+        with self.assertRaises(ValueError) as ctx:
+            update_source_configuration(self.mock_connection, {})
+        self.assertIn(
+            "Source configuration is missing field: org_id", str(ctx.exception)
+        )
+
+    def test_update_source_configuration_multiple_existing_sources_raises_exception(
+        self,
+    ):
+        # Simulate _get_source_by_org_id -> returns multiple
+        self.mock_cursor.fetchall.return_value = [
+            ("id1", "snowflake", "org1", "UTC", json.dumps({})),
+            ("id2", "snowflake", "org1", "UTC", json.dumps({})),
+        ]
+
+        with self.assertRaises(Exception) as ctx:
+            update_source_configuration(self.mock_connection, {"org_id": "org1"})
+
+        self.assertIn(
+            "Expected to find one source with org_id org1", str(ctx.exception)
+        )
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    def test_update_source_configuration_updates_existing_source(self, mock_get_source):
+        # Simulate one existing row
+        existing_config = {"use_raw_data_cache": False}
+        mock_get_source.return_value = [
+            ("id1", "beacon_360", "org1", "UTC", json.dumps(existing_config))
+        ]
+        update_source_configuration(
+            self.mock_connection,
+            {"org_id": "org1", "timezone": "PST", "use_raw_data_cache": True},
+        )
+
+        # Ensure UPDATE executed with correct parameters
+        update_call = self.mock_cursor.execute.call_args_list[-1]
+        query, params = update_call[0]
+        self.assertIn("UPDATE configuration_sources", query)
+        self.assertEqual(params[0], "beacon_360")  # type unchanged
+        self.assertEqual(params[1], "PST")  # timezone updated
+        updated_config = json.loads(params[2])
+        self.assertEqual(updated_config["use_raw_data_cache"], True)
+        self.assertEqual(params[3], "org1")  # org_id lowercased
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    @patch("amiadapters.configuration.database._get_sink_by_id")
+    def test_update_source_configuration_associates_sinks_if_provided(
+        self, mock_get_sink, mock_get_source
+    ):
+        # One existing row
+        mock_get_source.return_value = [
+            ("id1", "beacon_360", "org1", "UTC", json.dumps({}))
+        ]
+
+        # One existing sink
+        mock_get_sink.return_value = [("sink1", "org1")]
+
+        update_source_configuration(
+            self.mock_connection, {"org_id": "org1", "sinks": ["sink1", "sink2"]}
+        )
+
+        # Check that UPDATE was executed
+        update_call = self.mock_cursor.execute.call_args_list[0]
+        query, params = update_call[0]
+        self.assertIn("UPDATE configuration_sources", query)
+        self.assertEqual(params[3], "org1")
+
+        # Check that _associate_sinks_with_source query was executed
+        all_queries = [c[0][0] for c in self.mock_cursor.execute.call_args_list]
+        self.assertTrue(any("INSERT" in q or "DELETE" in q for q in all_queries))
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    def test_update_source_configuration_removes_none_values_from_new_config(
+        self, mock_get_source
+    ):
+        # Existing config has "use_raw_data_cache"
+        mock_get_source.return_value = [
+            (
+                "id1",
+                "beacon_360",
+                "org1",
+                "UTC",
+                json.dumps({"use_raw_data_cache": False}),
+            )
+        ]
+
+        update_source_configuration(
+            self.mock_connection, {"org_id": "org1", "use_raw_data_cache": None}
+        )
+
+        update_call = self.mock_cursor.execute.call_args_list[-1]
+        query, params = update_call[0]
+        updated_config = json.loads(params[2])
+        self.assertIn("use_raw_data_cache", updated_config)  # None explicitly set
