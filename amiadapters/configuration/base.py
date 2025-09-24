@@ -59,7 +59,7 @@ def remove_sink_configuration(config_file: str, secrets_file: str, id: str):
 
 
 def update_task_output_configuration(
-    config_file: str, secrets_file: str, new_task_output_configuration
+    config_file: str, secrets_file: str, new_task_output_configuration: dict
 ):
     if _use_database_for_config(config_file, secrets_file):
         logger.info(
@@ -69,6 +69,17 @@ def update_task_output_configuration(
         database.update_task_output_configuration(
             connection, new_task_output_configuration
         )
+
+
+def update_backfill_configuration(
+    config_file: str, secrets_file: str, new_backfill_configuration: dict
+):
+    if _use_database_for_config(config_file, secrets_file):
+        logger.info(
+            f"Updating backfill configuration in database to {new_backfill_configuration}"
+        )
+        connection = create_snowflake_from_secrets_file(secrets_file)
+        database.update_backfill_configuration(connection, new_backfill_configuration)
 
 
 def _use_database_for_config(config_file: str, secrets_file: str) -> bool:

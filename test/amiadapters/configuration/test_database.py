@@ -9,6 +9,7 @@ from amiadapters.configuration.database import (
     get_configuration,
     remove_sink_configuration,
     remove_source_configuration,
+    update_backfill_configuration,
     update_sink_configuration,
     update_source_configuration,
     update_task_output_configuration,
@@ -534,3 +535,72 @@ class TestDatabase(BaseTestCase):
 
         # Ensure rollback was called
         self.mock_cursor.execute.assert_any_call("ROLLBACK")
+
+    def test_update_backfill_configuration_missing_field_raises(self):
+        """update_backfill_configuration should raise ValueError if a required field is missing"""
+        for field in ["org_id", "start_date", "end_date", "interval_days", "schedule"]:
+            bad_config = {
+                "org_id": "Org1",
+                "start_date": date(2023, 1, 1),
+                "end_date": date(2023, 12, 31),
+                "interval_days": 5,
+                "schedule": "0 0 * * *",
+            }
+
+            bad_config[field] = None  # remove one required field
+            with self.assertRaises(ValueError) as ctx:
+                update_backfill_configuration(self.mock_connection, bad_config)
+            self.assertIn(
+                f"Backfill configuration is missing field: {field}", str(ctx.exception)
+            )
+
+    def test_update_backfill_configuration_executes_merge(self):
+        """update_backfill_configuration should execute a MERGE statement with correct parameters"""
+        valid_config = {
+            "org_id": "Org1",
+            "start_date": date(2023, 1, 1),
+            "end_date": date(2023, 12, 31),
+            "interval_days": 5,
+            "schedule": "0 0 * * *",
+        }
+
+        update_backfill_configuration(self.mock_connection, valid_config)
+
+        self.mock_cursor.execute.assert_called_once()
+        query, params = self.mock_cursor.execute.call_args[0]
+
+        # Check query structure
+        self.assertIn("MERGE INTO configuration_backfills", query)
+        self.assertIn("WHEN MATCHED THEN", query)
+        self.assertIn("WHEN NOT MATCHED THEN", query)
+
+        # Validate parameters
+        self.assertEqual(params[0], "org1")  # org_id lowercased
+        self.assertEqual(params[1], valid_config["start_date"])
+        self.assertEqual(params[2], valid_config["end_date"])
+        self.assertEqual(params[3], valid_config["interval_days"])
+        self.assertEqual(params[4], valid_config["schedule"])
+
+    def test_update_backfill_configuration_allows_multiple_calls(self):
+        """update_backfill_configuration should execute independently for each call"""
+        config2 = {
+            "org_id": "Org1",
+            "start_date": date(2023, 1, 1),
+            "end_date": date(2023, 12, 31),
+            "interval_days": 5,
+            "schedule": "0 0 * * *",
+        }
+
+        config2_copy = dict(config2)
+
+        config2["org_id"] = "AnotherOrg"
+
+        update_backfill_configuration(self.mock_connection, config2_copy)
+        update_backfill_configuration(self.mock_connection, config2)
+
+        self.assertEqual(self.mock_cursor.execute.call_count, 2)
+        _, first_params = self.mock_cursor.execute.call_args_list[0][0]
+        _, second_params = self.mock_cursor.execute.call_args_list[1][0]
+
+        self.assertEqual(first_params[0], "org1")
+        self.assertEqual(second_params[0], "anotherorg")

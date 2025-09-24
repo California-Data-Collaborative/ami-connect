@@ -395,6 +395,47 @@ def update_task_output_configuration(connection, task_output_configuration: dict
     )
 
 
+def update_backfill_configuration(connection, backfill_configuration: dict):
+    # Validate
+    for field in [
+        "org_id",
+        "start_date",
+        "end_date",
+        "interval_days",
+        "schedule",
+    ]:
+        if not backfill_configuration.get(field):
+            raise ValueError(f"Backfill configuration is missing field: {field}")
+
+    org_id = backfill_configuration["org_id"].lower()
+
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        MERGE INTO configuration_backfills AS target
+        USING (
+            SELECT ? AS org_id, ? AS start_date, ? AS end_date, ? AS interval_days, ? AS schedule
+        ) AS source
+        ON target.org_id = source.org_id AND target.start_date = source.start_date AND target.end_date = source.end_date
+        WHEN MATCHED THEN
+            UPDATE SET
+                interval_days = source.interval_days,
+                schedule = source.schedule
+        WHEN NOT MATCHED THEN
+            INSERT (org_id, start_date, end_date, interval_days, schedule)
+            VALUES (source.org_id, source.start_date, source.end_date, source.interval_days, source.schedule)
+
+    """,
+        (
+            org_id,
+            backfill_configuration["start_date"],
+            backfill_configuration["end_date"],
+            backfill_configuration["interval_days"],
+            backfill_configuration["schedule"],
+        ),
+    )
+
+
 def _get_source_by_org_id(cursor, org_id: str) -> List[List]:
     return cursor.execute(
         """

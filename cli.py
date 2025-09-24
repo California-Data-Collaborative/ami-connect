@@ -7,7 +7,7 @@ Run from root directory with:
 
 """
 
-from datetime import datetime
+from datetime import date, datetime
 import logging
 from pprint import pprint
 from typing import List
@@ -24,6 +24,7 @@ from amiadapters.configuration.base import (
     get_configuration,
     remove_sink_configuration,
     remove_source_configuration,
+    update_backfill_configuration,
     update_sink_configuration,
     update_source_configuration,
     update_task_output_configuration,
@@ -54,7 +55,7 @@ def run(
         datetime, typer.Option(help="Start date in YYYY-MM-DD format.")
     ] = None,
     end_date: Annotated[
-        datetime, typer.Option(help="Start date in YYYY-MM-DD format.")
+        datetime, typer.Option(help="End date in YYYY-MM-DD format.")
     ] = None,
     org_ids: Annotated[
         list[str],
@@ -441,6 +442,53 @@ def update_task_output(
         "local_output_path": None,
     }
     update_task_output_configuration(None, secrets_file, new_task_output_configuration)
+
+
+@config_app.command()
+def update_backfill(
+    org_id: Annotated[
+        str,
+        typer.Argument(
+            help="Often source's organization name and is used as unique identifier."
+        ),
+    ],
+    start_date: Annotated[
+        datetime,
+        typer.Argument(
+            help="Earliest date in range to be backfilled in YYYY-MM-DD format."
+        ),
+    ],
+    end_date: Annotated[
+        datetime,
+        typer.Argument(
+            help="Latest date in range to be backfilled in YYYY-MM-DD format."
+        ),
+    ],
+    interval_days: Annotated[
+        int,
+        typer.Argument(help="Number of days to extract for each run."),
+    ],
+    schedule: Annotated[
+        str,
+        typer.Argument(
+            help='Crontab-format schedule for backfill, e.g. "15 * * * *" for every hour at the 15th minute. Put it in quotes.'
+        ),
+    ],
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+):
+    """
+    Updates backfill configuration in database. Matches on org_id+start_date+end_date for update, else adds new backfill.
+    """
+    new_backfill_configuration = {
+        "org_id": org_id,
+        "start_date": start_date,
+        "end_date": end_date,
+        "interval_days": interval_days,
+        "schedule": schedule,
+    }
+    update_backfill_configuration(None, secrets_file, new_backfill_configuration)
 
 
 if __name__ == "__main__":
