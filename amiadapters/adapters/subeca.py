@@ -69,11 +69,12 @@ class SubecaAdapter(BaseAMIAdapter):
         self,
         org_id: str,
         org_timezone: str,
+        api_url: str,
         api_key: str,
         configured_task_output_controller,
         configured_sinks,
     ):
-        self.api_url = "https://sierra-cc.api.subeca.online"
+        self.api_url = api_url
         self.api_key = api_key
         super().__init__(
             org_id,
