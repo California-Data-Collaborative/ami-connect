@@ -82,6 +82,19 @@ def update_backfill_configuration(
         database.update_backfill_configuration(connection, new_backfill_configuration)
 
 
+def update_notification_configuration(
+    config_file: str, secrets_file: str, new_notification_configuration: dict
+):
+    if _use_database_for_config(config_file, secrets_file):
+        logger.info(
+            f"Updating notification configuration in database to {new_notification_configuration}"
+        )
+        connection = create_snowflake_from_secrets_file(secrets_file)
+        database.update_notification_configuration(
+            connection, new_notification_configuration
+        )
+
+
 def _use_database_for_config(config_file: str, secrets_file: str) -> bool:
     return config_file is None
 

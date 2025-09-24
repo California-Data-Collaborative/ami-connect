@@ -25,6 +25,7 @@ from amiadapters.configuration.base import (
     remove_sink_configuration,
     remove_source_configuration,
     update_backfill_configuration,
+    update_notification_configuration,
     update_sink_configuration,
     update_source_configuration,
     update_task_output_configuration,
@@ -489,6 +490,28 @@ def update_backfill(
         "schedule": schedule,
     }
     update_backfill_configuration(None, secrets_file, new_backfill_configuration)
+
+
+@config_app.command()
+def update_notification(
+    sns_arn: Annotated[
+        str,
+        typer.Argument(help="Identifies AWS SNS topic used to send notifications."),
+    ],
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+):
+    """
+    Updates notification configuration in database. As of this writing, assumes you have one row for the failure notification SNS arn.
+    """
+    new_notification_configuration = {
+        "event_type": "dag_failure",
+        "sns_arn": sns_arn,
+    }
+    update_notification_configuration(
+        None, secrets_file, new_notification_configuration
+    )
 
 
 if __name__ == "__main__":

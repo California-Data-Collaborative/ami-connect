@@ -10,6 +10,7 @@ from amiadapters.configuration.database import (
     remove_sink_configuration,
     remove_source_configuration,
     update_backfill_configuration,
+    update_notification_configuration,
     update_sink_configuration,
     update_source_configuration,
     update_task_output_configuration,
@@ -604,3 +605,64 @@ class TestDatabase(BaseTestCase):
 
         self.assertEqual(first_params[0], "org1")
         self.assertEqual(second_params[0], "anotherorg")
+
+    def test_update_notification_configuration_missing_field_raises(self):
+        """Should raise ValueError if event_type or sns_arn is missing"""
+        for field in ["event_type", "sns_arn"]:
+            bad_config = {
+                "event_type": "BACKFILL_COMPLETED",
+                "sns_arn": "arn:aws:sns:us-west-2:123456789012:my-topic",
+            }
+            bad_config[field] = None
+            with self.assertRaises(ValueError) as ctx:
+                update_notification_configuration(self.mock_connection, bad_config)
+            self.assertIn(
+                f"Notification configuration is missing field: {field}",
+                str(ctx.exception),
+            )
+
+    def test_update_notification_configuration_executes_merge_statement(self):
+        """Should call cursor.execute with MERGE SQL and correct params"""
+        valid_config = {
+            "event_type": "BACKFILL_COMPLETED",
+            "sns_arn": "arn:aws:sns:us-west-2:123456789012:my-topic",
+        }
+        update_notification_configuration(self.mock_connection, valid_config)
+
+        self.mock_cursor.execute.assert_called_once()
+        query, params = self.mock_cursor.execute.call_args[0]
+
+        # Validate query structure
+        self.assertIn("MERGE INTO configuration_notifications", query)
+        self.assertIn("WHEN MATCHED THEN", query)
+        self.assertIn("WHEN NOT MATCHED THEN", query)
+
+        # Validate parameters
+        self.assertEqual(params[0], valid_config["event_type"])
+        self.assertEqual(params[1], valid_config["sns_arn"])
+
+    def test_update_notification_configuration_multiple_calls_are_independent(self):
+        """Each call should execute independently with correct params"""
+        valid_config = {
+            "event_type": "BACKFILL_COMPLETED",
+            "sns_arn": "arn:aws:sns:us-west-2:123456789012:my-topic",
+        }
+        config2 = {
+            "event_type": "METER_READING_FAILED",
+            "sns_arn": "arn:aws:sns:us-east-1:111111111111:other-topic",
+        }
+
+        update_notification_configuration(self.mock_connection, valid_config)
+        update_notification_configuration(self.mock_connection, config2)
+
+        self.assertEqual(self.mock_cursor.execute.call_count, 2)
+
+        # First call
+        _, first_params = self.mock_cursor.execute.call_args_list[0][0]
+        self.assertEqual(first_params[0], valid_config["event_type"])
+        self.assertEqual(first_params[1], valid_config["sns_arn"])
+
+        # Second call
+        _, second_params = self.mock_cursor.execute.call_args_list[1][0]
+        self.assertEqual(second_params[0], config2["event_type"])
+        self.assertEqual(second_params[1], config2["sns_arn"])

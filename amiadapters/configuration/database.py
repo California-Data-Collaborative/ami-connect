@@ -436,6 +436,37 @@ def update_backfill_configuration(connection, backfill_configuration: dict):
     )
 
 
+def update_notification_configuration(connection, notification_configuration: dict):
+    # Validate
+    for field in [
+        "event_type",
+        "sns_arn",
+    ]:
+        if not notification_configuration.get(field):
+            raise ValueError(f"Notification configuration is missing field: {field}")
+
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        MERGE INTO configuration_notifications AS target
+        USING (
+            SELECT ? AS event_type, ? AS sns_arn
+        ) AS source
+        ON target.event_type = source.event_type
+        WHEN MATCHED THEN
+            UPDATE SET
+                sns_arn = source.sns_arn
+        WHEN NOT MATCHED THEN
+            INSERT (event_type, sns_arn)
+            VALUES (source.event_type, source.sns_arn)
+    """,
+        (
+            notification_configuration["event_type"],
+            notification_configuration["sns_arn"],
+        ),
+    )
+
+
 def _get_source_by_org_id(cursor, org_id: str) -> List[List]:
     return cursor.execute(
         """
