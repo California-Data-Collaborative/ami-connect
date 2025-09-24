@@ -46,7 +46,7 @@ class TestDatabase(BaseTestCase):
                     "type": "subeca",
                     "org_id": "my_subeca_utility",
                     "timezone": "America/Los_Angeles",
-                    "config": json.dumps({}),
+                    "config": json.dumps({"api_url": "my-url"}),
                 },
                 {
                     "id": 4,

@@ -73,6 +73,8 @@ def get_configuration(snowflake_connection) -> Tuple[
                 )
                 source["database_host"] = type_specific_config.get("database_host")
                 source["database_port"] = type_specific_config.get("database_port")
+            case "subeca":
+                source["api_url"] = type_specific_config.get("api_url")
             case _:
                 pass
         sources.append(source)
@@ -260,6 +262,12 @@ def _create_source_configuration_object_for_type(
                 config[field] = source_configuration.get(field)
         case "subeca":
             config = {}
+            for field in [
+                "api_url",
+            ]:
+                if not source_configuration.get(field) and require_all_fields:
+                    raise ValueError(f"Source configuration is missing field: {field}")
+                config[field] = source_configuration.get(field)
         case _:
             config = {}
     return config

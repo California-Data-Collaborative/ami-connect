@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import unittest
 
@@ -5,6 +6,9 @@ import unittest
 class BaseTestCase(unittest.TestCase):
 
     FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+    # Silence logging for all tests
+    logging.disable(logging.CRITICAL)
 
     @classmethod
     def load_fixture(cls, filename: str) -> str:
