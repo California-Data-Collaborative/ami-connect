@@ -266,14 +266,35 @@ def _create_source_configuration_object_for_type(
 
 
 def remove_source_configuration(connection, org_id: str):
+    org_id = org_id.lower()
     cursor = connection.cursor()
-    cursor.execute(
-        """
-        DELETE FROM configuration_sources
-        WHERE org_id = ?
-        """, (org_id,)
-    )
-    # TODO it did not remove source_sink rows.
+    existing = _get_source_by_org_id(cursor, org_id)
+    if len(existing) != 1:
+        raise Exception(
+            f"Expected to find one source with org_id {org_id}, got {len(existing)}"
+        )
+    existing_backfills = _get_backfills_by_org_id(cursor, org_id)
+    if len(existing_backfills) > 0:
+        raise Exception(
+            f"Cannot remove source with {len(existing_backfills)} associated backfills."
+        )
+    try:
+        source_id = existing[0][0]
+        cursor.execute("BEGIN")
+        # Delete from child tables first
+        cursor.execute(
+            "DELETE FROM configuration_source_sinks WHERE source_id = ?",
+            (source_id,),
+        )
+        # Delete from parent table
+        cursor.execute(
+            "DELETE FROM configuration_sources WHERE id = ?",
+            (source_id,),
+        )
+        cursor.execute("COMMIT")
+    except Exception as e:
+        logger.error("Rolling back", e)
+        cursor.execute("ROLLBACK")
 
 
 def update_sink_configuration(connection, sink_configuration: dict):
@@ -385,6 +406,17 @@ def _get_sink_by_id(cursor, sink_id: str) -> List[List]:
         WHERE s.id = ?
     """,
         (sink_id,),
+    ).fetchall()
+
+
+def _get_backfills_by_org_id(cursor, org_id: str) -> List[List]:
+    return cursor.execute(
+        """
+        SELECT b.id, b.org_id, b.start_date, b.end_date, b.interval_days, b.schedule
+        FROM configuration_backfills b
+        WHERE b.org_id = ?
+    """,
+        (org_id,),
     ).fetchall()
 
 

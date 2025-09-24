@@ -8,6 +8,7 @@ from amiadapters.configuration.database import (
     add_source_configuration,
     get_configuration,
     remove_sink_configuration,
+    remove_source_configuration,
     update_sink_configuration,
     update_source_configuration,
     update_task_output_configuration,
@@ -458,3 +459,78 @@ class TestDatabase(BaseTestCase):
         query, params = update_call[0]
         updated_config = json.loads(params[2])
         self.assertIn("use_raw_data_cache", updated_config)  # None explicitly set
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    @patch("amiadapters.configuration.database._get_backfills_by_org_id")
+    def test_remove_source_configuration_success(
+        self, mock_get_backfills, mock_get_source
+    ):
+        # Arrange
+        mock_get_source.return_value = [
+            ("id1", "snowflake", "org1", "UTC", json.dumps({}))
+        ]
+        mock_get_backfills.return_value = []
+
+        # Act
+        remove_source_configuration(self.mock_connection, "ORG1")
+
+        # Assert
+        self.mock_cursor.execute.assert_any_call("BEGIN")
+        self.mock_cursor.execute.assert_any_call(
+            "DELETE FROM configuration_source_sinks WHERE source_id = ?",
+            ("id1",),
+        )
+        self.mock_cursor.execute.assert_any_call(
+            "DELETE FROM configuration_sources WHERE id = ?",
+            ("id1",),
+        )
+        self.mock_cursor.execute.assert_any_call("COMMIT")
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    @patch("amiadapters.configuration.database._get_backfills_by_org_id")
+    def test_remove_source_configuration_raises_if_not_one_source(
+        self, mock_get_backfills, mock_get_source
+    ):
+        mock_get_source.return_value = []  # No sources
+        mock_get_backfills.return_value = []
+
+        with self.assertRaises(Exception) as ctx:
+            remove_source_configuration(self.mock_connection, "org1")
+        self.assertIn(
+            "Expected to find one source with org_id org1", str(ctx.exception)
+        )
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    @patch("amiadapters.configuration.database._get_backfills_by_org_id")
+    def test_remove_source_configuration_raises_if_backfills_exist(
+        self, mock_get_backfills, mock_get_source
+    ):
+        mock_get_source.return_value = [
+            ("id1", "snowflake", "org1", "UTC", json.dumps({}))
+        ]
+        mock_get_backfills.return_value = [("backfill1",)]
+
+        with self.assertRaises(Exception) as ctx:
+            remove_source_configuration(self.mock_connection, "org1")
+        self.assertIn(
+            "Cannot remove source with 1 associated backfills", str(ctx.exception)
+        )
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    @patch("amiadapters.configuration.database._get_backfills_by_org_id")
+    def test_remove_source_configuration_rolls_back_on_error(
+        self, mock_get_backfills, mock_get_source
+    ):
+        mock_get_source.return_value = [
+            ("id1", "snowflake", "org1", "UTC", json.dumps({}))
+        ]
+        mock_get_backfills.return_value = []
+
+        # Force an exception during delete
+        self.mock_cursor.execute.side_effect = [None, Exception("DB error")]
+
+        with self.assertRaises(Exception):
+            remove_source_configuration(self.mock_connection, "org1")
+
+        # Ensure rollback was called
+        self.mock_cursor.execute.assert_any_call("ROLLBACK")
