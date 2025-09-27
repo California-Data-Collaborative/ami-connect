@@ -180,3 +180,6 @@ secrets.*.yaml
 amideploy/infrastructure/environments
 Makefile
 known-hosts
+
+.idea
+.DS_Store

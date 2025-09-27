@@ -4,6 +4,8 @@ from typing import List
 from amiadapters.config import ConfiguredStorageSink
 from amiadapters.models import GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
+from datetime import datetime
+
 
 
 class BaseAMIStorageSink(ABC):
@@ -28,6 +30,11 @@ class BaseAMIStorageSink(ABC):
     ):
         pass
 
+    @abstractmethod
+    def exec_postprocessor(
+        self, run_id: str, min_date: datetime, max_date: datetime
+    ):
+        pass
 
 class BaseAMIDataQualityCheck(ABC):
     """
