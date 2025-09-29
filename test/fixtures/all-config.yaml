@@ -9,6 +9,7 @@ sources:
 - type: sentryx
   org_id: my_sentryx_utility
   timezone: America/Los_Angeles
+  utility_name: "my-sentryx-utility"
   use_raw_data_cache: False
   sinks:
   - my_snowflake_instance

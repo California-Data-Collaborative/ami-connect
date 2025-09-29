@@ -73,7 +73,7 @@ def get_configuration(snowflake_connection) -> Tuple[
                     "ssh_tunnel_key_path"
                 )
                 source["database_host"] = type_specific_config.get("database_host")
-                source["database_port"] = type_specific_config.get("database_port")
+                source["database_port"] = int(type_specific_config.get("database_port"))
             case "neptune":
                 source["external_adapter_location"] = type_specific_config.get(
                     "external_adapter_location"
