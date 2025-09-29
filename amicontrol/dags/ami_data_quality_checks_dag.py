@@ -5,7 +5,6 @@ from airflow.decorators import dag, task
 
 from amiadapters.config import (
     AMIAdapterConfiguration,
-    find_config_yaml,
     find_secrets_yaml,
 )
 
@@ -13,7 +12,7 @@ from amiadapters.storage.base import BaseAMIDataQualityCheck
 
 logger = logging.getLogger(__name__)
 
-config = AMIAdapterConfiguration.from_yaml(find_config_yaml(), find_secrets_yaml())
+config = AMIAdapterConfiguration.from_database(find_secrets_yaml())
 on_failure_sns_notifier = config.on_failure_sns_notifier()
 
 checks = [check for storage_sink in config.sinks() for check in storage_sink.checks()]

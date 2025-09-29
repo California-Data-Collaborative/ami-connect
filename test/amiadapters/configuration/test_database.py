@@ -41,7 +41,12 @@ class TestDatabase(BaseTestCase):
                     "type": "sentryx",
                     "org_id": "my_sentryx_utility",
                     "timezone": "America/Los_Angeles",
-                    "config": json.dumps({"use_raw_data_cache": False}),
+                    "config": json.dumps(
+                        {
+                            "use_raw_data_cache": False,
+                            "utility_name": "my-sentryx-utility",
+                        }
+                    ),
                 },
                 {
                     "id": 3,
@@ -169,7 +174,7 @@ class TestDatabase(BaseTestCase):
 
         # Ensure TRUNCATE then INSERT are executed
         expected_calls = [
-            call.execute("TRUNCATE TABLE configuration_task_outputs"),
+            call.execute("DELETE FROM configuration_task_outputs"),
             call.execute(
                 """
         INSERT INTO configuration_task_outputs (type, s3_bucket, local_output_path)
@@ -192,7 +197,7 @@ class TestDatabase(BaseTestCase):
         update_task_output_configuration(self.mock_connection, config)
 
         self.mock_cursor.execute.assert_any_call(
-            "TRUNCATE TABLE configuration_task_outputs"
+            "DELETE FROM configuration_task_outputs"
         )
         self.mock_cursor.execute.assert_any_call(
             """

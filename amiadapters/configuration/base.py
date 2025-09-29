@@ -1,3 +1,4 @@
+from datetime import datetime
 import logging
 
 import snowflake.connector
@@ -80,6 +81,21 @@ def update_backfill_configuration(
         )
         connection = create_snowflake_from_secrets_file(secrets_file)
         database.update_backfill_configuration(connection, new_backfill_configuration)
+
+
+def remove_backfill_configuration(
+    config_file: str,
+    secrets_file: str,
+    org_id: str,
+    start_date: datetime,
+    end_date: datetime,
+):
+    if _use_database_for_config(config_file, secrets_file):
+        logger.info(
+            f"Removing backfill configuration in database for {org_id} {start_date} {end_date}"
+        )
+        connection = create_snowflake_from_secrets_file(secrets_file)
+        database.remove_backfill_configuration(connection, org_id, start_date, end_date)
 
 
 def update_notification_configuration(
