@@ -22,6 +22,7 @@ from amiadapters.config import (
 from amiadapters.configuration.base import (
     add_source_configuration,
     get_configuration,
+    remove_backfill_configuration,
     remove_sink_configuration,
     remove_source_configuration,
     update_backfill_configuration,
@@ -237,6 +238,12 @@ def add_source(
             help='Subeca API URL for this org, e.g. "https://my-utility.api.subeca.online". Applicable to types: [subeca]'
         ),
     ] = None,
+    external_adapter_location: Annotated[
+        str,
+        typer.Option(
+            help="Path on Airflow server to Neptune adapter module. Applicable to types: [neptune]"
+        ),
+    ] = None,
     sinks: Annotated[
         List[str],
         typer.Option(
@@ -266,6 +273,7 @@ def add_source(
         "database_host": database_host,
         "database_port": database_port,
         "api_url": api_url,
+        "external_adapter_location": external_adapter_location,
         "sinks": sinks or [],
     }
     add_source_configuration(None, secrets_file, new_sink_configuration)
@@ -333,6 +341,12 @@ def update_source(
             help='Subeca API URL for this org, e.g. "https://my-utility.api.subeca.online". Applicable to types: [subeca]'
         ),
     ] = None,
+    external_adapter_location: Annotated[
+        str,
+        typer.Option(
+            help="Path on Airflow server to Neptune adapter module. Applicable to types: [neptune]"
+        ),
+    ] = None,
     sinks: Annotated[
         List[str],
         typer.Option(
@@ -380,6 +394,8 @@ def update_source(
         new_sink_configuration["database_port"] = database_port
     if api_url is not None:
         new_sink_configuration["api_url"] = api_url
+    if external_adapter_location is not None:
+        new_sink_configuration["external_adapter_location"] = external_adapter_location
     if sinks is not None:
         new_sink_configuration["sinks"] = sinks
     update_source_configuration(None, secrets_file, new_sink_configuration)
@@ -510,6 +526,36 @@ def update_backfill(
         "schedule": schedule,
     }
     update_backfill_configuration(None, secrets_file, new_backfill_configuration)
+
+
+@config_app.command()
+def remove_backfill(
+    org_id: Annotated[
+        str,
+        typer.Argument(
+            help="Often source's organization name and is used as unique identifier."
+        ),
+    ],
+    start_date: Annotated[
+        datetime,
+        typer.Argument(
+            help="Earliest date in range to be backfilled in YYYY-MM-DD format."
+        ),
+    ],
+    end_date: Annotated[
+        datetime,
+        typer.Argument(
+            help="Latest date in range to be backfilled in YYYY-MM-DD format."
+        ),
+    ],
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+):
+    """
+    Removes backfill configuration in database. Matches on org_id+start_date+end_date.
+    """
+    remove_backfill_configuration(None, secrets_file, org_id, start_date, end_date)
 
 
 @config_app.command()
