@@ -6,7 +6,6 @@ from airflow.models.param import Param
 from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.config import (
     AMIAdapterConfiguration,
-    find_config_yaml,
     find_secrets_yaml,
 )
 
@@ -90,7 +89,7 @@ def ami_control_dag_factory(
 #######################################################
 # Configure DAGs
 #######################################################
-config = AMIAdapterConfiguration.from_yaml(find_config_yaml(), find_secrets_yaml())
+config = AMIAdapterConfiguration.from_database(find_secrets_yaml())
 utility_adapters = config.adapters()
 backfills = config.backfills()
 on_failure_sns_notifier = config.on_failure_sns_notifier()

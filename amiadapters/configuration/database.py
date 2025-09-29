@@ -49,7 +49,7 @@ def get_configuration(snowflake_connection) -> Tuple[
         source["sinks"] = sinks_by_source_id.get(row["id"], [])
         type_specific_config = json.loads(row["config"]) if row["config"] else {}
         match row["type"]:
-            case "beacon_360" | "sentryx":
+            case "beacon_360":
                 source["use_raw_data_cache"] = type_specific_config.get(
                     "use_raw_data_cache", False
                 )
@@ -73,6 +73,11 @@ def get_configuration(snowflake_connection) -> Tuple[
                 )
                 source["database_host"] = type_specific_config.get("database_host")
                 source["database_port"] = type_specific_config.get("database_port")
+            case "sentryx":
+                source["utility_name"] = type_specific_config.get("utility_name")
+                source["use_raw_data_cache"] = type_specific_config.get(
+                    "use_raw_data_cache", False
+                )
             case "subeca":
                 source["api_url"] = type_specific_config.get("api_url")
             case _:
@@ -243,7 +248,7 @@ def _create_source_configuration_object_for_type(
                 if not source_configuration.get(field) and require_all_fields:
                     raise ValueError(f"Source configuration is missing field: {field}")
                 config[field] = source_configuration.get(field)
-        case "beacon_360" | "sentryx":
+        case "beacon_360":
             config = {
                 "use_raw_data_cache": source_configuration.get(
                     "use_raw_data_cache", False
@@ -268,6 +273,17 @@ def _create_source_configuration_object_for_type(
                 if not source_configuration.get(field) and require_all_fields:
                     raise ValueError(f"Source configuration is missing field: {field}")
                 config[field] = source_configuration.get(field)
+        case "sentryx":
+            config = {}
+            for field in [
+                "utility_name",
+            ]:
+                if not source_configuration.get(field) and require_all_fields:
+                    raise ValueError(f"Source configuration is missing field: {field}")
+                config[field] = source_configuration.get(field)
+            config["use_raw_data_cache"] = source_configuration.get(
+                "use_raw_data_cache", False
+            )
         case _:
             config = {}
     return config
@@ -380,7 +396,7 @@ def update_task_output_configuration(connection, task_output_configuration: dict
 
     cursor = connection.cursor()
     # Remove existing row
-    cursor.execute("TRUNCATE TABLE configuration_task_outputs")
+    cursor.execute("DELETE FROM configuration_task_outputs")
     # Insert the new row
     cursor.execute(
         """

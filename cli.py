@@ -7,7 +7,7 @@ Run from root directory with:
 
 """
 
-from datetime import date, datetime
+from datetime import datetime
 import logging
 from pprint import pprint
 from typing import List
@@ -33,7 +33,6 @@ from amiadapters.configuration.base import (
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
 
-DEFAULT_CONFIG_PATH = "./config.yaml"
 DEFAULT_SECRETS_PATH = "./secrets.yaml"
 
 logger = logging.getLogger(__name__)
@@ -48,7 +47,6 @@ app.add_typer(config_app, name="config")
 
 @app.command()
 def run(
-    config_file: Annotated[str, typer.Option(help="Path to local config file.")] = None,
     secrets_file: Annotated[
         str, typer.Option(help="Path to local secrets file.")
     ] = DEFAULT_SECRETS_PATH,
@@ -68,16 +66,10 @@ def run(
     """
     Run AMI API adapters to fetch AMI data, then shape it into generalized format, then store it.
     """
-    if config_file is not None:
-        logger.info(
-            f"Loading configuration from YAML at {config_file} and {secrets_file}"
-        )
-        config = AMIAdapterConfiguration.from_yaml(config_file, secrets_file)
-    else:
-        logger.info(
-            f"Loading configuration from database using credentials from {secrets_file}"
-        )
-        config = AMIAdapterConfiguration.from_database(secrets_file)
+    logger.info(
+        f"Loading configuration from database using credentials from {secrets_file}"
+    )
+    config = AMIAdapterConfiguration.from_database(secrets_file)
 
     adapters = config.adapters()
     if org_ids:
@@ -121,9 +113,6 @@ def download_intermediate_output(
             help="Path or prefix of path to files for download. If S3, can be anything after the bucket name, e.g. for s3://my-ami-connect-bucket/intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 you may enter intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 ."
         ),
     ],
-    config_file: Annotated[
-        str, typer.Option(help="Path to local config file.")
-    ] = DEFAULT_CONFIG_PATH,
     secrets_file: Annotated[
         str, typer.Option(help="Path to local secrets file.")
     ] = DEFAULT_SECRETS_PATH,
@@ -131,7 +120,7 @@ def download_intermediate_output(
     """
     Download intermediate output file(s) of provided name.
     """
-    config = AMIAdapterConfiguration.from_yaml(config_file, secrets_file)
+    config = AMIAdapterConfiguration.from_database(secrets_file)
 
     # This code should not live here. It's copied from the base adapter class and it shouldn't live there either.
     configured_task_output_controller = config.task_output_controller()
@@ -208,6 +197,12 @@ def add_source(
             help="If pipeline should use raw data cache. Applicable to types: [beacon_360, sentryx]"
         ),
     ] = None,
+    utility_name: Annotated[
+        str,
+        typer.Option(
+            help="Name of utility as it appears in the Sentryx API URL. Applicable to types: [sentryx]"
+        ),
+    ] = None,
     sftp_host: Annotated[
         str, typer.Option(help="Applicable to types: [aclara]")
     ] = None,
@@ -236,6 +231,12 @@ def add_source(
         str,
         typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
     ] = None,
+    api_url: Annotated[
+        str,
+        typer.Option(
+            help='Subeca API URL for this org, e.g. "https://my-utility.api.subeca.online". Applicable to types: [subeca]'
+        ),
+    ] = None,
     sinks: Annotated[
         List[str],
         typer.Option(
@@ -255,6 +256,7 @@ def add_source(
         "type": type,
         "timezone": timezone,
         "use_raw_data_cache": use_raw_data_cache,
+        "utility_name": utility_name,
         "sftp_host": sftp_host,
         "sftp_remote_data_directory": sftp_remote_data_directory,
         "sftp_local_known_hosts_file": sftp_local_known_hosts_file,
@@ -263,6 +265,7 @@ def add_source(
         "ssh_tunnel_key_path": ssh_tunnel_key_path,
         "database_host": database_host,
         "database_port": database_port,
+        "api_url": api_url,
         "sinks": sinks or [],
     }
     add_source_configuration(None, secrets_file, new_sink_configuration)
@@ -290,6 +293,12 @@ def update_source(
             help="If pipeline should use raw data cache. Applicable to types: [beacon_360, sentryx]"
         ),
     ] = None,
+    utility_name: Annotated[
+        str,
+        typer.Option(
+            help="Name of utility as it appears in the Sentryx API URL. Applicable to types: [sentryx]"
+        ),
+    ] = None,
     sftp_host: Annotated[
         str, typer.Option(help="Applicable to types: [aclara]")
     ] = None,
@@ -318,6 +327,12 @@ def update_source(
         str,
         typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
     ] = None,
+    api_url: Annotated[
+        str,
+        typer.Option(
+            help='Subeca API URL for this org, e.g. "https://my-utility.api.subeca.online". Applicable to types: [subeca]'
+        ),
+    ] = None,
     sinks: Annotated[
         List[str],
         typer.Option(
@@ -339,6 +354,8 @@ def update_source(
         new_sink_configuration["timezone"] = timezone
     if use_raw_data_cache is not None:
         new_sink_configuration["use_raw_data_cache"] = use_raw_data_cache
+    if utility_name is not None:
+        new_sink_configuration["utility_name"] = utility_name
     if sftp_host is not None:
         new_sink_configuration["sftp_host"] = sftp_host
     if sftp_remote_data_directory is not None:
@@ -361,6 +378,8 @@ def update_source(
         new_sink_configuration["database_host"] = database_host
     if database_port is not None:
         new_sink_configuration["database_port"] = database_port
+    if api_url is not None:
+        new_sink_configuration["api_url"] = api_url
     if sinks is not None:
         new_sink_configuration["sinks"] = sinks
     update_source_configuration(None, secrets_file, new_sink_configuration)
@@ -394,6 +413,7 @@ def add_sink(
         str,
         typer.Argument(help="Sink type. Options are: [snowflake]"),
     ],
+    # TODO Must add sink health checks
     secrets_file: Annotated[
         str, typer.Option(help="Path to local secrets file.")
     ] = DEFAULT_SECRETS_PATH,
