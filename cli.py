@@ -20,6 +20,7 @@ from amiadapters.config import (
     ConfiguredTaskOutputControllerType,
 )
 from amiadapters.configuration.base import (
+    add_data_quality_check_configurations,
     add_source_configuration,
     get_configuration,
     remove_backfill_configuration,
@@ -433,7 +434,6 @@ def add_sink(
         str,
         typer.Argument(help="Sink type. Options are: [snowflake]"),
     ],
-    # TODO Must add sink health checks
     secrets_file: Annotated[
         str, typer.Option(help="Path to local secrets file.")
     ] = DEFAULT_SECRETS_PATH,
@@ -582,6 +582,30 @@ def update_notification(
     update_notification_configuration(
         None, secrets_file, new_notification_configuration
     )
+
+
+@config_app.command()
+def add_data_quality_checks(
+    sink_id: Annotated[
+        str,
+        typer.Argument(help="Name of sink used as unique identifier."),
+    ],
+    checks: Annotated[
+        List[str],
+        typer.Argument(help="Data quality check names that will be added to the sink."),
+    ],
+    secrets_file: Annotated[
+        str, typer.Option(help="Path to local secrets file.")
+    ] = DEFAULT_SECRETS_PATH,
+):
+    """
+    Adds new data quality checks to the sink.
+    """
+    new_checks_configuration = {
+        "sink_id": sink_id,
+        "check_names": checks,
+    }
+    add_data_quality_check_configurations(None, secrets_file, new_checks_configuration)
 
 
 if __name__ == "__main__":

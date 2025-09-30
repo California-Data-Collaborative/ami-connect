@@ -111,6 +111,19 @@ def update_notification_configuration(
         )
 
 
+def add_data_quality_check_configurations(
+    config_file: str, secrets_file: str, new_checks_configuration: dict
+):
+    if _use_database_for_config(config_file, secrets_file):
+        logger.info(
+            f"Adding data quality checks to database with {new_checks_configuration}"
+        )
+        connection = create_snowflake_from_secrets_file(secrets_file)
+        database.add_data_quality_check_configurations(
+            connection, new_checks_configuration
+        )
+
+
 def _use_database_for_config(config_file: str, secrets_file: str) -> bool:
     return config_file is None
 

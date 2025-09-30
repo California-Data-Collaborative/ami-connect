@@ -101,7 +101,7 @@ def get_configuration(snowflake_connection) -> Tuple[
         sink = {}
         sink["id"] = row["id"]
         sink["type"] = row["type"]
-        sink["checks"] = checks_by_sink_id.get(row["id"])
+        sink["checks"] = checks_by_sink_id.get(row["id"], [])
         sinks.append(sink)
 
     if len(all_config["configuration_task_outputs"]) != 1:
@@ -513,6 +513,39 @@ def update_notification_configuration(connection, notification_configuration: di
             notification_configuration["sns_arn"],
         ),
     )
+
+
+def add_data_quality_check_configurations(connection, check_configuration: dict):
+    # Validate
+    for field in [
+        "sink_id",
+        "check_names",
+    ]:
+        if not check_configuration.get(field):
+            raise ValueError(f"Check configuration is missing field: {field}")
+
+    sink_id = check_configuration["sink_id"]
+    cursor = connection.cursor()
+    if not _get_sink_by_id(cursor, sink_id):
+        raise ValueError(f"No sink found for id: {sink_id}")
+    for check_name in check_configuration["check_names"]:
+        logger.info(f"Adding check {check_name}")
+        cursor.execute(
+            """
+            MERGE INTO configuration_sink_checks AS target
+            USING (
+                SELECT ? AS sink_id, ? AS check_name
+            ) AS source
+            ON target.sink_id = source.sink_id AND target.check_name = source.check_name
+            WHEN NOT MATCHED THEN
+                INSERT (sink_id, check_name)
+                VALUES (source.sink_id, source.check_name)
+        """,
+            (
+                sink_id,
+                check_name,
+            ),
+        )
 
 
 def _get_source_by_org_id(cursor, org_id: str) -> List[List]:

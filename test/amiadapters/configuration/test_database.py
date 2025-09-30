@@ -5,6 +5,7 @@ from unittest.mock import call, MagicMock, patch
 import yaml
 
 from amiadapters.configuration.database import (
+    add_data_quality_check_configurations,
     add_source_configuration,
     get_configuration,
     remove_sink_configuration,
@@ -671,3 +672,56 @@ class TestDatabase(BaseTestCase):
         _, second_params = self.mock_cursor.execute.call_args_list[1][0]
         self.assertEqual(second_params[0], config2["event_type"])
         self.assertEqual(second_params[1], config2["sns_arn"])
+
+    def test_add_data_quality_check_configurations_missing_sink_id_raises_value_error(
+        self,
+    ):
+        with self.assertRaises(ValueError) as ctx:
+            add_data_quality_check_configurations(
+                self.mock_connection, {"check_names": ["check1"]}
+            )
+        self.assertIn(
+            "Check configuration is missing field: sink_id", str(ctx.exception)
+        )
+
+    def test_add_data_quality_check_configurations_missing_check_names_raises_value_error(
+        self,
+    ):
+        with self.assertRaises(ValueError) as ctx:
+            add_data_quality_check_configurations(
+                self.mock_connection, {"sink_id": "sink1"}
+            )
+        self.assertIn(
+            "Check configuration is missing field: check_names", str(ctx.exception)
+        )
+
+    @patch("amiadapters.configuration.database._get_sink_by_id")
+    def test_add_data_quality_check_configurations_invalid_sink_id_raises_value_error(
+        self, mock_get_sink
+    ):
+        mock_get_sink.return_value = None
+        with self.assertRaises(ValueError) as ctx:
+            add_data_quality_check_configurations(
+                self.mock_connection, {"sink_id": "sink1", "check_names": ["check1"]}
+            )
+        self.assertIn("No sink found for id: sink1", str(ctx.exception))
+
+    @patch("amiadapters.configuration.database._get_sink_by_id")
+    def test_adds_multiple_checks(self, mock_get_sink):
+        mock_get_sink.return_value = True
+        add_data_quality_check_configurations(
+            self.mock_connection,
+            {"sink_id": "sink1", "check_names": ["check1", "check2"]},
+        )
+
+        # Should execute twice (once per check name)
+        self.assertEqual(self.mock_cursor.execute.call_count, 2)
+
+        # Check first call parameters
+        first_query, first_params = self.mock_cursor.execute.call_args_list[0][0]
+        self.assertIn("MERGE INTO configuration_sink_checks", first_query)
+        self.assertEqual(first_params, ("sink1", "check1"))
+
+        # Check second call parameters
+        _, second_params = self.mock_cursor.execute.call_args_list[1][0]
+        self.assertEqual(second_params, ("sink1", "check2"))
