@@ -65,9 +65,9 @@ def ami_control_dag_factory(
             adapter.load_transformed(run_id)
 
         @task()
-        def post_process(**context):
-            run_id = context["dag_run"].run_id
-            adapter.post_process(run_id)
+        def final_task():
+            # Placeholder to gather results of parallel tasks in DAG
+            return
 
         # Set sequence of tasks for this utility
         (
@@ -80,7 +80,7 @@ def ami_control_dag_factory(
                     adapter
                 ),
             ]
-            >> post_process.override(task_id=f"post-process-{adapter.name()}")()
+            >> final_task.override(task_id=f"finish-{adapter.name()}")()
         )
 
     ami_control_dag()
