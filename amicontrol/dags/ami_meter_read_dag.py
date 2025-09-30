@@ -1,4 +1,10 @@
+"""
+Configure all DAGs in this file so that we can reuse results of
+SQL queries to get configuration.
+"""
+
 from datetime import datetime
+import logging
 
 from airflow.decorators import dag, task
 from airflow.models.param import Param
@@ -8,6 +14,9 @@ from amiadapters.config import (
     AMIAdapterConfiguration,
     find_secrets_yaml,
 )
+from amiadapters.storage.base import BaseAMIDataQualityCheck
+
+logger = logging.getLogger(__name__)
 
 
 def ami_control_dag_factory(
@@ -86,10 +95,14 @@ def ami_control_dag_factory(
     ami_control_dag()
 
 
-#######################################################
-# Configure DAGs
-#######################################################
+# Load configuration. By default, Airflow calls this twice for DAG refreshes
+# every min_file_process_interval = 30 seconds: Once for the scheduler, once for the webserver.
+# We configure all DAGs in this file to limit the number of config loads every DAG refresh.
 config = AMIAdapterConfiguration.from_database(find_secrets_yaml())
+
+#######################################################
+# Configure AMI ETL DAGs
+#######################################################
 utility_adapters = config.adapters()
 backfills = config.backfills()
 on_failure_sns_notifier = config.on_failure_sns_notifier()
@@ -139,3 +152,36 @@ for backfill in backfills:
         on_failure_sns_notifier,
         backfill_params=backfill,
     )
+
+#######################################################
+# Configure data quality check DAG
+#######################################################
+on_failure_sns_notifier = config.on_failure_sns_notifier()
+checks = [check for storage_sink in config.sinks() for check in storage_sink.checks()]
+if checks:
+
+    @dag(
+        dag_id="ami_data_quality_checks_dag",
+        schedule="0 4 * * *",
+        catchup=False,
+        start_date=datetime(2024, 1, 1),
+        tags=["ami"],
+        on_failure_callback=on_failure_sns_notifier,
+    )
+    def ami_data_quality_checks_dag():
+
+        @task()
+        def run_check(data_quality_check: BaseAMIDataQualityCheck):
+            check_passed = data_quality_check.check()
+            if not check_passed:
+                if data_quality_check.notify_on_failure():
+                    raise Exception(f"Check {data_quality_check.name()} did not pass")
+                else:
+                    logger.info(f"Check {data_quality_check.name()} did not pass")
+
+        for data_quality_check in checks:
+            run_check.override(task_id=f"{data_quality_check.name()}")(
+                data_quality_check
+            )
+
+    ami_data_quality_checks_dag()
