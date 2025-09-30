@@ -8,19 +8,14 @@ Some setup outside of AMI Connect may include:
 
 ## Configuration
 
+- ssh_tunnel_server_host: Hostname or IP of intermediate server used to SSH tunnel
+- ssh_tunnel_key_path: Path to local SSH private key for authentication to intermediate server (the intermediate server must know your public key already!)
+- database_host: Hostname or IP of the Oracle database with AMI data
+- database_port: Port of the Oracle database with AMI data
+
 Example:
-```yaml
-sources:
-- type: metersense
-  org_id: my_utility
-  timezone: America/Los_Angeles
-  # Hostname or IP of intermediate server used to SSH tunnel
-  ssh_tunnel_server_host: tunnel-ip
-  # Path to local SSH private key for authentication to intermediate server (the intermediate server must know your public key already!)
-  ssh_tunnel_key_path: /key
-  # Hostname or IP of the Oracle database with AMI data
-  database_host: db-host
-  database_port: 1521
+```
+python cli.py config add-source my_utility metersense America/Los_Angeles --ssh-tunnel-server-host my-tunnel-host --ssh-tunnel-key-path ./key --database-host my-db-host --database-port 1521 --sinks my_snowflake
 ```
 
 Secrets:

@@ -32,7 +32,7 @@ Here are the adapters in this project:
 
 ## Development
 
-Contributions should be reviewed and approved via a Pull Request to the `main` branch.
+Contributions should be reviewed and approved via a Pull Request to the `main` branch. Please squash commits when you merge your PR.
 
 This is a Python 3.12 project. To set up your local python environment, create a virtual environment with:
 
@@ -59,25 +59,41 @@ Run unit tests from the project's root directory with
 python -m unittest
 ```
 
-### Configuration
+### Using the CLI
 
-# TODO FILL THIS OUT WITH DATABASE INFO
+You can use the CLI called `cli.py` to interact with AMI Connect. Turn on the virtual environment and run:
 
 ```
-python cli.py config add-source cadc_coastside aclara America/Los_Angeles --sftp-host dmz.aclarahosting.com --sftp-remote-data-directory ./CaDC --sftp-local-download-directory ./output --sftp-local-known-hosts-file ./known-hosts --sinks cadc_snowflake
+python cli.py --help
 ```
 
-We use two YAML files to configure the pipeline:
-- `config.yaml`, which tells the pipeline which AMI data sources should be queried during a run and which storage sinks should receive the data.
-- `secrets.yaml`, which houses all secrets.
+Use it to:
+- Configure your production pipeline
+- Run the pipeline locally
 
-Copy our example files to get started:
+#### Configuration
+
+Production AMI Connect pipelines are configured using the Snowflake database where the pipeline stores AMI data.
+
+To see your pipeline's configuration, run:
 ```
-cp ./config.yaml.example ./config.yaml
-cp ./secrets.yaml.example ./secrets.yaml
+python cli.py config get
 ```
 
-### CLI and Running the pipeline locally
+There is a variety of configuration changes you might make with the CLI. In general, you can use the `--help` flag or look at the code to see how they work.
+
+One common task is to add a new source (a.k.a. utility or agency) to the system. Here's an example that adds the `my_utility` source which uses the `aclara` adapter:
+```
+python cli.py config add-source my_utility aclara America/Los_Angeles --sftp-host my-sftp-host --sftp-remote-data-directory ./data --sftp-local-download-directory ./output --sftp-local-known-hosts-file ./known-hosts --sinks my_snowflake
+```
+
+Each adapter type requires its own configuration. You'll need to use the correct CLI options for a given adapter. Check [./docs/adapters](./docs/adapters) for that info.
+
+For now, we use a YAML file to configure secrets:
+- `secrets.yaml`
+You should get this file from a colleague, or create one based on `./secrets.yaml.example`.
+
+#### Running the pipeline locally
 
 The `./cli.py` CLI will run the pipeline on your laptop. It will extract data from the sources in your local config, transform, then load the data into your configured sinks. Run with:
 
@@ -85,12 +101,10 @@ The `./cli.py` CLI will run the pipeline on your laptop. It will extract data fr
 python cli.py run
 ```
 
-The CLI can do other admin and debugging tasks, too. Learn more with 
-```
-python cli.py --help
-```
+It's common to comment out or modify lines in this script while testing.
 
-### Deploy
+
+### Deploying
 
 Use the `deploy.sh` script to deploy new code to your AMI Connect pipeline. As of this writing, the script
 simply copies new code to the Airflow server and updates python dependencies.
@@ -99,8 +113,8 @@ You'll need to tell the script the hostname of your Airflow server. You can set 
 
 The script assumes you've stored a key pair at `./amideploy/configuration/airflow-key.pem`.
 
-For configuration, it expects a `config.prod.yaml` and `secrets.prod.yaml` file. These will be used to configure
-your production pipeline.
+For configuration, it expects a `secrets.prod.yaml` file. This will be used to configure
+your production pipeline alongside the config in the Snowflake database.
 
 Example deploy:
 ```
@@ -156,6 +170,6 @@ Steps:
 2. Define an extract function that retrieves AMI data from a source and outputs it using an output controller. This function shouldn't alter the data much - its output should stay as close to the source data to reduce risk of error and to give us a historical record of the source data via our stored intermediate outputs.
 3. Define a transform function that takes the data from extract and transforms it into our generic data models, then outputs it using an output controller.
 4. If you're loading the raw data into a storage sink, you should define that step using something like RawSnowflakeLoader.
-5. For the pipeline to run your adapter, the `AMIAdapterConfiguration.adapters()` function will need to be able to instantiate your adapter. This will require some code in `config.py`. You'll need to figure out what a block in the `sources` section of the config looks like for your adapter, then be able to parse that block, e.g. within `AMIAdapterConfiguration.from_yaml()`.
+5. For the pipeline to run your adapter, the `AMIAdapterConfiguration.adapters()` function will need to be able to instantiate your adapter. This will require some code in `config.py`. You'll need to figure out what specific config is required by your adapter for the configuration table's `configuration_sources.sources` column, then be able to parse that block, e.g. within `AMIAdapterConfiguration.from_database()` and the CLI which is used to add/update sources.
 
 Add any documentation that's specific to this adapter to [./docs/adapters](./docs/adapters).
