@@ -7,7 +7,6 @@ from amiadapters.outputs.base import ExtractOutput
 from datetime import datetime
 
 
-
 class BaseAMIStorageSink(ABC):
     """
     A storage sink is any place the AMI Connect pipeline
@@ -31,10 +30,9 @@ class BaseAMIStorageSink(ABC):
         pass
 
     @abstractmethod
-    def exec_postprocessor(
-        self, run_id: str, min_date: datetime, max_date: datetime
-    ):
+    def exec_postprocessor(self, run_id: str, min_date: datetime, max_date: datetime):
         pass
+
 
 class BaseAMIDataQualityCheck(ABC):
     """
