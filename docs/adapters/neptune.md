@@ -5,14 +5,11 @@ Users must provide their own implementation and make it available at the path sp
 
 ## Configuration
 
+- external_adapter_location: Path on remote server to the neptune-ami-connect package, which is loaded onto the sys path. Path is relative to directory where Airflow runs python.
+
 Example:
-```yaml
-sources:
-- type: neptune
-  org_id: my_utility
-  timezone: America/Los_Angeles
-  # Path to directory where we can import a Neptune 360 adapter. Path is relative to directory where Airflow runs python.
-  external_adapter_location: ../neptune-ami-connect
+```
+python cli.py config add-source my_utility neptune America/Los_Angeles --external-adapter-location ./neptune-ami-connect --sinks my_snowflake
 ```
 
 Secrets:

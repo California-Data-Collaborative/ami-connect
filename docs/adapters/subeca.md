@@ -4,13 +4,11 @@ The Subeca adapter retrieves data via Subeca's HTTP API.
 
 ## Configuration
 
+- api_url: Name of utility as it appears in the Senrtyx API URL
+
 Example:
-```yaml
-sources:
-- type: subeca
-  org_id: my_utility
-  timezone: America/Los_Angeles
-  api_url: my-source-name.api.subeca.online
+```
+python cli.py config add-source my_utility subeca America/Los_Angeles --api-url https://my-source-name.api.subeca.online --sinks my_snowflake
 ```
 
 Secrets:
