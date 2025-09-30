@@ -124,6 +124,19 @@ def add_data_quality_check_configurations(
         )
 
 
+def remove_data_quality_check_configurations(
+    config_file: str, secrets_file: str, checks_configuration: dict
+):
+    if _use_database_for_config(config_file, secrets_file):
+        logger.info(
+            f"Removing data quality checks from database with {checks_configuration}"
+        )
+        connection = create_snowflake_from_secrets_file(secrets_file)
+        database.remove_data_quality_check_configurations(
+            connection, checks_configuration
+        )
+
+
 def _use_database_for_config(config_file: str, secrets_file: str) -> bool:
     return config_file is None
 

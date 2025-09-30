@@ -548,6 +548,33 @@ def add_data_quality_check_configurations(connection, check_configuration: dict)
         )
 
 
+def remove_data_quality_check_configurations(connection, checks_configuration: dict):
+    # Validate
+    for field in [
+        "sink_id",
+        "check_names",
+    ]:
+        if not checks_configuration.get(field):
+            raise ValueError(f"Check configuration is missing field: {field}")
+
+    sink_id = checks_configuration["sink_id"]
+    cursor = connection.cursor()
+    if not _get_sink_by_id(cursor, sink_id):
+        raise ValueError(f"No sink found for id: {sink_id}")
+    for check_name in checks_configuration["check_names"]:
+        logger.info(f"Removing check {check_name}")
+        cursor.execute(
+            """
+            DELETE FROM configuration_sink_checks
+            WHERE sink_id = ? AND check_name = ?
+        """,
+            (
+                sink_id,
+                check_name,
+            ),
+        )
+
+
 def _get_source_by_org_id(cursor, org_id: str) -> List[List]:
     return cursor.execute(
         """
