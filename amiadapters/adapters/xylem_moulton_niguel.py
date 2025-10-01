@@ -165,6 +165,13 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"xylem-moulton-niguel-{self.org_id}"
 
+    def default_extract_interval_days(self):
+        """
+        We've seen in some cases that Moulton's meter reads aren't fully represented in the source until two days
+        after the flowtime. We set our standard extract range to 3+ days to cover this lag.
+        """
+        return 6
+
     def _extract(
         self,
         run_id: str,
