@@ -202,8 +202,8 @@ class TestSentryxAdapter(BaseTestCase):
         side_effect=[mocked_get_devices_response_first_page(), mocked_response_500()],
     )
     def test_extract_all_meters__non_200_status_code(self, mock_get):
-        result = self.adapter._extract_all_meters()
-        self.assertEqual(0, len(result))
+        with self.assertRaises(Exception):
+            self.adapter._extract_all_meters()
 
     @mock.patch(
         "requests.get",
@@ -268,10 +268,10 @@ class TestSentryxAdapter(BaseTestCase):
         ],
     )
     def test_extract_consumption_for_all_meters__non_200_response(self, mock_get):
-        result = self.adapter._extract_consumption_for_all_meters(
-            self.range_start, self.range_end
-        )
-        self.assertEqual(0, len(result))
+        with self.assertRaises(Exception):
+            self.adapter._extract_consumption_for_all_meters(
+                self.range_start, self.range_end
+            )
 
     def test_transform_meters_and_reads(self):
         meters = [

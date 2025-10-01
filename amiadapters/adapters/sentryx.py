@@ -216,10 +216,9 @@ class SentryxAdapter(BaseAMIAdapter):
             )
             response = requests.get(url, headers=headers, params=params)
             if not response.status_code == 200:
-                logger.warning(
-                    f"Non-200 response from devices endpoint: {response.status_code}"
+                raise Exception(
+                    f"Non-200 response from devices endpoint: {response.status_code} {response.text}"
                 )
-                return []
             data = response.json()
             raw_meters = data.get("meters", [])
             num_meters += len(raw_meters)
@@ -272,10 +271,9 @@ class SentryxAdapter(BaseAMIAdapter):
             )
             response = requests.get(url, headers=headers, params=params)
             if not response.status_code == 200:
-                logger.warning(
-                    f"Non-200 response from device consumption endpoint: {response.status_code}"
+                raise Exception(
+                    f"Non-200 response from device consumption endpoint: {response.status_code} {response.text}"
                 )
-                return []
             data = response.json()
             raw_meters = data.get("meters", [])
             num_meters += len(raw_meters)

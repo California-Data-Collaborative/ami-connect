@@ -76,6 +76,9 @@ def ami_control_dag_factory(
         @task()
         def post_process(**context):
             run_id = context["dag_run"].run_id
+            # TODO make this a configuration option, but for, while Current post processing is broken, skip it.
+            if "current" in adapter.org_id:
+                return
             adapter.post_process(run_id)
 
         # Set sequence of tasks for this utility
