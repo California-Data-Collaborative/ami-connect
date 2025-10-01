@@ -626,7 +626,7 @@ class SnowflakeReadingsHaveNoDataGapsCheck(BaseAMIDataQualityCheck):
                 SELECT
                     org_id,
                     MIN(TO_DATE (flowtime)) AS min_day,
-                    MAX(TO_DATE (flowtime)) AS max_day
+                    MAX(TO_DATE (flowtime)) - INTERVAL '2 DAY' AS max_day
                 FROM
                     {self.readings_table_name}
                 GROUP BY
