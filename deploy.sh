@@ -3,7 +3,6 @@
 # Set these variables before running the script
 HOSTNAME=$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME
 PEM_PATH=$AMI_CONNECT__AIRFLOW_SERVER_PEM
-PROD_CONFIG=$AMI_CONNECT__CONFIG
 PROD_SECRETS=$AMI_CONNECT__SECRET
 
 # Check if required environment variables are set
@@ -17,11 +16,7 @@ if [ -z "$PEM_PATH" ]; then
     exit 1
 fi
 
-# Check if config and secrets files exists
-if [ ! -f $PROD_CONFIG ]; then
-    echo "Error: production config file not found at $PROD_CONFIG"
-    exit 1
-fi
+# Check if secrets files exists
 if [ ! -f $PROD_SECRETS ]; then
     echo "Error: production secrets file not found at $PROD_SECRETS"
     exit 1
@@ -31,7 +26,6 @@ fi
 echo "Copying files to $HOSTNAME..."
 
 # Perform the SCP operations
-scp -i "$PEM_PATH" $PROD_CONFIG "ec2-user@$HOSTNAME:/home/ec2-user/config.yaml"
 scp -i "$PEM_PATH" $PROD_SECRETS "ec2-user@$HOSTNAME:/home/ec2-user/secrets.yaml"
 scp -i "$PEM_PATH" requirements.txt "ec2-user@$HOSTNAME:/home/ec2-user/"
 scp -i "$PEM_PATH" start-airflow.sh "ec2-user@$HOSTNAME:/home/ec2-user/"

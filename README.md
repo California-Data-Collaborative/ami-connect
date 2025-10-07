@@ -80,7 +80,7 @@ To see your pipeline's configuration, run:
 python cli.py config get
 ```
 
-There is a variety of configuration changes you might make with the CLI. In general, you can use the `--help` flag or look at the code to see how they work.
+You can change your configuration with the CLI using one of many commands. In general, you can use the `--help` flag or look at the code to see how they work.
 
 One common task is to add a new source (a.k.a. utility or agency) to the system. Here's an example that adds the `my_utility` source which uses the `aclara` adapter:
 ```
@@ -93,6 +93,8 @@ For now, we use a YAML file to configure secrets:
 - `secrets.yaml`
 You should get this file from a colleague, or create one based on `./secrets.yaml.example`.
 
+We also support a YAML-based configuration (see references to `config.yaml` or `config.yaml.example`) for local development but don't recommend this in production.
+
 #### Running the pipeline locally
 
 The `./cli.py` CLI will run the pipeline on your laptop. It will extract data from the sources in your local config, transform, then load the data into your configured sinks. Run with:
@@ -102,6 +104,8 @@ python cli.py run
 ```
 
 It's common to comment out or modify lines in this script while testing.
+
+The CLI can use a YAML file, like `config.yaml.example`, for local development. See CLI options for more details.
 
 
 ### Deploying
