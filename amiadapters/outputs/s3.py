@@ -7,7 +7,7 @@ import shutil
 from typing import List
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ProfileNotFound
 
 from amiadapters.models import GeneralMeter, GeneralMeterRead
 from amiadapters.models import GeneralModelJSONEncoder
@@ -43,8 +43,14 @@ class S3TaskOutputController(BaseTaskOutputController):
 
         if s3_client is None:
             if aws_profile_name:
-                session = boto3.Session(profile_name=aws_profile_name)
-                self.s3 = session.client("s3")
+                try:
+                    session = boto3.Session(profile_name=aws_profile_name)
+                    self.s3 = session.client("s3")
+                except ProfileNotFound as e:
+                    logger.info(
+                        f"AWS profile '{aws_profile_name}' not found, falling back to default"
+                    )
+                    self.s3 = boto3.client("s3")
             else:
                 self.s3 = boto3.client("s3")
         else:
