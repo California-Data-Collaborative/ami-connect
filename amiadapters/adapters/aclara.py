@@ -162,10 +162,9 @@ class AclaraAdapter(BaseAMIAdapter):
                     yield json.dumps(meter_and_read, cls=DataclassJSONEncoder)
 
     def _transform(self, run_id: str, extract_outputs: ExtractOutput):
-        text = extract_outputs.from_file("meters_and_reads.json")
-        raw_meters_with_reads = [
-            AclaraMeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
-        ]
+        raw_meters_with_reads = extract_outputs.load_from_file(
+            "meters_and_reads.json", AclaraMeterAndRead
+        )
         return self._transform_meters_and_reads(raw_meters_with_reads)
 
     def _transform_meters_and_reads(
@@ -356,10 +355,9 @@ class AclaraRawSnowflakeLoader(RawSnowflakeLoader):
         extract_outputs: ExtractOutput,
         snowflake_conn,
     ):
-        text = extract_outputs.from_file("meters_and_reads.json")
-        raw_meters_with_reads = [
-            AclaraMeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
-        ]
+        raw_meters_with_reads = extract_outputs.load_from_file(
+            "meters_and_reads.json", AclaraMeterAndRead
+        )
 
         created_time = datetime.now(tz=org_timezone)
 
