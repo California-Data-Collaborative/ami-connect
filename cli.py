@@ -471,16 +471,24 @@ def update_task_output(
         str,
         typer.Argument(help="Name of S3 bucket used for task output."),
     ],
+    dev_profile: Annotated[
+        str,
+        typer.Argument(
+            help="Name of AWS profile used to access AWS credentials during local development."
+        ),
+    ],
     secrets_file: Annotated[
         str, typer.Option(help="Path to local secrets file.")
     ] = DEFAULT_SECRETS_PATH,
 ):
     """
-    Updates task output configuration in database. Assumes you're using S3 task output.
+    Updates task output configuration in database. Assumes you're using S3 task output. Requires all arguments
+    because we erase and recreate entire task output configuration when we make this update.
     """
     new_task_output_configuration = {
         "type": "s3",
         "s3_bucket": bucket_name,
+        "dev_profile": dev_profile,
         "local_output_path": None,
     }
     update_task_output_configuration(None, secrets_file, new_task_output_configuration)

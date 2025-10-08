@@ -112,6 +112,7 @@ def get_configuration(snowflake_connection) -> Tuple[
     row = all_config["configuration_task_outputs"][0]
     task_output["type"] = row["type"]
     task_output["bucket"] = row["s3_bucket"]
+    task_output["dev_profile"] = row["dev_profile"]
     task_output["local_output_path"] = row["local_output_path"]
 
     notifications = {}
@@ -401,6 +402,13 @@ def update_task_output_configuration(connection, task_output_configuration: dict
             f"Task output configuration with type s3 is missing field: s3_bucket"
         )
     if (
+        task_output_configuration.get("type") == "s3"
+        and not task_output_configuration["dev_profile"]
+    ):
+        raise ValueError(
+            f"Task output configuration with type s3 is missing field: dev_profile"
+        )
+    if (
         task_output_configuration.get("type") == "local"
         and not task_output_configuration["local_output_path"]
     ):
@@ -414,12 +422,13 @@ def update_task_output_configuration(connection, task_output_configuration: dict
     # Insert the new row
     cursor.execute(
         """
-        INSERT INTO configuration_task_outputs (type, s3_bucket, local_output_path)
-        VALUES (?, ?, ?)
+        INSERT INTO configuration_task_outputs (type, s3_bucket, dev_profile, local_output_path)
+        VALUES (?, ?, ?, ?)
         """,
         [
             task_output_configuration["type"],
             task_output_configuration["s3_bucket"],
+            task_output_configuration["dev_profile"],
             task_output_configuration["local_output_path"],
         ],
     )
