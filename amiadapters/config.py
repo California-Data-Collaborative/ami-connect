@@ -11,6 +11,7 @@ import yaml
 
 from amiadapters.configuration.base import create_snowflake_connection
 from amiadapters.configuration.database import get_configuration
+from amiadapters.configuration.secrets import get_secrets
 
 
 class AMIAdapterConfiguration:
@@ -56,9 +57,7 @@ class AMIAdapterConfiguration:
         Given a Snowflake connection to an AMI Connect schema, query the configuration tables to get this
         pipeline's config.
         """
-        # For now, load secrets from YAML. In the near future we will load from a more secure source.
-        with open(secrets_file, "r") as f:
-            secrets = yaml.safe_load(f)
+        secrets = get_secrets()
         # When we have better secrets management, find a better way of accessing this information
         snowflake_credentials = list(secrets["sinks"].values())[0]
         connection = create_snowflake_connection(

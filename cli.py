@@ -29,6 +29,7 @@ from amiadapters.configuration.base import (
     remove_source_configuration,
     update_backfill_configuration,
     update_notification_configuration,
+    update_secret,
     update_sink_configuration,
     update_source_configuration,
     update_task_output_configuration,
@@ -641,6 +642,40 @@ def remove_data_quality_checks(
         "check_names": checks,
     }
     remove_data_quality_check_configurations(None, secrets_file, checks_configuration)
+
+
+# TODO separate for source vs sink?
+# TODO source-specific secret key values?
+# TODO validation
+@config_app.command()
+def update_sink_secret(
+    secret_name: Annotated[
+        str,
+        typer.Argument(help="Name of sink used as unique identifier."),
+    ],
+    account: Annotated[str, typer.Option(help="TODO.")] = None,
+    user: Annotated[str, typer.Option(help="TODO.")] = None,
+    password: Annotated[str, typer.Option(help="TODO.")] = None,
+    role: Annotated[str, typer.Option(help="TODO.")] = None,
+    warehouse: Annotated[str, typer.Option(help="TODO.")] = None,
+    database: Annotated[str, typer.Option(help="TODO.")] = None,
+    schema: Annotated[str, typer.Option(help="TODO.")] = None,
+):
+    """
+    Updates secret for a sink.
+    """
+    secrets = {
+        "account": account,
+        "user": user,
+        "password": password,
+        "role": role,
+        "warehouse": warehouse,
+        "database": database,
+        "schema": schema,
+    }
+    # TODO do not hardcode
+    secret_name = f"sinks/{secret_name}"
+    update_secret(secret_name, secrets)
 
 
 if __name__ == "__main__":
