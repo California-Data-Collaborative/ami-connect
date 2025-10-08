@@ -45,6 +45,7 @@ CREATE TABLE if not exists configuration_task_outputs (
     id INTEGER AUTOINCREMENT PRIMARY KEY,
     type STRING NOT NULL,
     s3_bucket STRING,
+    dev_profile STRING,
     local_output_path STRING
 );
 

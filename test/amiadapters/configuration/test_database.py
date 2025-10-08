@@ -126,6 +126,7 @@ class TestDatabase(BaseTestCase):
                     "id": 1,
                     "type": "s3",
                     "s3_bucket": "my-bucket",
+                    "dev_profile": "my-aws-profile",
                     "local_output_path": None,
                 },
             ]
@@ -169,6 +170,7 @@ class TestDatabase(BaseTestCase):
         config = {
             "type": "s3",
             "s3_bucket": "my-bucket",
+            "dev_profile": "my-aws-profile",
             "local_output_path": None,
         }
 
@@ -179,10 +181,10 @@ class TestDatabase(BaseTestCase):
             call.execute("DELETE FROM configuration_task_outputs"),
             call.execute(
                 """
-        INSERT INTO configuration_task_outputs (type, s3_bucket, local_output_path)
-        VALUES (?, ?, ?)
+        INSERT INTO configuration_task_outputs (type, s3_bucket, dev_profile, local_output_path)
+        VALUES (?, ?, ?, ?)
         """,
-                ["s3", "my-bucket", None],
+                ["s3", "my-bucket", "my-aws-profile", None],
             ),
         ]
         self.mock_cursor.assert_has_calls(expected_calls)
@@ -193,6 +195,7 @@ class TestDatabase(BaseTestCase):
         config = {
             "type": "local",
             "s3_bucket": None,
+            "dev_profile": None,
             "local_output_path": "/tmp/data",
         }
 
@@ -203,10 +206,10 @@ class TestDatabase(BaseTestCase):
         )
         self.mock_cursor.execute.assert_any_call(
             """
-        INSERT INTO configuration_task_outputs (type, s3_bucket, local_output_path)
-        VALUES (?, ?, ?)
+        INSERT INTO configuration_task_outputs (type, s3_bucket, dev_profile, local_output_path)
+        VALUES (?, ?, ?, ?)
         """,
-            ["local", None, "/tmp/data"],
+            ["local", None, None, "/tmp/data"],
         )
 
     def test_update_task_output_configuration_missing_type_raises(self):
@@ -216,13 +219,34 @@ class TestDatabase(BaseTestCase):
         self.assertIn("missing field: type", str(cm.exception))
 
     def test_update_task_output_configuration_missing_s3_bucket_raises(self):
-        config = {"type": "s3", "s3_bucket": None, "local_output_path": None}
+        config = {
+            "type": "s3",
+            "s3_bucket": None,
+            "dev_profile": "dev",
+            "local_output_path": None,
+        }
         with self.assertRaises(ValueError) as cm:
             update_task_output_configuration(self.mock_connection, config)
         self.assertIn("missing field: s3_bucket", str(cm.exception))
 
+    def test_update_task_output_configuration_missing_dev_profile_raises(self):
+        config = {
+            "type": "s3",
+            "s3_bucket": "bucket",
+            "dev_profile": None,
+            "local_output_path": None,
+        }
+        with self.assertRaises(ValueError) as cm:
+            update_task_output_configuration(self.mock_connection, config)
+        self.assertIn("missing field: dev_profile", str(cm.exception))
+
     def test_update_task_output_configuration_missing_local_output_path_raises(self):
-        config = {"type": "local", "s3_bucket": None, "local_output_path": None}
+        config = {
+            "type": "local",
+            "s3_bucket": None,
+            "dev_profile": None,
+            "local_output_path": None,
+        }
         with self.assertRaises(ValueError) as cm:
             update_task_output_configuration(self.mock_connection, config)
         self.assertIn("missing field: local_output_path", str(cm.exception))
