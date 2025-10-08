@@ -47,7 +47,9 @@ class S3TaskOutputController(BaseTaskOutputController):
                     session = boto3.Session(profile_name=aws_profile_name)
                     self.s3 = session.client("s3")
                 except ProfileNotFound as e:
-                    logger.info(f"AWS profile '{aws_profile_name}' not found, falling back to default")
+                    logger.info(
+                        f"AWS profile '{aws_profile_name}' not found, falling back to default"
+                    )
                     self.s3 = boto3.client("s3")
             else:
                 self.s3 = boto3.client("s3")
