@@ -100,6 +100,9 @@ class S3TaskOutputController(BaseTaskOutputController):
         """
         Download any S3 objects under the provided path prefix. Works for either
         a prefix or actual object key.
+
+        Intended for local development. Production should access S3 data with
+        functions like read_transformed_meters.
         """
         paginator = self.s3.get_paginator("list_objects_v2")
         i = 0

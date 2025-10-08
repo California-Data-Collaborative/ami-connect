@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import json
 from typing import List
 
 from amiadapters.models import GeneralMeterRead
@@ -21,6 +22,24 @@ class ExtractOutput:
 
     def from_file(self, filename: str) -> str:
         return self.outputs.get(filename)
+
+    def load_from_file(
+        self, filename: str, data_type, allow_empty: bool = False
+    ) -> List:
+        """
+        Return output from a file deserialized into data_type, the dataclass that represents rows
+        in this file. File is expected to be one JSON-serialized instance of data_type per row.
+
+        By default, fails if the file is empty (this often means extract failed in some way). You can
+        change allow_empty to True and get an empty list instead.
+        """
+        text = self.outputs.get(filename)
+        if not text:
+            if allow_empty:
+                return []
+            else:
+                raise Exception(f"No data found for file {filename}")
+        return [data_type(**json.loads(d)) for d in text.strip().split("\n")]
 
 
 class BaseTaskOutputController(ABC):

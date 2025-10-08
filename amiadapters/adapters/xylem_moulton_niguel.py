@@ -321,13 +321,12 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
             raw_meters_by_id,
             customers_by_service_address,
             set(meters_by_id.keys()),
+            [r for r in self._read_file(extract_outputs, "ami.json", Ami)],
             [
-                Ami(**json.loads(r))
-                for r in self._read_file(extract_outputs, "ami.json")
-            ],
-            [
-                RegisterRead(**json.loads(r))
-                for r in self._read_file(extract_outputs, "register_read.json")
+                r
+                for r in self._read_file(
+                    extract_outputs, "register_read.json", RegisterRead
+                )
             ],
         )
 
@@ -469,12 +468,11 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         Map each meter ID to the list of meters associated with it. The list is sorted with most recently active
         meter first.
         """
-        raw_meters = self._read_file(extract_outputs, "meter.json")
+        raw_meters = self._read_file(extract_outputs, "meter.json", Meter)
 
         # Build map
         meters_by_id = {}
-        for m in raw_meters:
-            meter = Meter(**json.loads(m))
+        for meter in raw_meters:
             if meter.meter_id not in meters_by_id:
                 meters_by_id[meter.meter_id] = []
             meters_by_id[meter.meter_id].append(meter)
@@ -495,10 +493,11 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         """
         Create a map of service points by their unique service_address+service_point.
         """
-        raw_service_points = self._read_file(extract_outputs, "service_point.json")
+        raw_service_points = self._read_file(
+            extract_outputs, "service_point.json", ServicePoint
+        )
         result = {}
-        for sp in raw_service_points:
-            service_point = ServicePoint(**json.loads(sp))
+        for service_point in raw_service_points:
             result[(service_point.service_address, service_point.service_point)] = (
                 service_point
             )
@@ -511,10 +510,9 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         Create a map of service addresses to the list of customers at that service address. There
         can be many customers per service address - they are sorted by end_date desc.
         """
-        raw_customers = self._read_file(extract_outputs, "customer.json")
+        raw_customers = self._read_file(extract_outputs, "customer.json", Customer)
         result = {}
-        for c in raw_customers:
-            customer = Customer(**json.loads(c))
+        for customer in raw_customers:
             if customer.service_address not in result:
                 result[customer.service_address] = []
             result[customer.service_address].append(customer)
@@ -535,11 +533,10 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         """
         Map each meter ID to the list of interval reads associated with it.
         """
-        raw_reads = self._read_file(extract_outputs, "ami.json")
+        raw_reads = self._read_file(extract_outputs, "ami.json", Ami)
 
         result = {}
-        for r in raw_reads:
-            read = Ami(**json.loads(r))
+        for read in raw_reads:
             if read.encid not in result:
                 result[read.encid] = []
             result[read.encid].append(read)
@@ -552,28 +549,24 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         """
         Map each meter ID to the list of register reads associated with it.
         """
-        raw_reads = self._read_file(extract_outputs, "register_read.json")
+        raw_reads = self._read_file(extract_outputs, "register_read.json", RegisterRead)
 
         result = {}
-        for r in raw_reads:
-            read = RegisterRead(**json.loads(r))
+        for read in raw_reads:
             if read.encid not in result:
                 result[read.encid] = []
             result[read.encid].append(read)
 
         return result
 
-    def _read_file(self, extract_outputs: ExtractOutput, file: str) -> Generator:
+    def _read_file(
+        self, extract_outputs: ExtractOutput, file: str, raw_dataclass
+    ) -> Generator:
         """
         Read a file's contents from extract stage output, create generator
         for each line of text
         """
-        file_text = extract_outputs.from_file(file)
-        if file_text is None:
-            raise Exception(f"No output found for file {file}")
-        lines = file_text.strip().split("\n")
-        if lines == [""]:
-            lines = []
+        lines = extract_outputs.load_from_file(file, raw_dataclass, allow_empty=True)
         yield from lines
 
 
@@ -706,13 +699,14 @@ class XylemMoultonNiguelRawSnowflakeLoader(RawSnowflakeLoader):
         table: name of raw data table in Snowflake
         unique_by: list of field names used with org_id to uniquely identify a row in the base table
         """
-        text = extract_outputs.from_file(extract_output_filename)
-        if not text:
+        raw_data = extract_outputs.load_from_file(
+            extract_output_filename, raw_dataclass, allow_empty=True
+        )
+        if not raw_data:
             logger.info(
                 f"No data found for {extract_output_filename}, skipping raw load"
             )
             return
-        raw_data = [raw_dataclass(**json.loads(d)) for d in text.strip().split("\n")]
         temp_table = f"temp_{table}"
         fields = [f.lower() for f in raw_dataclass.__dataclass_fields__.keys()]
         unique_by = [u.lower() for u in unique_by]

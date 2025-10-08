@@ -309,10 +309,9 @@ class Beacon360Adapter(BaseAMIAdapter):
         logger.info(f"Cached report contents at {cache_file}")
 
     def _transform(self, run_id: str, extract_outputs: ExtractOutput):
-        text = extract_outputs.from_file("meters_and_reads.json")
-        raw_meters_with_reads = [
-            Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
-        ]
+        raw_meters_with_reads = extract_outputs.load_from_file(
+            "meters_and_reads.json", Beacon360MeterAndRead
+        )
         return self._transform_meters_and_reads(raw_meters_with_reads)
 
     def _transform_meters_and_reads(
@@ -418,10 +417,9 @@ class BeaconRawSnowflakeLoader(RawSnowflakeLoader):
         extract_outputs: ExtractOutput,
         snowflake_conn,
     ):
-        text = extract_outputs.from_file("meters_and_reads.json")
-        raw_meters_with_reads = [
-            Beacon360MeterAndRead(**json.loads(d)) for d in text.strip().split("\n")
-        ]
+        raw_meters_with_reads = extract_outputs.load_from_file(
+            "meters_and_reads.json", Beacon360MeterAndRead
+        )
 
         create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_beacon_360_base LIKE beacon_360_base;"
         snowflake_conn.cursor().execute(create_temp_table_sql)
