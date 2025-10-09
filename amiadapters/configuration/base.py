@@ -5,6 +5,7 @@ import snowflake.connector
 import yaml
 
 from amiadapters.configuration import database
+from amiadapters.configuration import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,16 @@ def remove_data_quality_check_configurations(
         database.remove_data_quality_check_configurations(
             connection, checks_configuration
         )
+
+
+def update_secret_configuration(secret_type: str, secret_name: str, new_secrets):
+    logger.info(f"Updating secret {secret_name} of type {secret_type}")
+    secrets.update_secret_configuration(secret_type, secret_name, new_secrets)
+
+
+def remove_secret_configuration(secret_type: str, secret_name: str):
+    logger.info(f"Removing secret {secret_name} of type {secret_type}")
+    secrets.remove_secret_configuration(secret_type, secret_name)
 
 
 def _use_database_for_config(config_file: str, secrets_file: str) -> bool:
