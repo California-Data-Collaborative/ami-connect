@@ -294,17 +294,10 @@ class SentryxAdapter(BaseAMIAdapter):
         return meters
 
     def _transform(self, run_id: str, extract_outputs: ExtractOutput):
-        raw_meter_text = extract_outputs.from_file("meters.json")
-        raw_meters = [
-            SentryxMeter(**json.loads(d)) for d in raw_meter_text.strip().split("\n")
-        ]
-
-        raw_meters_with_reads_text = extract_outputs.from_file("reads.json")
-        raw_meters_with_reads = [
-            SentryxMeterWithReads.from_json(d)
-            for d in raw_meters_with_reads_text.strip().split("\n")
-        ]
-
+        raw_meters = extract_outputs.load_from_file("meters.json", SentryxMeter)
+        raw_meters_with_reads = extract_outputs.load_from_file(
+            "reads.json", SentryxMeterWithReads
+        )
         return self._transform_meters_and_reads(raw_meters, raw_meters_with_reads)
 
     def _transform_meters_and_reads(
@@ -382,16 +375,10 @@ class SentryxRawSnowflakeLoader(RawSnowflakeLoader):
         extract_outputs: ExtractOutput,
         snowflake_conn,
     ):
-        raw_meter_text = extract_outputs.from_file("meters.json")
-        raw_meters = [
-            SentryxMeter(**json.loads(d)) for d in raw_meter_text.strip().split("\n")
-        ]
-
-        raw_meters_with_reads_text = extract_outputs.from_file("reads.json")
-        raw_meters_with_reads = [
-            SentryxMeterWithReads.from_json(d)
-            for d in raw_meters_with_reads_text.strip().split("\n")
-        ]
+        raw_meters = extract_outputs.load_from_file("meters.json", SentryxMeter)
+        raw_meters_with_reads = extract_outputs.load_from_file(
+            "reads.json", SentryxMeterWithReads
+        )
 
         created_time = datetime.now(tz=org_timezone)
 

@@ -20,9 +20,6 @@ class ExtractOutput:
         """
         return self.outputs
 
-    def from_file(self, filename: str) -> str:
-        return self.outputs.get(filename)
-
     def load_from_file(
         self, filename: str, data_type, allow_empty: bool = False
     ) -> List:

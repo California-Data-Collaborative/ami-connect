@@ -292,10 +292,7 @@ class SubecaAdapter(BaseAMIAdapter):
     def _transform(
         self, run_id: str, extract_outputs: ExtractOutput
     ) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
-        raw_accounts = [
-            SubecaAccount.from_json(a)
-            for a in self._read_file(extract_outputs, "accounts.json")
-        ]
+        raw_accounts = _read_accounts_file(extract_outputs)
         raw_usages_by_device_id = self._usages_by_device_id(extract_outputs)
 
         meters_by_id = {}
@@ -309,7 +306,6 @@ class SubecaAdapter(BaseAMIAdapter):
             account_id = account.accountId
             location_id = account.accountId
             meter_id = account.meterSerial
-            # TODO check
             endpoint_id = account.registerSerial
 
             meter = GeneralMeter(
@@ -404,25 +400,21 @@ class SubecaAdapter(BaseAMIAdapter):
         self, extract_outputs: ExtractOutput
     ) -> Dict[str, List[SubecaReading]]:
         result = {}
-        raw_usages = self._read_file(extract_outputs, "usages.json")
-        for raw_usage in raw_usages:
-            usage = SubecaReading(**json.loads(raw_usage))
+        raw_usages = self._read_file(extract_outputs, "usages.json", SubecaReading)
+        for usage in raw_usages:
             if usage.deviceId not in result:
                 result[usage.deviceId] = []
             result[usage.deviceId].append(usage)
         return result
 
-    def _read_file(self, extract_outputs: ExtractOutput, file: str) -> Generator:
+    def _read_file(
+        self, extract_outputs: ExtractOutput, file: str, raw_dataclass
+    ) -> Generator:
         """
         Read a file's contents from extract stage output, create generator
         for each line of text
         """
-        file_text = extract_outputs.from_file(file)
-        if file_text is None:
-            raise Exception(f"No output found for file {file}")
-        lines = file_text.strip().split("\n")
-        if lines == [""]:
-            lines = []
+        lines = extract_outputs.load_from_file(file, raw_dataclass, allow_empty=True)
         yield from lines
 
 
@@ -441,10 +433,7 @@ class SubecaRawSnowflakeLoader(RawSnowflakeLoader):
         extract_outputs: ExtractOutput,
         snowflake_conn,
     ) -> None:
-        raw_data = [
-            SubecaAccount(**json.loads(i))
-            for i in extract_outputs.from_file("accounts.json").strip().split("\n")
-        ]
+        raw_data = extract_outputs.load_from_file("accounts.json", SubecaAccount)
         fields = set(SubecaAccount.__dataclass_fields__.keys()) - {
             "latestReading",
         }
@@ -468,10 +457,7 @@ class SubecaRawSnowflakeLoader(RawSnowflakeLoader):
         snowflake_conn,
     ) -> None:
         # Pluck the latestReading off the account metadata and turn it into a reading
-        raw_data = [
-            SubecaReading(**json.loads(i).get("latestReading", {}))
-            for i in extract_outputs.from_file("accounts.json").strip().split("\n")
-        ]
+        raw_data = [i.latestReading for i in _read_accounts_file(extract_outputs)]
         fields = set(SubecaReading.__dataclass_fields__.keys())
         self._load_raw_data(
             run_id,
@@ -492,10 +478,7 @@ class SubecaRawSnowflakeLoader(RawSnowflakeLoader):
         extract_outputs: ExtractOutput,
         snowflake_conn,
     ) -> None:
-        raw_data = [
-            SubecaReading(**json.loads(i))
-            for i in extract_outputs.from_file("usages.json").strip().split("\n")
-        ]
+        raw_data = extract_outputs.load_from_file("usages.json", SubecaReading)
         fields = set(SubecaReading.__dataclass_fields__.keys())
         self._load_raw_data(
             run_id,
@@ -613,3 +596,15 @@ class SubecaRawSnowflakeLoader(RawSnowflakeLoader):
                         VALUES (source.org_id, {", ".join(f"source.{name}" for name in fields_lower)}, source.created_time)
         """
         snowflake_conn.cursor().execute(merge_sql)
+
+
+def _read_accounts_file(extract_outputs: ExtractOutput) -> List[SubecaAccount]:
+    """
+    Read accounts file from extract stage output, return list of SubecaAccount
+    """
+    accounts = extract_outputs.load_from_file(
+        "accounts.json", SubecaAccount, allow_empty=True
+    )
+    for account in accounts:
+        account.latestReading = SubecaReading(**account.latestReading)
+    return accounts

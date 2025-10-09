@@ -22,14 +22,6 @@ class TestLocalTaskOutputController(BaseTestCase):
         outputs = self.extract_output.get_outputs()
         self.assertEqual(outputs, self.sample_outputs)
 
-    def test_from_file_returns_content(self):
-        content = self.extract_output.from_file("file1.txt")
-        self.assertEqual(content, self.sample_outputs["file1.txt"])
-
-    def test_from_file_returns_none_for_missing_file(self):
-        content = self.extract_output.from_file("missing.txt")
-        self.assertIsNone(content)
-
     def test_load_from_file_deserializes_data(self):
         result = self.extract_output.load_from_file("file1.txt", DummyDataType)
         self.assertEqual(len(result), 2)
