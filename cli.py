@@ -7,6 +7,7 @@ Run from root directory with:
 
 """
 
+from dataclasses import fields
 from datetime import datetime
 import logging
 from pprint import pprint
@@ -18,6 +19,7 @@ import typer
 from amiadapters.config import (
     AMIAdapterConfiguration,
     ConfiguredTaskOutputControllerType,
+    get_secrets_class_type,
 )
 from amiadapters.configuration.base import (
     add_data_quality_check_configurations,
@@ -25,15 +27,18 @@ from amiadapters.configuration.base import (
     get_configuration,
     remove_backfill_configuration,
     remove_data_quality_check_configurations,
+    remove_secret_configuration,
     remove_sink_configuration,
     remove_source_configuration,
     update_backfill_configuration,
     update_notification_configuration,
-    update_secret,
+    update_secret_configuration,
     update_sink_configuration,
     update_source_configuration,
     update_task_output_configuration,
 )
+from amiadapters.configuration.env import set_global_aws_profile
+from amiadapters.configuration.secrets import get_secrets
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
 
@@ -162,6 +167,12 @@ def get(
     secrets_file: Annotated[
         str, typer.Option(help="Path to local secrets file.")
     ] = DEFAULT_SECRETS_PATH,
+    profile: Annotated[
+        str,
+        typer.Option(
+            help="Name of pipeline profile to get configuration for. Expected to match the name of the AWS profile in your AWS credentials file."
+        ),
+    ] = None,
 ):
     """
     Get configuration from database.
@@ -178,6 +189,13 @@ def get(
             "backfills": backfills,
         }
     )
+    # TODO integrate this with get_confiugration results, both for bootstrapping and for returning secrets
+    # TODO obfuscate secrets values in output
+    # TODO require profile?
+    if profile:
+        set_global_aws_profile(profile)
+        new_secrets = get_secrets()
+        pprint(new_secrets)
 
 
 @config_app.command()
@@ -644,27 +662,76 @@ def remove_data_quality_checks(
     remove_data_quality_check_configurations(None, secrets_file, checks_configuration)
 
 
-# TODO separate for source vs sink?
-# TODO source-specific secret key values?
-# TODO validation
 @config_app.command()
-def update_sink_secret(
+def update_secret(
+    secret_type: Annotated[
+        str,
+        typer.Argument(help="Type of secret. Choices: source, sink"),
+    ],
     secret_name: Annotated[
         str,
-        typer.Argument(help="Name of sink used as unique identifier."),
+        typer.Argument(
+            help="Name of source or sink that uses these secrets as specified in the configuration."
+        ),
     ],
-    account: Annotated[str, typer.Option(help="TODO.")] = None,
-    user: Annotated[str, typer.Option(help="TODO.")] = None,
-    password: Annotated[str, typer.Option(help="TODO.")] = None,
-    role: Annotated[str, typer.Option(help="TODO.")] = None,
-    warehouse: Annotated[str, typer.Option(help="TODO.")] = None,
-    database: Annotated[str, typer.Option(help="TODO.")] = None,
-    schema: Annotated[str, typer.Option(help="TODO.")] = None,
+    sink_type: Annotated[
+        str,
+        typer.Option(
+            help="Type of sink, e.g. 'snowflake'. Must be specified if secret_type is 'sink'."
+        ),
+    ] = None,
+    source_type: Annotated[
+        str,
+        typer.Option(
+            help="Type of source, e.g. 'subeca'. Must be specified if secret_type is 'source'."
+        ),
+    ] = None,
+    profile: Annotated[
+        str,
+        typer.Option(
+            help="Name of pipeline profile to get configuration for. Expected to match the name of the AWS profile in your AWS credentials file."
+        ),
+    ] = None,
+    # Type-specific options
+    account: Annotated[str, typer.Option(help="Snowflake account name.")] = None,
+    user: Annotated[str, typer.Option(help="Snowflake user name.")] = None,
+    password: Annotated[str, typer.Option(help="Snowflake password name.")] = None,
+    role: Annotated[str, typer.Option(help="Snowflake role name.")] = None,
+    warehouse: Annotated[str, typer.Option(help="Snowflake warehouse name.")] = None,
+    database: Annotated[str, typer.Option(help="Snowflake database name.")] = None,
+    schema: Annotated[str, typer.Option(help="Snowflake schema name.")] = None,
+    api_key: Annotated[str, typer.Option(help="API key, e.g. for Subeca.")] = None,
 ):
     """
-    Updates secret for a sink.
+    Creates or updates a secret. Matches on secret_type+secret_name for update, else adds new secret.
     """
-    secrets = {
+    if secret_type not in ["source", "sink"]:
+        raise ValueError('secret_type must be one of ["source", "sink"]')
+    if secret_type == "source" and source_type not in [
+        "subeca",
+        "aclara",
+        "beacon_360",
+        "sentryx",
+        "metersense",
+        "xylem_moulton_niguel",
+        "neptune",
+    ]:
+        raise ValueError(
+            "source_type must be specified as one of ['subeca', 'aclara', 'beacon_360', 'sentryx', 'metersense', 'xylem_moulton_niguel', 'neptune'] if secret_type is 'source'"
+        )
+    if secret_type == "sink" and sink_type not in ["snowflake"]:
+        raise ValueError(
+            "sink_type must be specified as 'snowflake' if secret_type is 'sink'"
+        )
+
+    set_global_aws_profile(profile)
+
+    # dataclass that represents this secret, e.g. SubecaSecrets, SnowflakeSecrets, etc
+    secrets_dataclass = get_secrets_class_type(
+        source_type if secret_type == "source" else sink_type
+    )
+
+    type_specific_options = {
         "account": account,
         "user": user,
         "password": password,
@@ -672,10 +739,44 @@ def update_sink_secret(
         "warehouse": warehouse,
         "database": database,
         "schema": schema,
+        "api_key": api_key,
     }
-    # TODO do not hardcode
-    secret_name = f"sinks/{secret_name}"
-    update_secret(secret_name, secrets)
+
+    required_fields = fields(secrets_dataclass)
+
+    missing_fields = [
+        f.name for f in required_fields if type_specific_options.get(f.name) is None
+    ]
+    if missing_fields:
+        raise ValueError(f"Missing values for: {', '.join(missing_fields)}")
+
+    # Instantiate the dataclass with the type-specific fields that are required
+    secrets = secrets_dataclass(
+        **{f.name: type_specific_options[f.name] for f in required_fields}
+    )
+
+    update_secret_configuration(secret_type, secret_name, secrets)
+
+
+@config_app.command()
+def remove_secret(
+    secret_type: Annotated[
+        str,
+        typer.Argument(help="Type of secret. Choices: source, sink"),
+    ],
+    secret_name: Annotated[
+        str,
+        typer.Argument(
+            help="Name of source or sink that uses these secrets as specified in the configuration."
+        ),
+    ],
+):
+    """
+    Removes a secret. Matches on secret_type+secret_name.
+    """
+    if secret_type not in ["source", "sink"]:
+        raise ValueError('secret_type must be one of ["source", "sink"]')
+    remove_secret_configuration(secret_type, secret_name)
 
 
 if __name__ == "__main__":

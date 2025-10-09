@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
+import json
 from typing import List, Dict, Union
 import pathlib
 
@@ -57,7 +58,11 @@ class AMIAdapterConfiguration:
         Given a Snowflake connection to an AMI Connect schema, query the configuration tables to get this
         pipeline's config.
         """
-        secrets = get_secrets()
+        # secrets = get_secrets()
+        # For now, load secrets from YAML. In the near future we will load from a more secure source.
+        with open(secrets_file, "r") as f:
+            secrets = yaml.safe_load(f)
+
         # When we have better secrets management, find a better way of accessing this information
         snowflake_credentials = list(secrets["sinks"].values())[0]
         connection = create_snowflake_connection(
@@ -585,20 +590,31 @@ class Backfill:
     schedule: str  # crontab-formatted string specifying run schedule
 
 
+class SecretsBase:
+    """
+    Base class for secrets dataclasses, with convenience method to convert to JSON.
+    Secrets dataclasses define the secrets needed for a particular source or sink type.
+    They are serialized directly to JSON for storage in AWS Secrets Manager.
+    """
+
+    def to_json(self) -> str:
+        return json.dumps(asdict(self))
+
+
 @dataclass
-class AclaraSecrets:
+class AclaraSecrets(SecretsBase):
     sftp_user: str
     sftp_password: str
 
 
 @dataclass
-class Beacon360Secrets:
+class Beacon360Secrets(SecretsBase):
     user: str
     password: str
 
 
 @dataclass
-class MetersenseSecrets:
+class MetersenseSecrets(SecretsBase):
     ssh_tunnel_username: str
     database_db_name: str
     database_user: str
@@ -606,7 +622,7 @@ class MetersenseSecrets:
 
 
 @dataclass
-class NeptuneSecrets:
+class NeptuneSecrets(SecretsBase):
     site_id: str
     api_key: str
     client_id: str
@@ -614,21 +630,43 @@ class NeptuneSecrets:
 
 
 @dataclass
-class SentryxSecrets:
+class SentryxSecrets(SecretsBase):
     api_key: str
 
 
 @dataclass
-class SubecaSecrets:
+class SubecaSecrets(SecretsBase):
     api_key: str
 
 
 @dataclass
-class XylemMoultonNiguelSecrets:
+class XylemMoultonNiguelSecrets(SecretsBase):
     ssh_tunnel_username: str
     database_db_name: str
     database_user: str
     database_password: str
+
+
+def get_secrets_class_type(secret_type: str):
+    match secret_type:
+        case "aclara":
+            return AclaraSecrets
+        case "beacon_360":
+            return Beacon360Secrets
+        case "metersense":
+            return MetersenseSecrets
+        case "neptune":
+            return NeptuneSecrets
+        case "sentryx":
+            return SentryxSecrets
+        case "subeca":
+            return SubecaSecrets
+        case "xylem_moulton_niguel":
+            return XylemMoultonNiguelSecrets
+        case "snowflake":
+            return SnowflakeSecrets
+        case _:
+            raise ValueError(f"Unrecognized secrets class name: {secret_type}")
 
 
 @dataclass

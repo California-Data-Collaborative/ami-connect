@@ -4,10 +4,7 @@ import logging
 import boto3
 from botocore.exceptions import ClientError
 
-
-# TODO do not hardcode
-AWS_PROFILE_NAME = "cadc-ami-connect"
-AWS_REGION = "us-west-2"
+from amiadapters.configuration.env import get_global_aws_profile, get_global_aws_region
 
 SECRET_ID_PREFIX = "ami-connect"
 
@@ -15,12 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 def get_secrets() -> dict[str, dict]:
-    all_secrets = _list_secrets_with_prefix(SECRET_ID_PREFIX)
-    return all_secrets
-
-
-def _list_secrets_with_prefix(prefix: str) -> dict[str, dict]:
     client = _create_aws_secrets_manager_client()
+    prefix = SECRET_ID_PREFIX
 
     # Get all secrets from AWS under this prefix
     response = client.batch_get_secret_value(
@@ -66,32 +59,47 @@ def _unpack_secret_into_dictionary(all_secrets: dict[str, dict], key: str, value
             current_dict = current_dict[next_key]
 
 
-def update_secret(secret_name: str, secret: dict):
+def update_secret_configuration(secret_type: str, secret_name: str, secret):
     client = _create_aws_secrets_manager_client()
-    secret_id = f"{SECRET_ID_PREFIX}/{secret_name}"
-    secret_value = json.dumps(secret)
+    secret_id = f"{SECRET_ID_PREFIX}/{secret_type}/{secret_name}"
+    secret_value = secret.to_json()
 
     try:
         # Try to update an existing secret
-        response = client.put_secret_value(
+        client.put_secret_value(
             SecretId=secret_id,
             SecretString=secret_value,
         )
-        logger.info(f"Updated existing secret: {secret_id}")
+        logger.info(f"Updated existing secret in AWS at {secret_id}")
     except ClientError as e:
         if e.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
             # Secret doesn't exist — create it
-            response = client.create_secret(
+            client.create_secret(
                 Name=secret_id,
                 SecretString=secret_value,
             )
-            logger.info(f"Created new secret: {secret_id}")
+            logger.info(f"Created new secret in AWS at {secret_id}")
         else:
             raise e
 
-    return response
+
+def remove_secret_configuration(secret_type: str, secret_name: str):
+    client = _create_aws_secrets_manager_client()
+    client.delete_secret(
+        SecretId=f"{SECRET_ID_PREFIX}/{secret_type}/{secret_name}",
+        ForceDeleteWithoutRecovery=True,
+    )
+    logger.info(
+        f"Deleted secret in AWS at {SECRET_ID_PREFIX}/{secret_type}/{secret_name}"
+    )
 
 
 def _create_aws_secrets_manager_client():
-    session = boto3.Session(profile_name=AWS_PROFILE_NAME)
-    return session.client("secretsmanager", region_name=AWS_REGION)
+    profile = get_global_aws_profile()
+    region = get_global_aws_region()
+    if profile:
+        session = boto3.Session(profile_name=profile)
+        return session.client("secretsmanager", region_name=region)
+    else:
+        # Use default boto3 client (e.g. IAM role on EC2)
+        return boto3.client("secretsmanager", region_name=region)
