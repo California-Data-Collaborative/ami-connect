@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import datetime
 import os
 import shutil
@@ -11,6 +12,12 @@ from amiadapters.outputs.base import ExtractOutput
 from test.base_test_case import BaseTestCase
 
 
+@dataclass
+class DummyDataType:
+    a: str
+    b: str
+
+
 class TestLocalTaskOutputController(BaseTestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
@@ -22,7 +29,7 @@ class TestLocalTaskOutputController(BaseTestCase):
         shutil.rmtree(self.test_dir)
 
     def test_write_and_read_extract_outputs(self):
-        data = {"file1.txt": "hello world", "file2.txt": "more data"}
+        data = {"file1.txt": '{"a": "hey", "b": "yo"}', "file2.txt": "more data"}
         extract_output = ExtractOutput(data)
         self.controller.write_extract_outputs("run123", extract_output)
 
@@ -34,7 +41,10 @@ class TestLocalTaskOutputController(BaseTestCase):
 
         result = self.controller.read_extract_outputs("run123")
         self.assertEqual(data, result.get_outputs())
-        self.assertEqual("hello world", result.from_file("file1.txt"))
+        self.assertEqual(
+            [DummyDataType(a="hey", b="yo")],
+            result.load_from_file("file1.txt", DummyDataType),
+        )
 
     def test_write_and_read_transformed_meters(self):
         meters = [

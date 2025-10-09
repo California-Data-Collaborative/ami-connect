@@ -364,7 +364,7 @@ class MetersenseAdapter(BaseAMIAdapter):
         meter_views_by_meter_id = self._meter_views_by_meter_id(extract_outputs)
         locations_by_location_id = self._locations_by_location_id(extract_outputs)
 
-        raw_meters = self._read_file(extract_outputs, "meters.json")
+        raw_meters = self._read_file(extract_outputs, "meters.json", MetersenseMeter)
         meters_by_device_id = self._transform_meters(
             raw_meters,
             accounts_by_location_id,
@@ -373,8 +373,12 @@ class MetersenseAdapter(BaseAMIAdapter):
             locations_by_location_id,
         )
 
-        raw_interval_reads = self._read_file(extract_outputs, "intervalreads.json")
-        raw_register_reads = self._read_file(extract_outputs, "registerreads.json")
+        raw_interval_reads = self._read_file(
+            extract_outputs, "intervalreads.json", MetersenseIntervalRead
+        )
+        raw_register_reads = self._read_file(
+            extract_outputs, "registerreads.json", MetersenseRegisterRead
+        )
         reads_by_device_and_flowtime = self._transform_reads(
             accounts_by_location_id,
             xrefs_by_meter_id,
@@ -394,10 +398,11 @@ class MetersenseAdapter(BaseAMIAdapter):
         Map each location ID to the list of accounts associated with it. The list is sorted with most recently active
         account first.
         """
-        raw_account_services = self._read_file(extract_outputs, "account_services.json")
+        raw_account_services = self._read_file(
+            extract_outputs, "account_services.json", MetersenseAccountService
+        )
         accounts_by_location_id = {}
-        for l in raw_account_services:
-            a = MetersenseAccountService(**json.loads(l))
+        for a in raw_account_services:
             if not a.location_no or a.commodity_tp != "W":
                 continue
             if a.location_no not in accounts_by_location_id:
@@ -419,11 +424,10 @@ class MetersenseAdapter(BaseAMIAdapter):
         account first.
         """
         raw_meter_location_xrefs = self._read_file(
-            extract_outputs, "meter_location_xref.json"
+            extract_outputs, "meter_location_xref.json", MetersenseMeterLocationXref
         )
         xrefs_by_meter_id = {}
-        for l in raw_meter_location_xrefs:
-            x = MetersenseMeterLocationXref(**json.loads(l))
+        for x in raw_meter_location_xrefs:
             if not x.meter_id or not x.location_no:
                 continue
             if x.meter_id not in xrefs_by_meter_id:
@@ -441,10 +445,11 @@ class MetersenseAdapter(BaseAMIAdapter):
         """
         Map each meter ID to the meter view associated with it.
         """
-        raw_meters_views = self._read_file(extract_outputs, "meters_view.json")
+        raw_meters_views = self._read_file(
+            extract_outputs, "meters_view.json", MetersenseMetersView
+        )
         meter_views_by_meter_id = {}
-        for l in raw_meters_views:
-            mv = MetersenseMetersView(**json.loads(l))
+        for mv in raw_meters_views:
             if not mv.meter_id:
                 continue
             meter_views_by_meter_id[mv.meter_id] = mv
@@ -456,10 +461,11 @@ class MetersenseAdapter(BaseAMIAdapter):
         """
         Map each location ID to the location associated with it.
         """
-        raw_locations = self._read_file(extract_outputs, "locations.json")
+        raw_locations = self._read_file(
+            extract_outputs, "locations.json", MetersenseLocation
+        )
         locations_by_location_id = {}
-        for line in raw_locations:
-            l = MetersenseLocation(**json.loads(line))
+        for l in raw_locations:
             if not l.location_no:
                 continue
             locations_by_location_id[l.location_no] = l
@@ -477,8 +483,7 @@ class MetersenseAdapter(BaseAMIAdapter):
         Join all raw data sources together and transform into general meter format.
         """
         meters_by_device_id = {}
-        for raw_meter_str in raw_meters:
-            raw_meter = MetersenseMeter(**json.loads(raw_meter_str))
+        for raw_meter in raw_meters:
             if raw_meter.commodity_tp != "W":
                 continue
             device_id = raw_meter.meter_id
@@ -532,10 +537,7 @@ class MetersenseAdapter(BaseAMIAdapter):
         """
         reads_by_device_and_time = {}
 
-        for raw_interval_read_str in raw_interval_reads:
-            raw_interval_read = MetersenseIntervalRead(
-                **json.loads(raw_interval_read_str)
-            )
+        for raw_interval_read in raw_interval_reads:
             device_id = raw_interval_read.meter_id
             if device_id not in device_ids_to_include:
                 continue
@@ -576,10 +578,7 @@ class MetersenseAdapter(BaseAMIAdapter):
             )
             reads_by_device_and_time[key] = read
 
-        for raw_register_read_str in raw_register_reads:
-            raw_register_read = MetersenseRegisterRead(
-                **json.loads(raw_register_read_str)
-            )
+        for raw_register_read in raw_register_reads:
             device_id = raw_register_read.meter_id
             if device_id not in device_ids_to_include:
                 continue
@@ -693,17 +692,14 @@ class MetersenseAdapter(BaseAMIAdapter):
         """
         return 1 if raw_read.status == "3" else 0
 
-    def _read_file(self, extract_outputs: ExtractOutput, file: str) -> Generator:
+    def _read_file(
+        self, extract_outputs: ExtractOutput, file: str, raw_dataclass
+    ) -> Generator:
         """
         Read a file's contents from extract stage output, create generator
         for each line of text
         """
-        file_text = extract_outputs.from_file(file)
-        if file_text is None:
-            raise Exception(f"No output found for file {file}")
-        lines = file_text.strip().split("\n")
-        if lines == [""]:
-            lines = []
+        lines = extract_outputs.load_from_file(file, raw_dataclass, allow_empty=True)
         yield from lines
 
 
@@ -878,8 +874,9 @@ class MetersenseRawSnowflakeLoader(RawSnowflakeLoader):
         table: name of raw data table in Snowflake
         unique_by: list of field names used with org_id to uniquely identify a row in the base table
         """
-        text = extract_outputs.from_file(extract_output_filename)
-        raw_data = [raw_dataclass(**json.loads(d)) for d in text.strip().split("\n")]
+        raw_data = extract_outputs.load_from_file(
+            extract_output_filename, raw_dataclass
+        )
         temp_table = f"temp_{table}"
         fields = list(raw_dataclass.__dataclass_fields__.keys())
         self._create_temp_table(

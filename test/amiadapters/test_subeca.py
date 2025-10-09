@@ -119,18 +119,19 @@ class TestSubecaAdapter(BaseTestCase):
         mock_post.assert_called_once()
 
         # Validate returned ExtractOutput
-        accounts = result.from_file("accounts.json").splitlines()
-        usages = result.from_file("usages.json").splitlines()
+        accounts = result.load_from_file("accounts.json", SubecaAccount)
+        usages = result.load_from_file("usages.json", SubecaReading)
 
         self.assertEqual(len(accounts), 1)
         self.assertEqual(len(usages), 1)
 
-        account_data = SubecaAccount.from_json(accounts[0])
-        usage_data = SubecaReading(**json.loads(usages[0]))
+        account = accounts[0]
+        account.latestReading = SubecaReading(**account.latestReading)
+        usage = usages[0]
 
-        self.assertEqual(account_data.accountId, "acct1")
-        self.assertEqual(account_data.latestReading.value, "16685.9")
-        self.assertEqual(usage_data.deviceId, "device1")
+        self.assertEqual(account.accountId, "acct1")
+        self.assertEqual(account.latestReading.value, "16685.9")
+        self.assertEqual(usage.deviceId, "device1")
 
     @patch("amiadapters.adapters.subeca.requests.get")
     @patch("amiadapters.adapters.subeca.requests.post")
@@ -158,8 +159,10 @@ class TestSubecaAdapter(BaseTestCase):
         result = self.adapter._extract("run1", self.start_date, self.end_date)
 
         # Validate returned ExtractOutput
-        accounts = result.from_file("accounts.json").splitlines()
-        usages = result.from_file("usages.json").splitlines()
+        accounts = result.load_from_file(
+            "accounts.json", SubecaAccount, allow_empty=True
+        )
+        usages = result.load_from_file("usages.json", SubecaReading, allow_empty=True)
 
         self.assertEqual(len(accounts), 1)
         self.assertEqual(len(usages), 0)
@@ -192,8 +195,10 @@ class TestSubecaAdapter(BaseTestCase):
         self.assertEqual(3, mock_get.call_count)
 
         # Validate returned ExtractOutput
-        accounts = result.from_file("accounts.json").splitlines()
-        usages = result.from_file("usages.json").splitlines()
+        accounts = result.load_from_file(
+            "accounts.json", SubecaAccount, allow_empty=True
+        )
+        usages = result.load_from_file("usages.json", SubecaReading, allow_empty=True)
 
         self.assertEqual(len(accounts), 1)
         self.assertEqual(len(usages), 1)
