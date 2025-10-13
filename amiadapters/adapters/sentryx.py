@@ -130,17 +130,19 @@ class SentryxMeterWithReads:
     data: List[SentryxMeterRead]
 
     @classmethod
-    def from_json(cls, d: str):
+    def from_json_file(cls, extract_output: ExtractOutput, filename: str):
         """
-        Parses SentryxMeterWithReads from JSON, including nested reads.
-        Dataclass doesn't handle nested JSON well, so we roll our own.
+        Parses SentryxMeterWithReads instances from JSON file, including nested reads.
         """
-        meter = SentryxMeterWithReads(**json.loads(d))
-        reads = []
-        for read in meter.data:
-            reads.append(SentryxMeterRead(**read))
-        meter.data = reads
-        return meter
+        raw_meters_with_reads = extract_output.load_from_file(
+            filename, SentryxMeterWithReads
+        )
+        for raw_meter in raw_meters_with_reads:
+            reads = []
+            for read in raw_meter.data:
+                reads.append(SentryxMeterRead(**read))
+            raw_meter.data = reads
+        return raw_meters_with_reads
 
 
 class SentryxAdapter(BaseAMIAdapter):
@@ -295,8 +297,8 @@ class SentryxAdapter(BaseAMIAdapter):
 
     def _transform(self, run_id: str, extract_outputs: ExtractOutput):
         raw_meters = extract_outputs.load_from_file("meters.json", SentryxMeter)
-        raw_meters_with_reads = extract_outputs.load_from_file(
-            "reads.json", SentryxMeterWithReads
+        raw_meters_with_reads = SentryxMeterWithReads.from_json_file(
+            extract_outputs, "reads.json"
         )
         return self._transform_meters_and_reads(raw_meters, raw_meters_with_reads)
 
@@ -376,8 +378,8 @@ class SentryxRawSnowflakeLoader(RawSnowflakeLoader):
         snowflake_conn,
     ):
         raw_meters = extract_outputs.load_from_file("meters.json", SentryxMeter)
-        raw_meters_with_reads = extract_outputs.load_from_file(
-            "reads.json", SentryxMeterWithReads
+        raw_meters_with_reads = SentryxMeterWithReads.from_json_file(
+            extract_outputs, "reads.json"
         )
 
         created_time = datetime.now(tz=org_timezone)
