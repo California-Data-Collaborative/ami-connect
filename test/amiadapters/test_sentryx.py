@@ -1,16 +1,19 @@
 import datetime
+import json
 import pytz
 from unittest import mock
 
-from amiadapters.config import ConfiguredLocalTaskOutputController
-from amiadapters.models import GeneralMeterRead
-from amiadapters.models import GeneralMeter
 from amiadapters.adapters.sentryx import (
     SentryxAdapter,
     SentryxMeter,
     SentryxMeterRead,
     SentryxMeterWithReads,
 )
+from amiadapters.config import ConfiguredLocalTaskOutputController
+from amiadapters.models import GeneralMeterRead
+from amiadapters.models import GeneralMeter
+from amiadapters.outputs.base import ExtractOutput
+
 
 from test.base_test_case import BaseTestCase, MockResponse, mocked_response_500
 
@@ -376,22 +379,24 @@ class TestSentryxAdapter(BaseTestCase):
 
 class TestSentryxMeterWithReads(BaseTestCase):
 
-    def test_from_json(self):
-        json_str = """
-        {
-            "device_id": 601133200,
-            "units": "CF",
-            "data": [
-                {
-                    "time_stamp": "2024-07-07T01:00:00",
-                    "reading": 35828
-                }
-            ]
-         }
-        """
-        meter_with_reads = SentryxMeterWithReads.from_json(json_str)
-        self.assertEqual(601133200, meter_with_reads.device_id)
-        self.assertEqual("CF", meter_with_reads.units)
-        self.assertEqual(1, len(meter_with_reads.data))
-        self.assertEqual(35828, meter_with_reads.data[0].reading)
-        self.assertEqual("2024-07-07T01:00:00", meter_with_reads.data[0].time_stamp)
+    def test_from_json_file(self):
+        # Sample data matching SentryxMeterWithReads fields
+        sample_data = {
+           "device_id": 601133200,
+           "units": "CF",
+           "data": [
+               {
+                   "time_stamp": "2024-07-07T01:00:00",
+                   "reading": 35828
+               }
+           ]
+        }
+        extract_output = ExtractOutput({"file.json": json.dumps(sample_data)})
+
+        # Call from_json_file and check result
+        meters = SentryxMeterWithReads.from_json_file(extract_output, "file.json")
+        self.assertEqual(len(meters), 1)
+        meter = meters[0]
+        self.assertEqual(meter.device_id, sample_data["device_id"])
+        self.assertEqual(meter.data, [SentryxMeterRead(time_stamp="2024-07-07T01:00:00", reading=35828)])
+        self.assertEqual(meter.units, sample_data["units"])
