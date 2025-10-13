@@ -382,14 +382,9 @@ class TestSentryxMeterWithReads(BaseTestCase):
     def test_from_json_file(self):
         # Sample data matching SentryxMeterWithReads fields
         sample_data = {
-           "device_id": 601133200,
-           "units": "CF",
-           "data": [
-               {
-                   "time_stamp": "2024-07-07T01:00:00",
-                   "reading": 35828
-               }
-           ]
+            "device_id": 601133200,
+            "units": "CF",
+            "data": [{"time_stamp": "2024-07-07T01:00:00", "reading": 35828}],
         }
         extract_output = ExtractOutput({"file.json": json.dumps(sample_data)})
 
@@ -398,5 +393,8 @@ class TestSentryxMeterWithReads(BaseTestCase):
         self.assertEqual(len(meters), 1)
         meter = meters[0]
         self.assertEqual(meter.device_id, sample_data["device_id"])
-        self.assertEqual(meter.data, [SentryxMeterRead(time_stamp="2024-07-07T01:00:00", reading=35828)])
+        self.assertEqual(
+            meter.data,
+            [SentryxMeterRead(time_stamp="2024-07-07T01:00:00", reading=35828)],
+        )
         self.assertEqual(meter.units, sample_data["units"])
