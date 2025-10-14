@@ -11,6 +11,7 @@ from amiadapters.config import (
     ConfiguredStorageSink,
     ConfiguredStorageSinkType,
 )
+from amiadapters.configuration.models import IntermediateOutputType
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
@@ -315,19 +316,11 @@ class BaseAMIAdapter(ABC):
         """
         Create a task output controller from the config object.
         """
-        from amiadapters.config import ConfiguredTaskOutputControllerType
-
-        if (
-            configured_task_output_controller.type
-            == ConfiguredTaskOutputControllerType.LOCAL
-        ):
+        if configured_task_output_controller.type == IntermediateOutputType.LOCAL.value:
             return LocalTaskOutputController(
                 configured_task_output_controller.output_folder, org_id
             )
-        elif (
-            configured_task_output_controller.type
-            == ConfiguredTaskOutputControllerType.S3
-        ):
+        elif configured_task_output_controller.type == IntermediateOutputType.S3.value:
             return S3TaskOutputController(
                 configured_task_output_controller.s3_bucket_name,
                 org_id,

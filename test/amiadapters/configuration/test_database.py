@@ -161,9 +161,14 @@ class TestDatabase(BaseTestCase):
         self.maxDiff = None
         self.assertEqual(expected["sources"], sources)
         self.assertEqual(expected["sinks"], sinks)
-        self.assertEqual(expected["task_output"]["type"], pipeline_config["type"])
-        self.assertEqual(expected["task_output"]["bucket"], pipeline_config["bucket"])
-        self.assertTrue(pipeline_config["run_post_processors"])
+        self.assertEqual(
+            expected["task_output"]["type"], pipeline_config.intermediate_output_type
+        )
+        self.assertEqual(
+            expected["task_output"]["bucket"],
+            pipeline_config.intermediate_output_s3_bucket,
+        )
+        self.assertTrue(pipeline_config.should_run_post_processor)
         self.assertEqual(expected["notifications"], notifications)
         self.assertEqual(expected["backfills"], backfills)
 

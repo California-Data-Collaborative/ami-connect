@@ -7,7 +7,7 @@ Run from root directory with:
 
 """
 
-from dataclasses import fields
+from dataclasses import asdict, fields
 from datetime import datetime
 import logging
 from pprint import pprint
@@ -18,7 +18,6 @@ import typer
 
 from amiadapters.config import (
     AMIAdapterConfiguration,
-    ConfiguredTaskOutputControllerType,
     get_secrets_class_type,
 )
 from amiadapters.configuration.base import (
@@ -39,6 +38,7 @@ from amiadapters.configuration.base import (
     update_task_output_configuration,
 )
 from amiadapters.configuration.env import set_global_aws_profile
+from amiadapters.configuration.models import IntermediateOutputType
 from amiadapters.configuration.secrets import get_secrets, SecretType
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
@@ -134,16 +134,11 @@ def download_intermediate_output(
 
     # This code should not live here. It's copied from the base adapter class and it shouldn't live there either.
     configured_task_output_controller = config.task_output_controller()
-    if (
-        configured_task_output_controller.type
-        == ConfiguredTaskOutputControllerType.LOCAL
-    ):
+    if configured_task_output_controller.type == IntermediateOutputType.LOCAL.value:
         controller = LocalTaskOutputController(
             configured_task_output_controller.output_folder, None
         )
-    elif (
-        configured_task_output_controller.type == ConfiguredTaskOutputControllerType.S3
-    ):
+    elif configured_task_output_controller.type == IntermediateOutputType.S3.value:
         controller = S3TaskOutputController(
             configured_task_output_controller.s3_bucket_name,
             "placeholder",
@@ -185,7 +180,7 @@ def get(
     result = {
         "sources": sources,
         "sinks": sinks,
-        "pipeline": pipeline,
+        "pipeline": asdict(pipeline),
         "notifications": notifications,
         "backfills": backfills,
     }

@@ -52,6 +52,8 @@ class TestConfig(BaseTestCase):
 
         self.assertIsNone(config.on_failure_sns_notifier())
 
+        self.assertTrue(config.should_run_post_processors())
+
     def test_can_instantiate_beacon_via_yaml(self):
         config = AMIAdapterConfiguration.from_yaml(
             self.get_fixture_path("beacon-360-config.yaml"),
