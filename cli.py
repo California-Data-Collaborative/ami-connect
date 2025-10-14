@@ -124,7 +124,7 @@ def download_intermediate_output(
         typer.Argument(
             help="Path or prefix of path to files for download. If S3, can be anything after the bucket name, e.g. for s3://my-ami-connect-bucket/intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 you may enter intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 ."
         ),
-    ]
+    ],
 ):
     """
     Download intermediate output file(s) of provided name.
