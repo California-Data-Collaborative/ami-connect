@@ -10,7 +10,10 @@ from pytz import timezone, UTC
 from pytz.tzinfo import DstTzInfo
 import yaml
 
-from amiadapters.configuration.base import create_snowflake_connection
+from amiadapters.configuration.base import (
+    create_snowflake_connection,
+    create_snowflake_from_secrets,
+)
 from amiadapters.configuration.database import get_configuration
 from amiadapters.configuration.secrets import get_secrets
 
@@ -53,28 +56,20 @@ class AMIAdapterConfiguration:
         )
 
     @classmethod
-    def from_database(cls, secrets_file: str):
+    def from_database(cls, secrets_file: str = None):
         """
         Given a Snowflake connection to an AMI Connect schema, query the configuration tables to get this
         pipeline's config.
         """
-        # secrets = get_secrets()
         # For now, load secrets from YAML. In the near future we will load from a more secure source.
-        with open(secrets_file, "r") as f:
-            secrets = yaml.safe_load(f)
+        if secrets_file:
+            with open(secrets_file, "r") as f:
+                secrets = yaml.safe_load(f)
+        else:
+            secrets = get_secrets()
 
         # When we have better secrets management, find a better way of accessing this information
-        snowflake_credentials = list(secrets["sinks"].values())[0]
-        connection = create_snowflake_connection(
-            account=snowflake_credentials["account"],
-            user=snowflake_credentials["user"],
-            password=snowflake_credentials["password"],
-            warehouse=snowflake_credentials["warehouse"],
-            database=snowflake_credentials["database"],
-            schema=snowflake_credentials["schema"],
-            role=snowflake_credentials["role"],
-        )
-
+        connection = create_snowflake_from_secrets(secrets)
         sources, sinks, task_output, notifications, backfills = get_configuration(
             connection
         )
@@ -174,8 +169,8 @@ class AMIAdapterConfiguration:
                     )
                 case ConfiguredAMISourceType.BEACON_360.value.type:
                     secrets = Beacon360Secrets(
-                        this_source_secrets.get("beacon_360_user"),
-                        this_source_secrets.get("beacon_360_password"),
+                        this_source_secrets.get("user"),
+                        this_source_secrets.get("password"),
                     )
                 case ConfiguredAMISourceType.METERSENSE.value.type:
                     secrets = MetersenseSecrets(

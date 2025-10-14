@@ -38,11 +38,13 @@ from amiadapters.configuration.base import (
     update_task_output_configuration,
 )
 from amiadapters.configuration.env import set_global_aws_profile
-from amiadapters.configuration.secrets import get_secrets
+from amiadapters.configuration.secrets import get_secrets, SecretType
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
 
 DEFAULT_SECRETS_PATH = "./secrets.yaml"
+
+HELP_MESSAGE__PROFILE = "Name of pipeline profile to get configuration for. Expected to match the name of the AWS profile in your AWS credentials file."
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -56,9 +58,7 @@ app.add_typer(config_app, name="config")
 
 @app.command()
 def run(
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: Annotated[str, typer.Argument(help=HELP_MESSAGE__PROFILE)],
     start_date: Annotated[
         datetime, typer.Option(help="Start date in YYYY-MM-DD format.")
     ] = None,
@@ -75,10 +75,9 @@ def run(
     """
     Run AMI API adapters to fetch AMI data, then shape it into generalized format, then store it.
     """
-    logger.info(
-        f"Loading configuration from database using credentials from {secrets_file}"
-    )
-    config = AMIAdapterConfiguration.from_database(secrets_file)
+    logger.info(f"Loading configuration from database using profile {profile}")
+    set_global_aws_profile(profile)
+    config = AMIAdapterConfiguration.from_database()
 
     adapters = config.adapters()
     if org_ids:
@@ -164,38 +163,38 @@ def download_intermediate_output(
 ########################################################################################
 @config_app.command()
 def get(
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
     profile: Annotated[
         str,
-        typer.Option(
-            help="Name of pipeline profile to get configuration for. Expected to match the name of the AWS profile in your AWS credentials file."
+        typer.Argument(
+            help=HELP_MESSAGE__PROFILE,
         ),
-    ] = None,
+    ],
+    show_secrets: Annotated[
+        bool,
+        typer.Option(
+            help="If true, will show secrets in output. Default is false for security reasons."
+        ),
+    ] = False,
 ):
     """
     Get configuration from database.
     """
-    sources, sinks, task_output, notifications, backfills = get_configuration(
-        None, secrets_file
-    )
-    pprint(
-        {
-            "sources": sources,
-            "sinks": sinks,
-            "task_output": task_output,
-            "notifications": notifications,
-            "backfills": backfills,
-        }
-    )
-    # TODO integrate this with get_confiugration results, both for bootstrapping and for returning secrets
-    # TODO obfuscate secrets values in output
-    # TODO require profile?
-    if profile:
-        set_global_aws_profile(profile)
-        new_secrets = get_secrets()
-        pprint(new_secrets)
+    set_global_aws_profile(profile)
+    secrets = get_secrets()
+
+    sources, sinks, task_output, notifications, backfills = get_configuration(secrets)
+
+    result = {
+        "sources": sources,
+        "sinks": sinks,
+        "task_output": task_output,
+        "notifications": notifications,
+        "backfills": backfills,
+    }
+    if show_secrets:
+        result["secrets"] = secrets
+
+    pprint(result)
 
 
 @config_app.command()
@@ -664,10 +663,6 @@ def remove_data_quality_checks(
 
 @config_app.command()
 def update_secret(
-    secret_type: Annotated[
-        str,
-        typer.Argument(help="Type of secret. Choices: source, sink"),
-    ],
     secret_name: Annotated[
         str,
         typer.Argument(
@@ -688,26 +683,54 @@ def update_secret(
     ] = None,
     profile: Annotated[
         str,
-        typer.Option(
-            help="Name of pipeline profile to get configuration for. Expected to match the name of the AWS profile in your AWS credentials file."
-        ),
+        typer.Option(help=HELP_MESSAGE__PROFILE),
     ] = None,
     # Type-specific options
     account: Annotated[str, typer.Option(help="Snowflake account name.")] = None,
-    user: Annotated[str, typer.Option(help="Snowflake user name.")] = None,
-    password: Annotated[str, typer.Option(help="Snowflake password name.")] = None,
+    user: Annotated[
+        str, typer.Option(help="Snowflake user name or other user name.")
+    ] = None,
+    password: Annotated[
+        str, typer.Option(help="Snowflake password or other password.")
+    ] = None,
     role: Annotated[str, typer.Option(help="Snowflake role name.")] = None,
     warehouse: Annotated[str, typer.Option(help="Snowflake warehouse name.")] = None,
     database: Annotated[str, typer.Option(help="Snowflake database name.")] = None,
     schema: Annotated[str, typer.Option(help="Snowflake schema name.")] = None,
     api_key: Annotated[str, typer.Option(help="API key, e.g. for Subeca.")] = None,
+    sftp_user: Annotated[str, typer.Option(help="SFTP user, e.g. for Aclara.")] = None,
+    sftp_password: Annotated[
+        str, typer.Option(help="SFTP password, e.g. for Aclara.")
+    ] = None,
+    ssh_tunnel_username: Annotated[
+        str, typer.Option(help="SSH tunnel username, e.g. for Metersense.")
+    ] = None,
+    database_db_name: Annotated[
+        str, typer.Option(help="Name of database, e.g. for Metersense.")
+    ] = None,
+    database_user: Annotated[
+        str, typer.Option(help="Database username, e.g. for Metersense.")
+    ] = None,
+    database_password: Annotated[
+        str, typer.Option(help="Database password, e.g. for Metersense.")
+    ] = None,
+    site_id: Annotated[str, typer.Option(help="Site ID, e.g. for Neptune.")] = None,
+    client_id: Annotated[str, typer.Option(help="Client ID, e.g. for Neptune.")] = None,
+    client_secret: Annotated[
+        str, typer.Option(help="Client secret, e.g. for Neptune.")
+    ] = None,
 ):
     """
     Creates or updates a secret. Matches on secret_type+secret_name for update, else adds new secret.
     """
-    if secret_type not in ["source", "sink"]:
-        raise ValueError('secret_type must be one of ["source", "sink"]')
-    if secret_type == "source" and source_type not in [
+    if sink_type and source_type:
+        raise ValueError("Can only specify one of sink_type or source_type, not both.")
+    if not sink_type and not source_type:
+        raise ValueError("Must specify one of sink_type or source_type.")
+
+    secret_type = SecretType.SOURCES.value if source_type else SecretType.SINKS.value
+
+    if secret_type == SecretType.SOURCES.value and source_type not in [
         "subeca",
         "aclara",
         "beacon_360",
@@ -719,7 +742,7 @@ def update_secret(
         raise ValueError(
             "source_type must be specified as one of ['subeca', 'aclara', 'beacon_360', 'sentryx', 'metersense', 'xylem_moulton_niguel', 'neptune'] if secret_type is 'source'"
         )
-    if secret_type == "sink" and sink_type not in ["snowflake"]:
+    if secret_type == SecretType.SINKS.value and sink_type not in ["snowflake"]:
         raise ValueError(
             "sink_type must be specified as 'snowflake' if secret_type is 'sink'"
         )
@@ -728,7 +751,7 @@ def update_secret(
 
     # dataclass that represents this secret, e.g. SubecaSecrets, SnowflakeSecrets, etc
     secrets_dataclass = get_secrets_class_type(
-        source_type if secret_type == "source" else sink_type
+        source_type if secret_type == SecretType.SOURCES.value else sink_type
     )
 
     type_specific_options = {
@@ -740,6 +763,15 @@ def update_secret(
         "database": database,
         "schema": schema,
         "api_key": api_key,
+        "sftp_user": sftp_user,
+        "sftp_password": sftp_password,
+        "ssh_tunnel_username": ssh_tunnel_username,
+        "database_db_name": database_db_name,
+        "database_user": database_user,
+        "database_password": database_password,
+        "site_id": site_id,
+        "client_id": client_id,
+        "client_secret": client_secret,
     }
 
     required_fields = fields(secrets_dataclass)

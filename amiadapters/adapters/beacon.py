@@ -196,10 +196,9 @@ class Beacon360Adapter(BaseAMIAdapter):
                 )
             raise Exception(f"Rate limit exceeded. Message from Beacon API: {t}")
         elif generate_report_response.status_code != 202:
-            logger.error(
-                f"error when requesting report. status code: {generate_report_response.status_code}"
+            raise Exception(
+                f"Failed request to generate report. status code: {generate_report_response.status_code}"
             )
-            raise Exception("Failed request to generate report")
 
         status_url = generate_report_response.json()["statusUrl"]
 
@@ -222,10 +221,9 @@ class Beacon360Adapter(BaseAMIAdapter):
             )
 
             if status_response.status_code != 200:
-                logger.error(
-                    f"error when requesting status. status code: {status_response.status_code} message: {status_response.text}"
+                raise Exception(
+                    f"Failed request to get report status. status code: {status_response.status_code} message: {status_response.text}"
                 )
-                raise Exception("Failed request to get report status")
 
             status_response_data = status_response.json()
             logger.info(f"Status: {status_response_data}")
@@ -233,10 +231,9 @@ class Beacon360Adapter(BaseAMIAdapter):
             if status_response_data.get("state") == "done":
                 break
             elif status_response_data.get("state") == "exception":
-                logger.error(
-                    f"error found in report status: {status_response_data.get("message")}"
+                raise Exception(
+                    f"Exception found in report status: {status_response_data.get("message")}"
                 )
-                raise Exception("Exception found in report status")
             else:
                 sleep_interval_seconds = 60
                 logger.info(f"Sleeping for {sleep_interval_seconds} seconds")
@@ -255,10 +252,9 @@ class Beacon360Adapter(BaseAMIAdapter):
             report_response = self._fetch_report(report_url, headers, auth)
 
         if report_response.status_code != 200:
-            logger.warning(
-                f"Error when downloading report. status code: {report_response.status_code}"
+            raise Exception(
+                f"Failed request to download report. status code: {report_response.status_code}"
             )
-            raise Exception("Failed request to download report")
 
         report = report_response.text
 
