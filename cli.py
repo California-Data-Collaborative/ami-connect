@@ -180,12 +180,12 @@ def get(
     set_global_aws_profile(profile)
     secrets = get_secrets()
 
-    sources, sinks, task_output, notifications, backfills = get_configuration(secrets)
+    sources, sinks, pipeline, notifications, backfills = get_configuration(secrets)
 
     result = {
         "sources": sources,
         "sinks": sinks,
-        "task_output": task_output,
+        "pipeline": pipeline,
         "notifications": notifications,
         "backfills": backfills,
     }
