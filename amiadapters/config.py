@@ -14,6 +14,10 @@ from amiadapters.configuration.base import (
     create_snowflake_connection,
     create_snowflake_from_secrets,
 )
+from amiadapters.configuration.models import (
+    IntermediateOutputType,
+    PipelineConfiguration,
+)
 from amiadapters.configuration.database import get_configuration
 from amiadapters.configuration.secrets import get_secrets
 
@@ -27,12 +31,14 @@ class AMIAdapterConfiguration:
         backfills=None,
         notifications=None,
         sinks=None,
+        should_run_post_processors=True,
     ):
         self._sources = sources
         self._task_output_controller = task_output_controller
         self._backfills = backfills if backfills is not None else []
         self._notifications = notifications
         self._sinks = sinks if sinks is not None else []
+        self._should_run_post_processors = should_run_post_processors
 
     @classmethod
     def from_yaml(cls, config_file: str, secrets_file: str):
@@ -46,10 +52,20 @@ class AMIAdapterConfiguration:
         with open(secrets_file, "r") as f:
             secrets = yaml.safe_load(f)
 
+        task_output = config.get("task_output", {})
+        pipeline = config.get("pipeline", {})
+        pipeline_configuration = PipelineConfiguration(
+            intermediate_output_type=task_output.get("type"),
+            intermediate_output_s3_bucket=task_output.get("bucket"),
+            intermediate_output_dev_profile=task_output.get("dev_profile"),
+            intermediate_output_local_output_path=task_output.get("output_folder"),
+            should_run_post_processor=pipeline.get("run_post_processors", True),
+        )
+
         return cls._make_instance(
             config.get("sources", []),
             config.get("sinks", []),
-            config.get("task_output", {}),
+            pipeline_configuration,
             config.get("notifications", {}),
             config.get("backfills", []),
             secrets,
@@ -66,14 +82,14 @@ class AMIAdapterConfiguration:
 
         # When we have better secrets management, find a better way of accessing this information
         connection = create_snowflake_from_secrets(secrets)
-        sources, sinks, task_output, notifications, backfills = get_configuration(
-            connection
+        sources, sinks, pipeline_configuration, notifications, backfills = (
+            get_configuration(connection)
         )
 
         return cls._make_instance(
             sources,
             sinks,
-            task_output,
+            pipeline_configuration,
             notifications,
             backfills,
             secrets,
@@ -84,7 +100,7 @@ class AMIAdapterConfiguration:
         cls,
         configured_sources: List[Dict],
         configured_sinks: List[Dict],
-        configured_task_output: Dict,
+        pipeline_configuration: PipelineConfiguration,
         configured_notifications: Dict,
         configured_backfills: List[Dict],
         configured_secrets: Dict,
@@ -128,18 +144,18 @@ class AMIAdapterConfiguration:
         all_sinks_by_id = {s.id: sink for s in all_sinks}
 
         # Task output controller
-        if configured_task_output is None:
-            raise ValueError("Missing task_output in configuration")
-        task_output_type = configured_task_output.get("type")
+        if pipeline_configuration is None:
+            raise ValueError("Missing pipeline configuration")
+        task_output_type = pipeline_configuration.intermediate_output_type
         match task_output_type:
-            case ConfiguredTaskOutputControllerType.LOCAL:
+            case IntermediateOutputType.LOCAL:
                 task_output_controller = ConfiguredLocalTaskOutputController(
-                    configured_task_output.get("output_folder"),
+                    pipeline_configuration.intermediate_output_local_output_path,
                 )
-            case ConfiguredTaskOutputControllerType.S3:
+            case IntermediateOutputType.S3:
                 task_output_controller = ConfiguredS3TaskOutputController(
-                    configured_task_output.get("dev_profile"),
-                    configured_task_output.get("bucket"),
+                    pipeline_configuration.intermediate_output_dev_profile,
+                    pipeline_configuration.intermediate_output_s3_bucket,
                 )
             case _:
                 raise ValueError(f"Unrecognized task output type {task_output_type}")
@@ -288,6 +304,7 @@ class AMIAdapterConfiguration:
             backfills=backfills,
             notifications=notifications,
             sinks=all_sinks,
+            should_run_post_processors=pipeline_configuration.should_run_post_processor,
         )
 
     def adapters(self):
@@ -432,6 +449,9 @@ class AMIAdapterConfiguration:
 
     def task_output_controller(self):
         return self._task_output_controller
+
+    def should_run_post_processors(self) -> bool:
+        return self._should_run_post_processors
 
     def __repr__(self):
         return f"sources=[{", ".join(str(s) for s in self._sources)}]"
@@ -602,15 +622,10 @@ class ConfiguredStorageSink:
         raise ValueError(f"Unrecognized secret type for sink type {self.type}")
 
 
-class ConfiguredTaskOutputControllerType:
-    LOCAL = "local"
-    S3 = "s3"
-
-
 class ConfiguredLocalTaskOutputController:
 
     def __init__(self, output_folder: str):
-        self.type = ConfiguredTaskOutputControllerType.LOCAL
+        self.type = IntermediateOutputType.LOCAL.value
         self.output_folder = self._output_folder(output_folder)
 
     def _output_folder(self, output_folder: str) -> str:
@@ -624,7 +639,7 @@ class ConfiguredLocalTaskOutputController:
 class ConfiguredS3TaskOutputController:
 
     def __init__(self, dev_aws_profile_name: str, s3_bucket_name: str):
-        self.type = ConfiguredTaskOutputControllerType.S3
+        self.type = IntermediateOutputType.S3.value
         # Only use for specifying local development AWS credentials. Prod should use
         # IAM role provisioned in terraform.
         self.dev_aws_profile_name = dev_aws_profile_name

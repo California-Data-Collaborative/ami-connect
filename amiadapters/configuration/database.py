@@ -5,13 +5,15 @@ from typing import Dict, List, Tuple
 
 import pytz
 
+from amiadapters.configuration.models import PipelineConfiguration
+
 logger = logging.getLogger(__name__)
 
 
 def get_configuration(snowflake_connection) -> Tuple[
     List[Dict],
     List[Dict],
-    Dict,
+    PipelineConfiguration,
     Dict,
     List[Dict],
     Dict,
@@ -104,21 +106,7 @@ def get_configuration(snowflake_connection) -> Tuple[
         sink["checks"] = checks_by_sink_id.get(row["id"], [])
         sinks.append(sink)
 
-    if len(all_config["configuration_pipeline"]) != 1:
-        raise ValueError(
-            f"Expected one row for configuration_pipeline, got {len(all_config["configuration_pipeline"])}"
-        )
-    pipeline_config = {}
-    all_pipeline_config = all_config["configuration_pipeline"][0]
-    pipeline_config["type"] = all_pipeline_config["intermediate_output_type"]
-    pipeline_config["bucket"] = all_pipeline_config["intermediate_output_s3_bucket"]
-    pipeline_config["dev_profile"] = all_pipeline_config[
-        "intermediate_output_dev_profile"
-    ]
-    pipeline_config["local_output_path"] = all_pipeline_config[
-        "intermediate_output_local_output_path"
-    ]
-    pipeline_config["run_post_processors"] = all_pipeline_config["run_post_processors"]
+    pipeline_config = _parse_pipeline_configuration(all_config)
 
     notifications = {}
     for row in all_config["configuration_notifications"]:
@@ -149,6 +137,24 @@ def _fetch_table(cursor, table_name):
     cursor.execute(f"SELECT * FROM {table_name}")
     columns = [col[0].lower() for col in cursor.description]
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def _parse_pipeline_configuration(all_config: dict) -> PipelineConfiguration:
+    if len(all_config["configuration_pipeline"]) != 1:
+        raise ValueError(
+            f"Expected one row for configuration_pipeline, got {len(all_config["configuration_pipeline"])}"
+        )
+
+    row = all_config["configuration_pipeline"][0]
+    return PipelineConfiguration(
+        intermediate_output_type=row["intermediate_output_type"],
+        intermediate_output_s3_bucket=row["intermediate_output_s3_bucket"],
+        intermediate_output_dev_profile=row["intermediate_output_dev_profile"],
+        intermediate_output_local_output_path=row[
+            "intermediate_output_local_output_path"
+        ],
+        should_run_post_processor=row["run_post_processors"],
+    )
 
 
 def add_source_configuration(connection, source_configuration: dict):
