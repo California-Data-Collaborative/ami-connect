@@ -188,11 +188,11 @@ class AMIAdapterConfiguration:
                     )
                 case ConfiguredAMISourceType.SENTRYX.value.type:
                     secrets = SentryxSecrets(
-                        this_source_secrets.get("sentryx_api_key"),
+                        this_source_secrets.get("api_key"),
                     )
                 case ConfiguredAMISourceType.SUBECA.value.type:
                     secrets = SubecaSecrets(
-                        this_source_secrets.get("subeca_api_key"),
+                        this_source_secrets.get("api_key"),
                     )
                 case ConfiguredAMISourceType.XYLEM_MOULTON_NIGUEL.value.type:
                     secrets = XylemMoultonNiguelSecrets(

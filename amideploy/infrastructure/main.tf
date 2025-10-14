@@ -78,6 +78,11 @@ resource "aws_iam_policy" "ami_connect_pipeline_s3_policy" {
   })
 }
 
+resource "aws_iam_role_policy_attachment" "attach_secrets_manager" {
+  role       = aws_iam_role.ami_connect_pipeline.name
+  policy_arn = "arn:aws:iam::aws:policy/SecretsManagerReadWrite"
+}
+
 # Create an Instance Profile (which EC2 will use)
 resource "aws_iam_instance_profile" "ami_instance_profile" {
   name = "ami-connect-pipeline-instance-profile"

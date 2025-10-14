@@ -173,6 +173,8 @@ def create_snowflake_connection(
 
 
 def create_snowflake_from_secrets(secrets: dict):
+    if "sinks" not in secrets or len(secrets["sinks"]) == 0:
+        raise ValueError("No credentials found to connect to Snowflake.")
     snowflake_credentials = list(secrets["sinks"].values())[0]
     return create_snowflake_connection(
         account=snowflake_credentials["account"],
