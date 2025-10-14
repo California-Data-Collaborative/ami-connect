@@ -59,17 +59,22 @@ def remove_sink_configuration(config_file: str, secrets_file: str, id: str):
         return database.remove_sink_configuration(connection, id)
 
 
-def update_task_output_configuration(
-    config_file: str, secrets_file: str, new_task_output_configuration: dict
-):
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(
-            f"Updating task output configuration in database to {new_task_output_configuration}"
-        )
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        database.update_task_output_configuration(
-            connection, new_task_output_configuration
-        )
+def update_task_output_configuration(new_task_output_configuration: dict):
+    logger.info(
+        f"Updating task output configuration in database to {new_task_output_configuration}"
+    )
+    all_secrets = secrets.get_secrets()
+    connection = create_snowflake_from_secrets(all_secrets)
+    database.update_task_output_configuration(connection, new_task_output_configuration)
+
+
+def update_post_processor_configuration(should_run_post_processor: bool):
+    logger.info(
+        f"Updating post processor configuration in database to {should_run_post_processor}"
+    )
+    all_secrets = secrets.get_secrets()
+    connection = create_snowflake_from_secrets(all_secrets)
+    database.update_post_processor_configuration(connection, should_run_post_processor)
 
 
 def update_backfill_configuration(

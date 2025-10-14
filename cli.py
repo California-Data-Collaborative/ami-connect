@@ -32,6 +32,7 @@ from amiadapters.configuration.base import (
     remove_source_configuration,
     update_backfill_configuration,
     update_notification_configuration,
+    update_post_processor_configuration,
     update_secret_configuration,
     update_sink_configuration,
     update_source_configuration,
@@ -493,21 +494,38 @@ def update_task_output(
             help="Name of AWS profile used to access AWS credentials during local development."
         ),
     ],
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: Annotated[str, typer.Option(help=HELP_MESSAGE__PROFILE)] = None,
 ):
     """
     Updates task output configuration in database. Assumes you're using S3 task output. Requires all arguments
     because we erase and recreate entire task output configuration when we make this update.
     """
+    if profile:
+        set_global_aws_profile(profile)
     new_task_output_configuration = {
         "type": "s3",
         "s3_bucket": bucket_name,
         "dev_profile": dev_profile,
         "local_output_path": None,
     }
-    update_task_output_configuration(None, secrets_file, new_task_output_configuration)
+    update_task_output_configuration(new_task_output_configuration)
+
+
+@config_app.command()
+def update_post_processor(
+    should_run: Annotated[
+        bool,
+        typer.Argument(help="True if post processors should run, else False."),
+    ],
+    profile: Annotated[str, typer.Option(help=HELP_MESSAGE__PROFILE)] = None,
+):
+    """
+    Updates task output configuration in database. Assumes you're using S3 task output. Requires all arguments
+    because we erase and recreate entire task output configuration when we make this update.
+    """
+    if profile:
+        set_global_aws_profile(profile)
+    update_post_processor_configuration(should_run)
 
 
 @config_app.command()

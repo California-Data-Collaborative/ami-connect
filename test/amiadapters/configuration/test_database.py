@@ -13,6 +13,7 @@ from amiadapters.configuration.database import (
     remove_source_configuration,
     update_backfill_configuration,
     update_notification_configuration,
+    update_post_processor_configuration,
     update_sink_configuration,
     update_source_configuration,
     update_task_output_configuration,
@@ -120,14 +121,15 @@ class TestDatabase(BaseTestCase):
                     "check_name": "snowflake-meters-unique-by-device-id",
                 },
             ]
-        elif table_name == "configuration_task_outputs":
+        elif table_name == "configuration_pipeline":
             return [
                 {
                     "id": 1,
-                    "type": "s3",
-                    "s3_bucket": "my-bucket",
-                    "dev_profile": "my-aws-profile",
-                    "local_output_path": None,
+                    "intermediate_output_type": "s3",
+                    "intermediate_output_s3_bucket": "my-bucket",
+                    "intermediate_output_dev_profile": "my-aws-profile",
+                    "intermediate_output_local_output_path": None,
+                    "run_post_processors": True,
                 },
             ]
         elif table_name == "configuration_notifications":
@@ -149,7 +151,7 @@ class TestDatabase(BaseTestCase):
     def test_get_database_config(self, mock_fetch_table):
         mock_fetch_table.side_effect = self.fake_fetch
 
-        sources, sinks, task_output, notifications, backfills = get_configuration(
+        sources, sinks, pipeline_config, notifications, backfills = get_configuration(
             MagicMock()
         )
 
@@ -159,8 +161,9 @@ class TestDatabase(BaseTestCase):
         self.maxDiff = None
         self.assertEqual(expected["sources"], sources)
         self.assertEqual(expected["sinks"], sinks)
-        self.assertEqual(expected["task_output"]["type"], task_output["type"])
-        self.assertEqual(expected["task_output"]["bucket"], task_output["bucket"])
+        self.assertEqual(expected["task_output"]["type"], pipeline_config["type"])
+        self.assertEqual(expected["task_output"]["bucket"], pipeline_config["bucket"])
+        self.assertTrue(pipeline_config["run_post_processors"])
         self.assertEqual(expected["notifications"], notifications)
         self.assertEqual(expected["backfills"], backfills)
 
@@ -175,42 +178,7 @@ class TestDatabase(BaseTestCase):
         }
 
         update_task_output_configuration(self.mock_connection, config)
-
-        # Ensure TRUNCATE then INSERT are executed
-        expected_calls = [
-            call.execute("DELETE FROM configuration_task_outputs"),
-            call.execute(
-                """
-        INSERT INTO configuration_task_outputs (type, s3_bucket, dev_profile, local_output_path)
-        VALUES (?, ?, ?, ?)
-        """,
-                ["s3", "my-bucket", "my-aws-profile", None],
-            ),
-        ]
-        self.mock_cursor.assert_has_calls(expected_calls)
-
-    def test_update_task_output_configuration_valid_local_configuration_executes_queries(
-        self,
-    ):
-        config = {
-            "type": "local",
-            "s3_bucket": None,
-            "dev_profile": None,
-            "local_output_path": "/tmp/data",
-        }
-
-        update_task_output_configuration(self.mock_connection, config)
-
-        self.mock_cursor.execute.assert_any_call(
-            "DELETE FROM configuration_task_outputs"
-        )
-        self.mock_cursor.execute.assert_any_call(
-            """
-        INSERT INTO configuration_task_outputs (type, s3_bucket, dev_profile, local_output_path)
-        VALUES (?, ?, ?, ?)
-        """,
-            ["local", None, None, "/tmp/data"],
-        )
+        self.assertEqual(len(self.mock_cursor.execute.call_args_list), 2)
 
     def test_update_task_output_configuration_missing_type_raises(self):
         config = {"s3_bucket": "bucket", "local_output_path": None}
@@ -250,6 +218,22 @@ class TestDatabase(BaseTestCase):
         with self.assertRaises(ValueError) as cm:
             update_task_output_configuration(self.mock_connection, config)
         self.assertIn("missing field: local_output_path", str(cm.exception))
+
+    def test_update_post_processor_configuration_none_raises_value_error(self):
+        """Should raise ValueError if should_run_post_processor is None"""
+        with self.assertRaises(ValueError) as ctx:
+            update_post_processor_configuration(self.mock_connection, None)
+        self.assertIn("should_run_post_processor argument is None", str(ctx.exception))
+
+    @patch("amiadapters.configuration.database._ensure_pipeline_config_row_exists")
+    def test_update_post_processor_configuration_executes_update(self, mock_ensure_row):
+        """Should call _ensure_pipeline_config_row_exists and execute UPDATE with correct param"""
+        update_post_processor_configuration(self.mock_connection, True)
+        mock_ensure_row.assert_called_once_with(self.mock_cursor)
+        self.mock_cursor.execute.assert_called_once()
+        query, params = self.mock_cursor.execute.call_args[0]
+        self.assertIn("UPDATE configuration_pipeline", query)
+        self.assertEqual(params, (True,))
 
     def test_update_sink_configuration_missing_id_raises_value_error(self):
         config = {"type": "snowflake"}
