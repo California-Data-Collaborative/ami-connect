@@ -23,6 +23,7 @@ def ami_control_dag_factory(
     params,
     adapter,
     on_failure_sns_notifier,
+    should_run_post_processor,
     backfill_params=None,
 ):
     """
@@ -40,6 +41,7 @@ def ami_control_dag_factory(
         start_date=datetime(2024, 1, 1),
         tags=["ami"],
         on_failure_callback=on_failure_sns_notifier,
+        should_run_post_processor=should_run_post_processor,
     )
     def ami_control_dag():
 
@@ -74,10 +76,12 @@ def ami_control_dag_factory(
         @task()
         def post_process(**context):
             run_id = context["dag_run"].run_id
-            # TODO make this a configuration option, but for, while Current post processing is broken, skip it.
-            if "current" in adapter.org_id:
+            if not context["should_run_post_processor"]:
+                logger.info("Skipping post processor as configured")
                 return
-            adapter.post_process(run_id)
+            else:
+                logger.info("Running post processor as configured")
+                adapter.post_process(run_id)
 
         # Set sequence of tasks for this utility
         (
@@ -99,7 +103,7 @@ def ami_control_dag_factory(
 # Load configuration. By default, Airflow calls this twice for DAG refreshes
 # every min_file_process_interval = 30 seconds: Once for the scheduler, once for the webserver.
 # We configure all DAGs in this file to limit the number of config loads every DAG refresh.
-set_global_aws_region(None)
+set_global_aws_region("us-west-2")
 config = AMIAdapterConfiguration.from_database()
 
 #######################################################
@@ -130,6 +134,7 @@ for adapter in utility_adapters:
         standard_params,
         adapter,
         on_failure_sns_notifier,
+        config.should_run_post_processors(),
     )
 
     # Standard run that fetches most recent meter read data
@@ -139,6 +144,7 @@ for adapter in utility_adapters:
         {},
         adapter,
         on_failure_sns_notifier,
+        config.should_run_post_processors(),
     )
 
 # Create DAGs for configured backfill runs
@@ -152,6 +158,7 @@ for backfill in backfills:
         {},
         matching_adapters[0],
         on_failure_sns_notifier,
+        config.should_run_post_processors(),
         backfill_params=backfill,
     )
 
