@@ -1,4 +1,16 @@
 -- =========================================
+-- PIPELINE: System-wide configuration, e.g. intermediate task outputs, whether to run post-processors, etc.
+-- =========================================
+CREATE TABLE if not exists configuration_pipeline (
+    id INTEGER AUTOINCREMENT PRIMARY KEY,
+    intermediate_output_type STRING NOT NULL,
+    intermediate_output_s3_bucket STRING,
+    intermediate_output_dev_profile STRING,
+    intermediate_output_local_output_path STRING,
+    run_post_processors BOOLEAN NOT NULL
+);
+
+-- =========================================
 -- SOURCES: utilities that should get Airflow DAGs
 -- =========================================
 CREATE TABLE if not exists configuration_sources (
@@ -36,17 +48,6 @@ CREATE TABLE if not exists configuration_sink_checks (
     id INTEGER AUTOINCREMENT PRIMARY KEY,
     sink_id STRING REFERENCES configuration_sinks(id) ON DELETE CASCADE,
     check_name STRING NOT NULL
-);
-
--- =========================================
--- TASK OUTPUTS: external outputs (S3, local paths, etc.)
--- =========================================
-CREATE TABLE if not exists configuration_task_outputs (
-    id INTEGER AUTOINCREMENT PRIMARY KEY,
-    type STRING NOT NULL,
-    s3_bucket STRING,
-    dev_profile STRING,
-    local_output_path STRING
 );
 
 -- =========================================

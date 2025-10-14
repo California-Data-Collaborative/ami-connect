@@ -21,11 +21,11 @@ def get_configuration(snowflake_connection) -> Tuple[
     We return as dicts and lists to match the YAML config system's API.
     """
     tables = [
+        "configuration_pipeline",
         "configuration_sources",
         "configuration_source_sinks",
         "configuration_sinks",
         "configuration_sink_checks",
-        "configuration_task_outputs",
         "configuration_notifications",
         "configuration_backfills",
     ]
@@ -104,16 +104,21 @@ def get_configuration(snowflake_connection) -> Tuple[
         sink["checks"] = checks_by_sink_id.get(row["id"], [])
         sinks.append(sink)
 
-    if len(all_config["configuration_task_outputs"]) != 1:
+    if len(all_config["configuration_pipeline"]) != 1:
         raise ValueError(
-            f"Expected one row for configuration_task_outputs, got {len(all_config["configuration_task_outputs"])}"
+            f"Expected one row for configuration_pipeline, got {len(all_config["configuration_pipeline"])}"
         )
-    task_output = {}
-    row = all_config["configuration_task_outputs"][0]
-    task_output["type"] = row["type"]
-    task_output["bucket"] = row["s3_bucket"]
-    task_output["dev_profile"] = row["dev_profile"]
-    task_output["local_output_path"] = row["local_output_path"]
+    pipeline_config = {}
+    all_pipeline_config = all_config["configuration_pipeline"][0]
+    pipeline_config["type"] = all_pipeline_config["intermediate_output_type"]
+    pipeline_config["bucket"] = all_pipeline_config["intermediate_output_s3_bucket"]
+    pipeline_config["dev_profile"] = all_pipeline_config[
+        "intermediate_output_dev_profile"
+    ]
+    pipeline_config["local_output_path"] = all_pipeline_config[
+        "intermediate_output_local_output_path"
+    ]
+    pipeline_config["run_post_processors"] = all_pipeline_config["run_post_processors"]
 
     notifications = {}
     for row in all_config["configuration_notifications"]:
@@ -136,7 +141,7 @@ def get_configuration(snowflake_connection) -> Tuple[
         backfill["schedule"] = row["schedule"]
         backfills.append(backfill)
 
-    return sources, sinks, task_output, notifications, backfills
+    return sources, sinks, pipeline_config, notifications, backfills
 
 
 def _fetch_table(cursor, table_name):
@@ -417,20 +422,50 @@ def update_task_output_configuration(connection, task_output_configuration: dict
         )
 
     cursor = connection.cursor()
-    # Remove existing row
-    cursor.execute("DELETE FROM configuration_task_outputs")
-    # Insert the new row
+    _ensure_pipeline_config_row_exists(cursor)
     cursor.execute(
         """
-        INSERT INTO configuration_task_outputs (type, s3_bucket, dev_profile, local_output_path)
-        VALUES (?, ?, ?, ?)
-        """,
-        [
+        UPDATE configuration_pipeline
+        SET
+            intermediate_output_type = ?,
+            intermediate_output_s3_bucket = ?,
+            intermediate_output_dev_profile = ?,
+            intermediate_output_local_output_path = ?
+    """,
+        (
             task_output_configuration["type"],
-            task_output_configuration["s3_bucket"],
-            task_output_configuration["dev_profile"],
-            task_output_configuration["local_output_path"],
-        ],
+            task_output_configuration.get("s3_bucket"),
+            task_output_configuration.get("dev_profile"),
+            task_output_configuration.get("local_output_path"),
+        ),
+    )
+
+
+def update_post_processor_configuration(connection, should_run_post_processor: bool):
+    # Validate
+    if should_run_post_processor is None:
+        raise ValueError("should_run_post_processor argument is None")
+    cursor = connection.cursor()
+    _ensure_pipeline_config_row_exists(cursor)
+    cursor.execute(
+        """
+        UPDATE configuration_pipeline
+        SET run_post_processors = ?
+    """,
+        (should_run_post_processor,),
+    )
+
+
+def _ensure_pipeline_config_row_exists(cursor):
+    """
+    Ensure there's at least one row in the pipeline config table (does nothing if there is already a row)
+    """
+    cursor.execute(
+        """
+        INSERT INTO configuration_pipeline (id, intermediate_output_type, run_post_processors)
+        SELECT 1, 's3', true
+        WHERE NOT EXISTS (SELECT 1 FROM configuration_pipeline)
+        """
     )
 
 
