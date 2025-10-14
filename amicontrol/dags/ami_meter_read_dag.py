@@ -10,10 +10,8 @@ from airflow.decorators import dag, task
 from airflow.models.param import Param
 
 from amiadapters.adapters.base import BaseAMIAdapter
-from amiadapters.config import (
-    AMIAdapterConfiguration,
-    find_secrets_yaml,
-)
+from amiadapters.config import AMIAdapterConfiguration
+from amiadapters.configuration.env import set_global_aws_region
 from amiadapters.storage.base import BaseAMIDataQualityCheck
 
 logger = logging.getLogger(__name__)
@@ -101,7 +99,8 @@ def ami_control_dag_factory(
 # Load configuration. By default, Airflow calls this twice for DAG refreshes
 # every min_file_process_interval = 30 seconds: Once for the scheduler, once for the webserver.
 # We configure all DAGs in this file to limit the number of config loads every DAG refresh.
-config = AMIAdapterConfiguration.from_database(find_secrets_yaml())
+set_global_aws_region(None)
+config = AMIAdapterConfiguration.from_database()
 
 #######################################################
 # Configure AMI ETL DAGs

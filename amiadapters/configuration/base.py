@@ -10,11 +10,10 @@ from amiadapters.configuration import secrets
 logger = logging.getLogger(__name__)
 
 
-def get_configuration(config_file: str, secrets_file: str) -> dict:
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(f"Getting configuration from database.")
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        return database.get_configuration(connection)
+def get_configuration(secrets: dict) -> dict:
+    logger.info(f"Getting configuration from database.")
+    connection = create_snowflake_from_secrets(secrets)
+    return database.get_configuration(connection)
 
 
 def add_source_configuration(
@@ -173,11 +172,9 @@ def create_snowflake_connection(
     )
 
 
-def create_snowflake_from_secrets_file(secrets_file: str):
-    # For now, load secrets from YAML. In the near future we will load from a more secure source.
-    with open(secrets_file, "r") as f:
-        secrets = yaml.safe_load(f)
-    # When we have better secrets management, find a better way of accessing this information
+def create_snowflake_from_secrets(secrets: dict):
+    if "sinks" not in secrets or len(secrets["sinks"]) == 0:
+        raise ValueError("No credentials found to connect to Snowflake.")
     snowflake_credentials = list(secrets["sinks"].values())[0]
     return create_snowflake_connection(
         account=snowflake_credentials["account"],
@@ -188,3 +185,10 @@ def create_snowflake_from_secrets_file(secrets_file: str):
         schema=snowflake_credentials["schema"],
         role=snowflake_credentials["role"],
     )
+
+
+def create_snowflake_from_secrets_file(secrets_file: str):
+    # For now, load secrets from YAML. In the near future we will load from a more secure source.
+    with open(secrets_file, "r") as f:
+        secrets = yaml.safe_load(f)
+    return create_snowflake_from_secrets(secrets)

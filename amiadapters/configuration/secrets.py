@@ -1,3 +1,4 @@
+from enum import Enum
 import json
 import logging
 
@@ -9,6 +10,11 @@ from amiadapters.configuration.env import get_global_aws_profile, get_global_aws
 SECRET_ID_PREFIX = "ami-connect"
 
 logger = logging.getLogger(__name__)
+
+
+class SecretType(Enum):
+    SOURCES = "sources"
+    SINKS = "sinks"
 
 
 def get_secrets() -> dict[str, dict]:
@@ -60,6 +66,14 @@ def _unpack_secret_into_dictionary(all_secrets: dict[str, dict], key: str, value
 
 
 def update_secret_configuration(secret_type: str, secret_name: str, secret):
+    """
+    Update or create a secret in AWS Secrets Manager.
+    """
+    if secret_type not in [st.value for st in SecretType]:
+        raise ValueError(
+            f"Invalid secret_type: {secret_type}. Must be one of {[st.value for st in SecretType]}"
+        )
+
     client = _create_aws_secrets_manager_client()
     secret_id = f"{SECRET_ID_PREFIX}/{secret_type}/{secret_name}"
     secret_value = secret.to_json()
