@@ -27,7 +27,7 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.config = AMIAdapterConfiguration.from_database("secrets.yaml")
+        cls.config = AMIAdapterConfiguration.from_database()
         # Hack! Pick an adapter out of the config so we can create a connection to Snowflake.
         adapter = cls.config.adapters()[0]
         cls.snowflake_sink = adapter.storage_sinks[0]

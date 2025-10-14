@@ -56,17 +56,13 @@ class AMIAdapterConfiguration:
         )
 
     @classmethod
-    def from_database(cls, secrets_file: str = None):
+    def from_database(cls):
         """
         Given a Snowflake connection to an AMI Connect schema, query the configuration tables to get this
         pipeline's config.
         """
-        # For now, load secrets from YAML. In the near future we will load from a more secure source.
-        if secrets_file:
-            with open(secrets_file, "r") as f:
-                secrets = yaml.safe_load(f)
-        else:
-            secrets = get_secrets()
+        # Get all secrets, including Snowflake creds used to get non-secret configuration
+        secrets = get_secrets()
 
         # When we have better secrets management, find a better way of accessing this information
         connection = create_snowflake_from_secrets(secrets)

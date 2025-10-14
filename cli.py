@@ -124,15 +124,12 @@ def download_intermediate_output(
         typer.Argument(
             help="Path or prefix of path to files for download. If S3, can be anything after the bucket name, e.g. for s3://my-ami-connect-bucket/intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 you may enter intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 ."
         ),
-    ],
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    ]
 ):
     """
     Download intermediate output file(s) of provided name.
     """
-    config = AMIAdapterConfiguration.from_database(secrets_file)
+    config = AMIAdapterConfiguration.from_database()
 
     # This code should not live here. It's copied from the base adapter class and it shouldn't live there either.
     configured_task_output_controller = config.task_output_controller()
@@ -274,6 +271,7 @@ def add_source(
             help="Collection of sink IDs where data from this source should be stored."
         ),
     ] = None,
+    # TODO remove references to this and all secrets_file args, update so it works with new setup
     secrets_file: Annotated[
         str, typer.Option(help="Path to local secrets file.")
     ] = DEFAULT_SECRETS_PATH,
