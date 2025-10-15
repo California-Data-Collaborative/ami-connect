@@ -9,6 +9,7 @@ Run from root directory with:
 
 from dataclasses import asdict, fields
 from datetime import datetime
+from functools import wraps
 import logging
 from pprint import pprint
 from typing import List
@@ -37,15 +38,19 @@ from amiadapters.configuration.base import (
     update_source_configuration,
     update_task_output_configuration,
 )
-from amiadapters.configuration.env import set_global_aws_profile
+from amiadapters.configuration.env import set_global_aws_profile, set_global_aws_region
 from amiadapters.configuration.models import IntermediateOutputType
 from amiadapters.configuration.secrets import get_secrets, SecretType
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
 
-DEFAULT_SECRETS_PATH = "./secrets.yaml"
-
 HELP_MESSAGE__PROFILE = "Name of pipeline profile to get configuration for. Expected to match the name of the AWS profile in your AWS credentials file."
+ANNOTATION__PROFILE = Annotated[
+    str,
+    typer.Option(
+        help=HELP_MESSAGE__PROFILE,
+    ),
+]
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -57,9 +62,26 @@ config_app = typer.Typer(help="Configure the pipeline")
 app.add_typer(config_app, name="config")
 
 
+def sets_environment_from_profile(func):
+    """
+    Decorator to set environment variables and AWS settings from AWS profile name before running command.
+
+    Any command that accesses secrets or configuration from the database should be decorated with this, and
+    it should have the "profile" keyword argument.
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        set_global_aws_region("us-west-2")
+        set_global_aws_profile(kwargs.get("profile"))
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 @app.command()
+@sets_environment_from_profile
 def run(
-    profile: Annotated[str, typer.Argument(help=HELP_MESSAGE__PROFILE)],
     start_date: Annotated[
         datetime, typer.Option(help="Start date in YYYY-MM-DD format.")
     ] = None,
@@ -72,12 +94,12 @@ def run(
             help="Filter to specified org_ids. Runs all configured orgs by default."
         ),
     ] = None,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Run AMI API adapters to fetch AMI data, then shape it into generalized format, then store it.
     """
     logger.info(f"Loading configuration from database using profile {profile}")
-    set_global_aws_profile(profile)
     config = AMIAdapterConfiguration.from_database()
 
     adapters = config.adapters()
@@ -119,6 +141,7 @@ def run(
 
 
 @app.command()
+@sets_environment_from_profile
 def download_intermediate_output(
     path: Annotated[
         str,
@@ -126,6 +149,7 @@ def download_intermediate_output(
             help="Path or prefix of path to files for download. If S3, can be anything after the bucket name, e.g. for s3://my-ami-connect-bucket/intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 you may enter intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 ."
         ),
     ],
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Download intermediate output file(s) of provided name.
@@ -155,26 +179,20 @@ def download_intermediate_output(
 # Config commands
 ########################################################################################
 @config_app.command()
+@sets_environment_from_profile
 def get(
-    profile: Annotated[
-        str,
-        typer.Argument(
-            help=HELP_MESSAGE__PROFILE,
-        ),
-    ],
     show_secrets: Annotated[
         bool,
         typer.Option(
             help="If true, will show secrets in output. Default is false for security reasons."
         ),
     ] = False,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Get configuration from database.
     """
-    set_global_aws_profile(profile)
     secrets = get_secrets()
-
     sources, sinks, pipeline, notifications, backfills = get_configuration(secrets)
 
     result = {
@@ -191,6 +209,7 @@ def get(
 
 
 @config_app.command()
+@sets_environment_from_profile
 def add_source(
     org_id: Annotated[
         str,
@@ -267,10 +286,7 @@ def add_source(
             help="Collection of sink IDs where data from this source should be stored."
         ),
     ] = None,
-    # TODO remove references to this and all secrets_file args, update so it works with new setup
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Adds a new source with provided configuration. Different adapter types require specific configuration
@@ -294,10 +310,11 @@ def add_source(
         "external_adapter_location": external_adapter_location,
         "sinks": sinks or [],
     }
-    add_source_configuration(None, secrets_file, new_sink_configuration)
+    add_source_configuration(new_sink_configuration)
 
 
 @config_app.command()
+@sets_environment_from_profile
 def update_source(
     org_id: Annotated[
         str,
@@ -371,9 +388,7 @@ def update_source(
             help="Collection of sink IDs where data from this source should be stored."
         ),
     ] = None,
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Adds a new source with provided configuration. Different adapter types require specific configuration
@@ -416,10 +431,11 @@ def update_source(
         new_sink_configuration["external_adapter_location"] = external_adapter_location
     if sinks is not None:
         new_sink_configuration["sinks"] = sinks
-    update_source_configuration(None, secrets_file, new_sink_configuration)
+    update_source_configuration(new_sink_configuration)
 
 
 @config_app.command()
+@sets_environment_from_profile
 def remove_source(
     org_id: Annotated[
         str,
@@ -427,17 +443,16 @@ def remove_source(
             help="Often source's organization name and is used as unique identifier."
         ),
     ],
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Remove source from configuration, including all associated configuration.
     """
-    remove_source_configuration(None, secrets_file, org_id)
+    remove_source_configuration(org_id)
 
 
 @config_app.command()
+@sets_environment_from_profile
 def add_sink(
     id: Annotated[
         str,
@@ -447,9 +462,7 @@ def add_sink(
         str,
         typer.Argument(help="Sink type. Options are: [snowflake]"),
     ],
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Adds or updates a sink with provided configuration.
@@ -458,26 +471,26 @@ def add_sink(
         "id": id,
         "type": type,
     }
-    update_sink_configuration(None, secrets_file, new_sink_configuration)
+    update_sink_configuration(new_sink_configuration)
 
 
 @config_app.command()
+@sets_environment_from_profile
 def remove_sink(
     id: Annotated[
         str,
         typer.Argument(help="Name of sink that should be removed from pipeline."),
     ],
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Removes a sink from the pipeline. Sink must not be used by any sources.
     """
-    remove_sink_configuration(None, secrets_file, id)
+    remove_sink_configuration(id)
 
 
 @config_app.command()
+@sets_environment_from_profile
 def update_task_output(
     bucket_name: Annotated[
         str,
@@ -495,8 +508,6 @@ def update_task_output(
     Updates task output configuration in database. Assumes you're using S3 task output. Requires all arguments
     because we erase and recreate entire task output configuration when we make this update.
     """
-    if profile:
-        set_global_aws_profile(profile)
     new_task_output_configuration = {
         "type": "s3",
         "s3_bucket": bucket_name,
@@ -507,6 +518,7 @@ def update_task_output(
 
 
 @config_app.command()
+@sets_environment_from_profile
 def update_post_processor(
     should_run: Annotated[
         bool,
@@ -518,12 +530,11 @@ def update_post_processor(
     Updates task output configuration in database. Assumes you're using S3 task output. Requires all arguments
     because we erase and recreate entire task output configuration when we make this update.
     """
-    if profile:
-        set_global_aws_profile(profile)
     update_post_processor_configuration(should_run)
 
 
 @config_app.command()
+@sets_environment_from_profile
 def update_backfill(
     org_id: Annotated[
         str,
@@ -553,9 +564,7 @@ def update_backfill(
             help='Crontab-format schedule for backfill, e.g. "15 * * * *" for every hour at the 15th minute. Put it in quotes.'
         ),
     ],
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Updates backfill configuration in database. Matches on org_id+start_date+end_date for update, else adds new backfill.
@@ -567,10 +576,11 @@ def update_backfill(
         "interval_days": interval_days,
         "schedule": schedule,
     }
-    update_backfill_configuration(None, secrets_file, new_backfill_configuration)
+    update_backfill_configuration(new_backfill_configuration)
 
 
 @config_app.command()
+@sets_environment_from_profile
 def remove_backfill(
     org_id: Annotated[
         str,
@@ -590,25 +600,22 @@ def remove_backfill(
             help="Latest date in range to be backfilled in YYYY-MM-DD format."
         ),
     ],
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Removes backfill configuration in database. Matches on org_id+start_date+end_date.
     """
-    remove_backfill_configuration(None, secrets_file, org_id, start_date, end_date)
+    remove_backfill_configuration(org_id, start_date, end_date)
 
 
 @config_app.command()
+@sets_environment_from_profile
 def update_notification(
     sns_arn: Annotated[
         str,
         typer.Argument(help="Identifies AWS SNS topic used to send notifications."),
     ],
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Updates notification configuration in database. As of this writing, assumes you have one row for the failure notification SNS arn.
@@ -617,12 +624,11 @@ def update_notification(
         "event_type": "dag_failure",
         "sns_arn": sns_arn,
     }
-    update_notification_configuration(
-        None, secrets_file, new_notification_configuration
-    )
+    update_notification_configuration(new_notification_configuration)
 
 
 @config_app.command()
+@sets_environment_from_profile
 def add_data_quality_checks(
     sink_id: Annotated[
         str,
@@ -632,9 +638,7 @@ def add_data_quality_checks(
         List[str],
         typer.Argument(help="Data quality check names that will be added to the sink."),
     ],
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Adds new data quality checks to the sink.
@@ -643,10 +647,11 @@ def add_data_quality_checks(
         "sink_id": sink_id,
         "check_names": checks,
     }
-    add_data_quality_check_configurations(None, secrets_file, new_checks_configuration)
+    add_data_quality_check_configurations(new_checks_configuration)
 
 
 @config_app.command()
+@sets_environment_from_profile
 def remove_data_quality_checks(
     sink_id: Annotated[
         str,
@@ -658,9 +663,7 @@ def remove_data_quality_checks(
             help="Data quality check names that will be removed from the sink."
         ),
     ],
-    secrets_file: Annotated[
-        str, typer.Option(help="Path to local secrets file.")
-    ] = DEFAULT_SECRETS_PATH,
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Removes data quality checks from the sink.
@@ -669,10 +672,11 @@ def remove_data_quality_checks(
         "sink_id": sink_id,
         "check_names": checks,
     }
-    remove_data_quality_check_configurations(None, secrets_file, checks_configuration)
+    remove_data_quality_check_configurations(checks_configuration)
 
 
 @config_app.command()
+@sets_environment_from_profile
 def update_secret(
     secret_name: Annotated[
         str,
@@ -692,10 +696,7 @@ def update_secret(
             help="Type of source, e.g. 'subeca'. Must be specified if secret_type is 'source'."
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(help=HELP_MESSAGE__PROFILE),
-    ] = None,
+    profile: ANNOTATION__PROFILE = None,
     # Type-specific options
     account: Annotated[str, typer.Option(help="Snowflake account name.")] = None,
     user: Annotated[
@@ -758,8 +759,6 @@ def update_secret(
             "sink_type must be specified as 'snowflake' if secret_type is 'sink'"
         )
 
-    set_global_aws_profile(profile)
-
     # dataclass that represents this secret, e.g. SubecaSecrets, SnowflakeSecrets, etc
     secrets_dataclass = get_secrets_class_type(
         source_type if secret_type == SecretType.SOURCES.value else sink_type
@@ -802,6 +801,7 @@ def update_secret(
 
 
 @config_app.command()
+@sets_environment_from_profile
 def remove_secret(
     secret_type: Annotated[
         str,
@@ -813,6 +813,7 @@ def remove_secret(
             help="Name of source or sink that uses these secrets as specified in the configuration."
         ),
     ],
+    profile: ANNOTATION__PROFILE = None,
 ):
     """
     Removes a secret. Matches on secret_type+secret_name.

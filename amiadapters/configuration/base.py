@@ -2,7 +2,6 @@ from datetime import datetime
 import logging
 
 import snowflake.connector
-import yaml
 
 from amiadapters.configuration import database
 from amiadapters.configuration import secrets
@@ -16,47 +15,34 @@ def get_configuration(secrets: dict) -> dict:
     return database.get_configuration(connection)
 
 
-def add_source_configuration(
-    config_file: str, secrets_file: str, new_source_configuration: dict
-):
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(f"Adding sources in database with {new_source_configuration}")
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        return database.add_source_configuration(connection, new_source_configuration)
+def add_source_configuration(new_source_configuration: dict):
+    logger.info(f"Adding sources in database with {new_source_configuration}")
+    connection = create_snowflake_from_secrets(secrets.get_secrets())
+    return database.add_source_configuration(connection, new_source_configuration)
 
 
-def update_source_configuration(
-    config_file: str, secrets_file: str, new_source_configuration: dict
-):
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(f"Updating sources in database with {new_source_configuration}")
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        return database.update_source_configuration(
-            connection, new_source_configuration
-        )
+def update_source_configuration(new_source_configuration: dict):
+    logger.info(f"Updating sources in database with {new_source_configuration}")
+    connection = create_snowflake_from_secrets(secrets.get_secrets())
+    return database.update_source_configuration(connection, new_source_configuration)
 
 
-def remove_source_configuration(config_file: str, secrets_file: str, org_id: str):
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(f"Removing source from database with org_id {org_id}")
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        return database.remove_source_configuration(connection, org_id)
+def remove_source_configuration(org_id: str):
+    logger.info(f"Removing source from database with org_id {org_id}")
+    connection = create_snowflake_from_secrets(secrets.get_secrets())
+    return database.remove_source_configuration(connection, org_id)
 
 
-def update_sink_configuration(
-    config_file: str, secrets_file: str, new_sink_configuration: dict
-):
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(f"Updating sinks in database with {new_sink_configuration}")
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        return database.update_sink_configuration(connection, new_sink_configuration)
+def update_sink_configuration(new_sink_configuration: dict):
+    logger.info(f"Updating sinks in database with {new_sink_configuration}")
+    connection = create_snowflake_from_secrets(secrets.get_secrets())
+    return database.update_sink_configuration(connection, new_sink_configuration)
 
 
-def remove_sink_configuration(config_file: str, secrets_file: str, id: str):
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(f"Removing sink {id} from database.")
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        return database.remove_sink_configuration(connection, id)
+def remove_sink_configuration(id: str):
+    logger.info(f"Removing sink {id} from database.")
+    connection = create_snowflake_from_secrets(secrets.get_secrets())
+    return database.remove_sink_configuration(connection, id)
 
 
 def update_task_output_configuration(new_task_output_configuration: dict):
@@ -77,69 +63,50 @@ def update_post_processor_configuration(should_run_post_processor: bool):
     database.update_post_processor_configuration(connection, should_run_post_processor)
 
 
-def update_backfill_configuration(
-    config_file: str, secrets_file: str, new_backfill_configuration: dict
-):
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(
-            f"Updating backfill configuration in database to {new_backfill_configuration}"
-        )
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        database.update_backfill_configuration(connection, new_backfill_configuration)
+def update_backfill_configuration(new_backfill_configuration: dict):
+    logger.info(
+        f"Updating backfill configuration in database to {new_backfill_configuration}"
+    )
+    connection = create_snowflake_from_secrets(secrets.get_secrets())
+    database.update_backfill_configuration(connection, new_backfill_configuration)
 
 
 def remove_backfill_configuration(
-    config_file: str,
-    secrets_file: str,
     org_id: str,
     start_date: datetime,
     end_date: datetime,
 ):
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(
-            f"Removing backfill configuration in database for {org_id} {start_date} {end_date}"
-        )
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        database.remove_backfill_configuration(connection, org_id, start_date, end_date)
+    logger.info(
+        f"Removing backfill configuration in database for {org_id} {start_date} {end_date}"
+    )
+    connection = create_snowflake_from_secrets(secrets.get_secrets())
+    database.remove_backfill_configuration(connection, org_id, start_date, end_date)
 
 
-def update_notification_configuration(
-    config_file: str, secrets_file: str, new_notification_configuration: dict
-):
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(
-            f"Updating notification configuration in database to {new_notification_configuration}"
-        )
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        database.update_notification_configuration(
-            connection, new_notification_configuration
-        )
+def update_notification_configuration(new_notification_configuration: dict):
+    logger.info(
+        f"Updating notification configuration in database to {new_notification_configuration}"
+    )
+    connection = create_snowflake_from_secrets(secrets.get_secrets())
+    database.update_notification_configuration(
+        connection, new_notification_configuration
+    )
 
 
-def add_data_quality_check_configurations(
-    config_file: str, secrets_file: str, new_checks_configuration: dict
-):
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(
-            f"Adding data quality checks to database with {new_checks_configuration}"
-        )
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        database.add_data_quality_check_configurations(
-            connection, new_checks_configuration
-        )
+def add_data_quality_check_configurations(new_checks_configuration: dict):
+    logger.info(
+        f"Adding data quality checks to database with {new_checks_configuration}"
+    )
+    connection = create_snowflake_from_secrets(secrets.get_secrets())
+    database.add_data_quality_check_configurations(connection, new_checks_configuration)
 
 
-def remove_data_quality_check_configurations(
-    config_file: str, secrets_file: str, checks_configuration: dict
-):
-    if _use_database_for_config(config_file, secrets_file):
-        logger.info(
-            f"Removing data quality checks from database with {checks_configuration}"
-        )
-        connection = create_snowflake_from_secrets_file(secrets_file)
-        database.remove_data_quality_check_configurations(
-            connection, checks_configuration
-        )
+def remove_data_quality_check_configurations(checks_configuration: dict):
+    logger.info(
+        f"Removing data quality checks from database with {checks_configuration}"
+    )
+    connection = create_snowflake_from_secrets(secrets.get_secrets())
+    database.remove_data_quality_check_configurations(connection, checks_configuration)
 
 
 def update_secret_configuration(secret_type: str, secret_name: str, new_secrets):
@@ -150,10 +117,6 @@ def update_secret_configuration(secret_type: str, secret_name: str, new_secrets)
 def remove_secret_configuration(secret_type: str, secret_name: str):
     logger.info(f"Removing secret {secret_name} of type {secret_type}")
     secrets.remove_secret_configuration(secret_type, secret_name)
-
-
-def _use_database_for_config(config_file: str, secrets_file: str) -> bool:
-    return config_file is None
 
 
 def create_snowflake_connection(
@@ -190,10 +153,3 @@ def create_snowflake_from_secrets(secrets: dict):
         schema=snowflake_credentials["schema"],
         role=snowflake_credentials["role"],
     )
-
-
-def create_snowflake_from_secrets_file(secrets_file: str):
-    # For now, load secrets from YAML. In the near future we will load from a more secure source.
-    with open(secrets_file, "r") as f:
-        secrets = yaml.safe_load(f)
-    return create_snowflake_from_secrets(secrets)

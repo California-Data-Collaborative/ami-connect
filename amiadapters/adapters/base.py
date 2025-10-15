@@ -152,6 +152,9 @@ class BaseAMIAdapter(ABC):
         for sink in self.storage_sinks:
             end_date = datetime.today()
             start_date = end_date - timedelta(days=30)
+            logger.info(
+                f"Running post processor for sink {sink.__class__.__name__} from {start_date} to {end_date}"
+            )
             sink.exec_postprocessor(run_id, start_date, end_date)
 
     def load_transformed(self, run_id: str):
