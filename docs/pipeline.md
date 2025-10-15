@@ -47,10 +47,7 @@ This allows outputs from each stage to be inspected, reused, or (someday!) repla
 
 ## Configuration
 
-Users control the pipeline via the CLI, which alters tables in the Snowflake database. Secrets
-are managed in a YAML file:
-
-- **`secrets.yaml`** – provides connection credentials and secure parameters.  
+Users control the pipeline via the CLI, which alters tables in the Snowflake database. Secrets are managed in a AWS Secrets Manager.
 
 Each AMI source defined in configuration becomes its own set of pipeline DAGs in Airflow.
 
@@ -88,8 +85,8 @@ All ETL logic lives in the **`amiadapters`** package:
 ## Example Workflow
 
 1. Download the repo to your development environment. Set it up using instructions in the main `README.md`.
-2. Define your sources, sinks, and output controller via the CLI and `secrets.yaml`.  
-3. Run the pipeline with our CLI: `python cli.py run`
+2. Ensure you have AWS credentials in `~/.aws/credentials` under a profile name like `my_aws_profile`. The credentials need to grant you access to AWS Secrets Manager.
+3. Run the pipeline with our CLI: `python cli.py run --profile my_aws_profile`
 
 ---
 

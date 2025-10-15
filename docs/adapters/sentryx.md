@@ -11,11 +11,11 @@ Example:
 python cli.py config add-source my_utility sentryx America/Los_Angeles --utility-name name-of-my-utility-in-api-url ./neptune-ami-connect --sinks my_snowflake
 ```
 
-Secrets:
-```yaml
-sources:
-- my_utility:
-    sentryx_api_key: key
+## Secrets
+
+Example:
+```
+python cli.py config update-secret my_utility --source-type sentryx --api-key my_api_key
 ```
 
 ## Limitations

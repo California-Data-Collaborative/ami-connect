@@ -11,12 +11,11 @@ Example:
 python cli.py config add-source my_utility beacon_360 America/Los_Angeles --sinks my_snowflake
 ```
 
-Secrets:
-```yaml
-sources:
- my_utility:
-    beacon_360_user: my_user
-    beacon_360_password: my_password
+## Secrets
+
+Example:
+```
+python cli.py config update-secret my_utility --source-type beacon_360 --user my_user --password my_password
 ```
 
 ## Limitations

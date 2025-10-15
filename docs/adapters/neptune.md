@@ -12,14 +12,11 @@ Example:
 python cli.py config add-source my_utility neptune America/Los_Angeles --external-adapter-location ./neptune-ami-connect --sinks my_snowflake
 ```
 
-Secrets:
-```yaml
-sources:
-  my_utility:
-    api_key: example-key
-    site_id: 1234
-    client_id: api-client_abcdefg
-    client_secret: EXAMPLE
+## Secrets
+
+Example:
+```
+python cli.py config update-secret my_utility --source-type neptune --api-key my_api_key --site-id 1234 --client-id api-client_my_client --client_secret my_secret
 ```
 
 ## Notes

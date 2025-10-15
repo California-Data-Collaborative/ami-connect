@@ -16,18 +16,16 @@ Example:
 python cli.py config add-source my_utility xylem_moulton_niguel America/Los_Angeles --ssh-tunnel-server-host my-tunnel-host --ssh-tunnel-key-path ./key --database-host my-db-host --database-port 1521 --sinks my_snowflake
 ```
 
-Secrets:
-```yaml
-sources:
- my_utility:
-  # SSH username for SSH to intermediate server
-  ssh_tunnel_username: ubuntu
-  # Database name of Oracle database
-  database_db_name: db-name
-  # Username for Oracle database
-  database_user: dbu
-  # Password for Oracle database
-  database_password: dbp
+## Secrets
+
+- ssh_tunnel_username: SSH username for SSH to intermediate server
+- database_db_name: Database name of Oracle database
+- database_user: Username for Oracle database
+- database_password: Password for Oracle database
+
+Example:
+```
+python cli.py config update-secret my_utility --source-type xylem_moulton_niguel --ssh-tunnel-username my_user --database-db-name my_database --database-user my_db_user --database-password my_db_password
 ```
 
 ## Limitations

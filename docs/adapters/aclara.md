@@ -16,12 +16,11 @@ python cli.py config add-source my_utility aclara America/Los_Angeles --sftp-hos
 
 The `./known-hosts` file is a special SSH known hosts file that should contain info about the Aclara server at `sftp_host`.
 
-Secrets:
-```yaml
-sources:
- my_utility:
-    sftp_user: my_user
-    sftp_password: my_password
+## Secrets
+
+Example:
+```
+python cli.py config update-secret my_utility --source-type aclara --sftp-user my_user --sftp-password my_password
 ```
 
 ## Limitations

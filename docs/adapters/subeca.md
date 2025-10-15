@@ -11,11 +11,11 @@ Example:
 python cli.py config add-source my_utility subeca America/Los_Angeles --api-url https://my-source-name.api.subeca.online --sinks my_snowflake
 ```
 
-Secrets:
-```yaml
-sources:
- my_utility:
-    subeca_api_key: key
+## Secrets
+
+Example:
+```
+python cli.py config update-secret my_utility --source-type subeca --api-key my_api_key
 ```
 
 ## Limitations
