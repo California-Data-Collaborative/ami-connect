@@ -124,9 +124,6 @@ You'll need to tell the script the hostname of your Airflow server. You can set 
 
 The script assumes you've stored a key pair at `./amideploy/configuration/airflow-key.pem`.
 
-For configuration, it expects a `secrets.prod.yaml` file. This will be used to configure
-your production pipeline alongside the config in the Snowflake database.
-
 Example deploy:
 ```
 export AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME=<my EC2 hostname> && sh deploy.sh
