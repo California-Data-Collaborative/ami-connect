@@ -41,7 +41,6 @@ def ami_control_dag_factory(
         start_date=datetime(2024, 1, 1),
         tags=["ami"],
         on_failure_callback=on_failure_sns_notifier,
-        should_run_post_processor=should_run_post_processor,
     )
     def ami_control_dag():
 
@@ -76,12 +75,11 @@ def ami_control_dag_factory(
         @task()
         def post_process(**context):
             run_id = context["dag_run"].run_id
-            if not context["should_run_post_processor"]:
-                logger.info("Skipping post processor as configured")
-                return
-            else:
+            if should_run_post_processor:
                 logger.info("Running post processor as configured")
                 adapter.post_process(run_id)
+            else:
+                logger.info("Skipping post processor as configured")
 
         # Set sequence of tasks for this utility
         (
