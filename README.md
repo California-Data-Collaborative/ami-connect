@@ -71,29 +71,39 @@ Use it to:
 - Configure your production pipeline
 - Run the pipeline locally
 
+The CLI must be able to locate AWS credentials so that it can retrieve secrets and configuration. Most commands accept the `--profile` option which should match the name of
+the AWS profile you're using, e.g. in your `~/.aws/credentials` file.
+
+If you'd prefer not to specify the `--profile` option every time, you can set the `AMI_CONNECT__AWS_PROFILE` environment variable to the name of your AWS profile.
+
 #### Configuration
 
-Production AMI Connect pipelines are configured using the Snowflake database where the pipeline stores AMI data.
+Production AMI Connect pipelines are configured using:
+- AWS Secrets Manager for secret credentials.
+- The Snowflake database where the pipeline stores AMI data. Non-secret configuration is stored here.
 
-To see your pipeline's configuration, run:
+To see your pipeline's configuration and secrets, run:
 ```
-python cli.py config get
+python cli.py config get --show-secrets
 ```
+
+Note: AWS Secrets Manager must have your Snowflake credentials so that it can interact with the non-secret configuration in Snowflake.
 
 You can change your configuration with the CLI using one of many commands. In general, you can use the `--help` flag or look at the code to see how they work.
+
+#### Adding a new utility to your pipeline
 
 One common task is to add a new source (a.k.a. utility or agency) to the system. Here's an example that adds the `my_utility` source which uses the `aclara` adapter:
 ```
 python cli.py config add-source my_utility aclara America/Los_Angeles --sftp-host my-sftp-host --sftp-remote-data-directory ./data --sftp-local-download-directory ./output --sftp-local-known-hosts-file ./known-hosts --sinks my_snowflake
 ```
 
-Each adapter type requires its own configuration. You'll need to use the correct CLI options for a given adapter. Check [./docs/adapters](./docs/adapters) for that info.
+Then add secrets with:
+```
+python cli.py config update-secret my_utility --source-type aclara --sftp-user jane --sftp-password foobar
+```
 
-For now, we use a YAML file to configure secrets:
-- `secrets.yaml`
-You should get this file from a colleague, or create one based on `./secrets.yaml.example`.
-
-We also support a YAML-based configuration (see references to `config.yaml` or `config.yaml.example`) for local development but don't recommend this in production.
+Each adapter type requires its own configuration and secrets. You'll need to use the correct CLI options for a given adapter. Check [./docs/adapters](./docs/adapters) for that info.
 
 #### Running the pipeline locally
 
@@ -104,9 +114,6 @@ python cli.py run
 ```
 
 It's common to comment out or modify lines in this script while testing.
-
-The CLI can use a YAML file, like `config.yaml.example`, for local development. See CLI options for more details.
-
 
 ### Deploying
 
@@ -125,7 +132,7 @@ Example deploy:
 export AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME=<my EC2 hostname> && sh deploy.sh
 ```
 
-### Run Airflow application locally
+### Run Airflow application locally (rarely necessary)
 
 We use Apache Airflow to orchestrate our data pipeline. The Airflow code is in the `amicontrol` package.
 
@@ -164,7 +171,7 @@ airflow standalone
 ```
 Watch for the `admin` user and its password in `stdout`. Use those credentials to login. You should see our DAGs!
 
-### How to add a new Adapter
+### How to add a new Adapter for a new AMI data provider
 
 Adapters integrate an AMI data source with our pipeline. In general, when you create one, you'll need to define
 how it extracts data from the AMI data source, how it transforms that data into our generalized format, and (optionally) how it stores raw extracted data into storage sinks.
