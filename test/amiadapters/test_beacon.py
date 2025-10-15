@@ -9,7 +9,9 @@ from amiadapters.adapters.beacon import (
     BeaconRawSnowflakeLoader,
     REQUESTED_COLUMNS,
 )
-from amiadapters.config import ConfiguredLocalTaskOutputController
+from amiadapters.configuration.models import (
+    LocalIntermediateOutputControllerConfiguration,
+)
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 
@@ -136,7 +138,7 @@ class TestBeacon360Adapter(BaseTestCase):
             use_cache=False,
             org_id="this-org",
             org_timezone=pytz.timezone("Europe/Rome"),
-            configured_task_output_controller=ConfiguredLocalTaskOutputController(
+            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
                 "/tmp/output"
             ),
             configured_sinks=[],

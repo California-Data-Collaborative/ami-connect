@@ -11,7 +11,7 @@ import pytz
 from pytz.tzinfo import DstTzInfo
 
 from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
-from amiadapters.config import SftpConfiguration
+from amiadapters.configuration.models import SftpConfiguration
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader

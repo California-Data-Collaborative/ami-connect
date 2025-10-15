@@ -9,7 +9,9 @@ from amiadapters.adapters.sentryx import (
     SentryxMeterRead,
     SentryxMeterWithReads,
 )
-from amiadapters.config import ConfiguredLocalTaskOutputController
+from amiadapters.configuration.models import (
+    LocalIntermediateOutputControllerConfiguration,
+)
 from amiadapters.models import GeneralMeterRead
 from amiadapters.models import GeneralMeter
 from amiadapters.outputs.base import ExtractOutput
@@ -142,7 +144,7 @@ class TestSentryxAdapter(BaseTestCase):
             api_key="key",
             org_id="this-utility",
             org_timezone=pytz.timezone("Africa/Algiers"),
-            configured_task_output_controller=ConfiguredLocalTaskOutputController(
+            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
                 "/tmp/output"
             ),
             configured_sinks=[],

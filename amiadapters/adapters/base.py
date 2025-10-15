@@ -7,7 +7,7 @@ from pytz import timezone
 from pytz.tzinfo import DstTzInfo
 
 from amiadapters.config import (
-    Backfill,
+    BackfillConfiguration,
     ConfiguredStorageSink,
     ConfiguredStorageSinkType,
 )
@@ -110,7 +110,10 @@ class BaseAMIAdapter(ABC):
         pass
 
     def calculate_extract_range(
-        self, start: datetime, end: datetime, backfill_params: Backfill = None
+        self,
+        start: datetime,
+        end: datetime,
+        backfill_params: BackfillConfiguration = None,
     ) -> Tuple[datetime, datetime]:
         """
         Returns a date range for which we should extract data. Automatically determines if
@@ -389,7 +392,7 @@ class ExtractRangeCalculator:
         self.default_interval_days = default_interval_days
 
     def calculate_extract_range(
-        self, start: datetime, end: datetime, backfill_params: Backfill
+        self, start: datetime, end: datetime, backfill_params: BackfillConfiguration
     ) -> Tuple[datetime, datetime]:
         """
         Returns a date range for which we should extract data. Automatically determines if

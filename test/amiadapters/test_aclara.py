@@ -6,7 +6,10 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytz
 
 from amiadapters.models import DataclassJSONEncoder
-from amiadapters.config import ConfiguredLocalTaskOutputController, SftpConfiguration
+from amiadapters.configuration.models import (
+    LocalIntermediateOutputControllerConfiguration,
+    SftpConfiguration,
+)
 from amiadapters.adapters.aclara import (
     AclaraAdapter,
     AclaraMeterAndRead,
@@ -29,7 +32,7 @@ class TestAclaraAdapter(BaseTestCase):
             ),
             sftp_user="user",
             sftp_password="pw",
-            configured_task_output_controller=ConfiguredLocalTaskOutputController(
+            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
                 "/tmp/output"
             ),
             configured_sinks=[],
