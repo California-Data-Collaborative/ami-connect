@@ -6,11 +6,9 @@ from typing import List, Tuple
 from pytz import timezone
 from pytz.tzinfo import DstTzInfo
 
-from amiadapters.config import (
-    BackfillConfiguration,
-    ConfiguredStorageSink,
-    ConfiguredStorageSinkType,
-)
+from amiadapters.configuration.models import BackfillConfiguration
+from amiadapters.configuration.models import ConfiguredStorageSink
+from amiadapters.configuration.models import ConfiguredStorageSinkType
 from amiadapters.configuration.models import IntermediateOutputType
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.outputs.local import LocalTaskOutputController

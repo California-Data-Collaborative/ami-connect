@@ -9,14 +9,19 @@ from pytz import timezone, UTC
 from pytz.tzinfo import DstTzInfo
 import yaml
 
-from amiadapters.configuration.base import (
-    create_snowflake_connection,
-    create_snowflake_from_secrets,
-)
+from amiadapters.adapters.aclara import AclaraAdapter
+from amiadapters.adapters.beacon import Beacon360Adapter
+from amiadapters.adapters.metersense import MetersenseAdapter
+from amiadapters.adapters.sentryx import SentryxAdapter
+from amiadapters.adapters.subeca import SubecaAdapter
+from amiadapters.adapters.xylem_moulton_niguel import XylemMoultonNiguelAdapter
+from amiadapters.configuration.base import create_snowflake_from_secrets
 from amiadapters.configuration.models import (
     AclaraSecrets,
     BackfillConfiguration,
     Beacon360Secrets,
+    ConfiguredStorageSink,
+    ConfiguredStorageSinkType,
     IntermediateOutputType,
     IntermediateOutputControllerConfiguration,
     LocalIntermediateOutputControllerConfiguration,
@@ -327,14 +332,6 @@ class AMIAdapterConfiguration:
         Preferred method for instantiating AMI Adapters off of a user's configuration.
         Reads configuration to see which adapters to run and where to store the data.
         """
-        # Circular import, TODO fix
-        from amiadapters.adapters.aclara import AclaraAdapter
-        from amiadapters.adapters.beacon import Beacon360Adapter
-        from amiadapters.adapters.metersense import MetersenseAdapter
-        from amiadapters.adapters.sentryx import SentryxAdapter
-        from amiadapters.adapters.subeca import SubecaAdapter
-        from amiadapters.adapters.xylem_moulton_niguel import XylemMoultonNiguelAdapter
-
         adapters = []
         for source in self._sources:
             match source.type:
@@ -470,81 +467,6 @@ class AMIAdapterConfiguration:
 
     def __repr__(self):
         return f"sources=[{", ".join(str(s) for s in self._sources)}]"
-
-
-class ConfiguredStorageSinkType:
-    SNOWFLAKE = "snowflake"
-
-
-class ConfiguredStorageSink:
-    """
-    Configuration for a storage sink. We include convenience methods for
-    creating connections off of the configuration.
-    """
-
-    def __init__(
-        self,
-        type: str,
-        id: str,
-        secrets: Union[SnowflakeSecrets],
-        data_quality_check_names: List = None,
-    ):
-        self.type = self._type(type)
-        self.id = self._id(id)
-        self.secrets = self._secrets(secrets)
-        self.data_quality_check_names = data_quality_check_names or []
-
-    def connection(self):
-        match self.type:
-            case ConfiguredStorageSinkType.SNOWFLAKE:
-                return create_snowflake_connection(
-                    account=self.secrets.account,
-                    user=self.secrets.user,
-                    password=self.secrets.password,
-                    warehouse=self.secrets.warehouse,
-                    database=self.secrets.database,
-                    schema=self.secrets.schema,
-                    role=self.secrets.role,
-                )
-            case _:
-                ValueError(f"Unrecognized type {self.type}")
-
-    def checks(self) -> List:
-        """
-        Return names of configured data quality checks for this sink.
-        """
-        from amiadapters.storage.base import BaseAMIDataQualityCheck
-
-        conn = self.connection()
-        checks_by_name = BaseAMIDataQualityCheck.get_all_checks_by_name(conn)
-        result = []
-        for name in self.data_quality_check_names:
-            if name in checks_by_name:
-                result.append(checks_by_name[name])
-            else:
-                raise ValueError(
-                    f"Unrecognized data quality check name: {name}. Choices are: {", ".join(checks_by_name.keys())}"
-                )
-        return result
-
-    def _type(self, type: str) -> str:
-        if type in {
-            ConfiguredStorageSinkType.SNOWFLAKE,
-        }:
-            return type
-        raise ValueError(f"Unrecognized storage sink type: {type}")
-
-    def _id(self, id: str) -> str:
-        if id is None:
-            raise ValueError("Storage sink must have id")
-        return id
-
-    def _secrets(self, secrets: Union[SnowflakeSecrets]) -> Union[SnowflakeSecrets]:
-        if self.type == ConfiguredStorageSinkType.SNOWFLAKE and isinstance(
-            secrets, SnowflakeSecrets
-        ):
-            return secrets
-        raise ValueError(f"Unrecognized secret type for sink type {self.type}")
 
 
 class SourceSchema:
