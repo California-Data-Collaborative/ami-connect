@@ -11,7 +11,7 @@ import pytz
 from pytz.tzinfo import DstTzInfo
 
 from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
-from amiadapters.config import ConfiguredSftp
+from amiadapters.configuration.models import SftpConfiguration
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader
@@ -61,7 +61,7 @@ class AclaraAdapter(BaseAMIAdapter):
         self,
         org_id,
         org_timezone,
-        configured_sftp: ConfiguredSftp,
+        configured_sftp: SftpConfiguration,
         sftp_user,
         sftp_password,
         configured_task_output_controller,

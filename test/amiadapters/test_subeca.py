@@ -4,7 +4,9 @@ import pytz
 from pytz import timezone
 from unittest.mock import MagicMock, patch
 
-from amiadapters.config import ConfiguredLocalTaskOutputController
+from amiadapters.configuration.models import (
+    LocalIntermediateOutputControllerConfiguration,
+)
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.adapters.subeca import (
     SubecaAccount,
@@ -76,7 +78,7 @@ class TestSubecaAdapter(BaseTestCase):
             org_timezone=pytz.timezone("Africa/Algiers"),
             api_url="my-url",
             api_key="test-key",
-            configured_task_output_controller=ConfiguredLocalTaskOutputController(
+            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
                 "/tmp/output"
             ),
             configured_sinks=[],

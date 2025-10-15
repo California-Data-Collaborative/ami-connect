@@ -8,7 +8,7 @@ from pytz.tzinfo import DstTzInfo
 
 from amiadapters.models import GeneralMeterRead
 from amiadapters.models import GeneralMeter
-from amiadapters.config import ConfiguredStorageSink
+from amiadapters.configuration.models import ConfiguredStorageSink
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.base import BaseAMIStorageSink, BaseAMIDataQualityCheck
 

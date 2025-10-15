@@ -763,6 +763,7 @@ def update_secret(
     secrets_dataclass = get_secrets_class_type(
         source_type if secret_type == SecretType.SOURCES.value else sink_type
     )
+    required_fields = fields(secrets_dataclass)
 
     type_specific_options = {
         "account": account,
@@ -783,8 +784,6 @@ def update_secret(
         "client_id": client_id,
         "client_secret": client_secret,
     }
-
-    required_fields = fields(secrets_dataclass)
 
     missing_fields = [
         f.name for f in required_fields if type_specific_options.get(f.name) is None

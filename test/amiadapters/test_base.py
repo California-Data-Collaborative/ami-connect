@@ -5,7 +5,10 @@ import pytz
 
 from amiadapters.adapters.base import ExtractRangeCalculator
 from amiadapters.adapters.beacon import Beacon360Adapter
-from amiadapters.config import Backfill, ConfiguredLocalTaskOutputController
+from amiadapters.configuration.models import (
+    BackfillConfiguration,
+    LocalIntermediateOutputControllerConfiguration,
+)
 from amiadapters.storage.snowflake import SnowflakeStorageSink
 from test.base_test_case import BaseTestCase
 
@@ -19,7 +22,7 @@ class TestBaseAdapter(BaseTestCase):
             use_cache=False,
             org_id="this-org",
             org_timezone=pytz.timezone("Europe/Rome"),
-            configured_task_output_controller=ConfiguredLocalTaskOutputController(
+            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
                 "output"
             ),
             configured_sinks=[],
@@ -226,7 +229,7 @@ class TestExtractRangeCalculator(BaseTestCase):
     def test_calculate_extract_range__backfill_with_no_snowflake_sink(self):
         start_date = datetime(2025, 4, 20, 12, 0, 0)
         end_date = datetime(2025, 4, 25, 12, 0, 0)
-        backfill_params = Backfill(
+        backfill_params = BackfillConfiguration(
             org_id=self.calculator.org_id,
             start_date=start_date,
             end_date=end_date,
@@ -245,7 +248,7 @@ class TestExtractRangeCalculator(BaseTestCase):
         start_date = datetime(2025, 4, 20, 12, 0, 0)
         end_date = datetime(2025, 4, 25, 12, 0, 0)
         self.snowflake_sink.calculate_end_of_backfill_range.return_value = end_date
-        backfill_params = Backfill(
+        backfill_params = BackfillConfiguration(
             org_id=self.calculator.org_id,
             start_date=start_date,
             end_date=end_date,
@@ -271,7 +274,7 @@ class TestExtractRangeCalculator(BaseTestCase):
         start_date = datetime(2025, 4, 20, 12, 0, 0)
         end_date = datetime(2025, 4, 25, 12, 0, 0)
         self.snowflake_sink.calculate_end_of_backfill_range.return_value = None
-        backfill_params = Backfill(
+        backfill_params = BackfillConfiguration(
             org_id=self.calculator.org_id,
             start_date=start_date,
             end_date=end_date,

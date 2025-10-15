@@ -4,7 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import pytz
 
-from amiadapters.config import ConfiguredLocalTaskOutputController
+from amiadapters.configuration.models import (
+    LocalIntermediateOutputControllerConfiguration,
+)
 from amiadapters.adapters.metersense import (
     MetersenseAdapter,
     MetersenseIntervalRead,
@@ -28,7 +30,7 @@ class TestMetersenseAdapter(BaseTestCase):
         self.adapter = MetersenseAdapter(
             org_id="this-org",
             org_timezone=self.tz,
-            configured_task_output_controller=ConfiguredLocalTaskOutputController(
+            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
                 "/tmp/output"
             ),
             configured_sinks=[],
