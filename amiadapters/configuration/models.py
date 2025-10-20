@@ -188,6 +188,7 @@ class ConfiguredStorageSink:
 
     def connection(self):
         from amiadapters.configuration.base import create_snowflake_connection
+
         match self.type:
             case ConfiguredStorageSinkType.SNOWFLAKE:
                 return create_snowflake_connection(

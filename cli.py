@@ -36,7 +36,10 @@ from amiadapters.configuration.base import (
     update_task_output_configuration,
 )
 from amiadapters.configuration.env import set_global_aws_profile, set_global_aws_region
-from amiadapters.configuration.models import IntermediateOutputType, get_secrets_class_type
+from amiadapters.configuration.models import (
+    IntermediateOutputType,
+    get_secrets_class_type,
+)
 from amiadapters.configuration.secrets import get_secrets, SecretType
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
