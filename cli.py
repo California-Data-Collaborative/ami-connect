@@ -17,10 +17,7 @@ from typing_extensions import Annotated
 
 import typer
 
-from amiadapters.config import (
-    AMIAdapterConfiguration,
-    get_secrets_class_type,
-)
+from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.configuration.base import (
     add_data_quality_check_configurations,
     add_source_configuration,
@@ -39,7 +36,10 @@ from amiadapters.configuration.base import (
     update_task_output_configuration,
 )
 from amiadapters.configuration.env import set_global_aws_profile, set_global_aws_region
-from amiadapters.configuration.models import IntermediateOutputType
+from amiadapters.configuration.models import (
+    IntermediateOutputType,
+    get_secrets_class_type,
+)
 from amiadapters.configuration.secrets import get_secrets, SecretType
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
@@ -763,6 +763,7 @@ def update_secret(
     secrets_dataclass = get_secrets_class_type(
         source_type if secret_type == SecretType.SOURCES.value else sink_type
     )
+    required_fields = fields(secrets_dataclass)
 
     type_specific_options = {
         "account": account,
@@ -783,8 +784,6 @@ def update_secret(
         "client_id": client_id,
         "client_secret": client_secret,
     }
-
-    required_fields = fields(secrets_dataclass)
 
     missing_fields = [
         f.name for f in required_fields if type_specific_options.get(f.name) is None

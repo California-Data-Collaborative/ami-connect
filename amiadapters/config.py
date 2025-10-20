@@ -1,7 +1,6 @@
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-import json
 from typing import List, Dict, Union
 import pathlib
 
@@ -10,13 +9,34 @@ from pytz import timezone, UTC
 from pytz.tzinfo import DstTzInfo
 import yaml
 
-from amiadapters.configuration.base import (
-    create_snowflake_connection,
-    create_snowflake_from_secrets,
-)
+from amiadapters.adapters.aclara import AclaraAdapter
+from amiadapters.adapters.beacon import Beacon360Adapter
+from amiadapters.adapters.metersense import MetersenseAdapter
+from amiadapters.adapters.sentryx import SentryxAdapter
+from amiadapters.adapters.subeca import SubecaAdapter
+from amiadapters.adapters.xylem_moulton_niguel import XylemMoultonNiguelAdapter
+from amiadapters.configuration.base import create_snowflake_from_secrets
 from amiadapters.configuration.models import (
+    AclaraSecrets,
+    BackfillConfiguration,
+    Beacon360Secrets,
+    ConfiguredStorageSink,
+    ConfiguredStorageSinkType,
     IntermediateOutputType,
+    IntermediateOutputControllerConfiguration,
+    LocalIntermediateOutputControllerConfiguration,
+    MetersenseSecrets,
+    NeptuneSecrets,
+    NotificationsConfiguration,
     PipelineConfiguration,
+    S3IntermediateOutputControllerConfiguration,
+    SSHTunnelToDatabaseConfiguration,
+    SecretsBase,
+    SentryxSecrets,
+    SftpConfiguration,
+    SnowflakeSecrets,
+    SubecaSecrets,
+    XylemMoultonNiguelSecrets,
 )
 from amiadapters.configuration.database import get_configuration
 from amiadapters.configuration.secrets import get_secrets
@@ -149,11 +169,11 @@ class AMIAdapterConfiguration:
         task_output_type = pipeline_configuration.intermediate_output_type
         match task_output_type:
             case IntermediateOutputType.LOCAL:
-                task_output_controller = ConfiguredLocalTaskOutputController(
+                task_output_controller = LocalIntermediateOutputControllerConfiguration(
                     pipeline_configuration.intermediate_output_local_output_path,
                 )
             case IntermediateOutputType.S3:
-                task_output_controller = ConfiguredS3TaskOutputController(
+                task_output_controller = S3IntermediateOutputControllerConfiguration(
                     pipeline_configuration.intermediate_output_dev_profile,
                     pipeline_configuration.intermediate_output_s3_bucket,
                 )
@@ -226,7 +246,7 @@ class AMIAdapterConfiguration:
                 sinks.append(sink)
 
             # Only certain source types, like ACLARA
-            configured_sftp = ConfiguredSftp(
+            configured_sftp = SftpConfiguration(
                 source.get("sftp_host"),
                 source.get("sftp_remote_data_directory"),
                 source.get("sftp_local_download_directory"),
@@ -234,7 +254,7 @@ class AMIAdapterConfiguration:
             )
 
             # Only certain source types, like METERSENSE
-            configured_ssh_tunnel_to_database = ConfiguredSSHTunnelToDatabase(
+            configured_ssh_tunnel_to_database = SSHTunnelToDatabaseConfiguration(
                 ssh_tunnel_server_host=source.get("ssh_tunnel_server_host"),
                 ssh_tunnel_key_path=source.get("ssh_tunnel_key_path"),
                 database_host=source.get("database_host"),
@@ -274,7 +294,7 @@ class AMIAdapterConfiguration:
             if not any(s.org_id == org_id for s in sources):
                 continue
             backfills.append(
-                Backfill(
+                BackfillConfiguration(
                     org_id=org_id,
                     start_date=datetime.combine(
                         start_date, datetime.min.time(), tzinfo=UTC
@@ -292,7 +312,7 @@ class AMIAdapterConfiguration:
             "sns_arn"
         )
         if on_failure_sns_arn:
-            notifications = ConfiguredNotifications(
+            notifications = NotificationsConfiguration(
                 on_failure_sns_arn=on_failure_sns_arn
             )
         else:
@@ -312,14 +332,6 @@ class AMIAdapterConfiguration:
         Preferred method for instantiating AMI Adapters off of a user's configuration.
         Reads configuration to see which adapters to run and where to store the data.
         """
-        # Circular import, TODO fix
-        from amiadapters.adapters.aclara import AclaraAdapter
-        from amiadapters.adapters.beacon import Beacon360Adapter
-        from amiadapters.adapters.metersense import MetersenseAdapter
-        from amiadapters.adapters.sentryx import SentryxAdapter
-        from amiadapters.adapters.subeca import SubecaAdapter
-        from amiadapters.adapters.xylem_moulton_niguel import XylemMoultonNiguelAdapter
-
         adapters = []
         for source in self._sources:
             match source.type:
@@ -457,240 +469,6 @@ class AMIAdapterConfiguration:
         return f"sources=[{", ".join(str(s) for s in self._sources)}]"
 
 
-class SecretsBase:
-    """
-    Base class for secrets dataclasses, with convenience method to convert to JSON.
-    Secrets dataclasses define the secrets needed for a particular source or sink type.
-    They are serialized directly to JSON for storage in AWS Secrets Manager.
-    """
-
-    def to_json(self) -> str:
-        return json.dumps(asdict(self))
-
-
-@dataclass
-class SnowflakeSecrets(SecretsBase):
-    account: str
-    user: str
-    password: str
-    role: str
-    warehouse: str
-    database: str
-    schema: str
-
-
-@dataclass
-class AclaraSecrets(SecretsBase):
-    sftp_user: str
-    sftp_password: str
-
-
-@dataclass
-class Beacon360Secrets(SecretsBase):
-    user: str
-    password: str
-
-
-@dataclass
-class MetersenseSecrets(SecretsBase):
-    ssh_tunnel_username: str
-    database_db_name: str
-    database_user: str
-    database_password: str
-
-
-@dataclass
-class NeptuneSecrets(SecretsBase):
-    site_id: str
-    api_key: str
-    client_id: str
-    client_secret: str
-
-
-@dataclass
-class SentryxSecrets(SecretsBase):
-    api_key: str
-
-
-@dataclass
-class SubecaSecrets(SecretsBase):
-    api_key: str
-
-
-@dataclass
-class XylemMoultonNiguelSecrets(SecretsBase):
-    ssh_tunnel_username: str
-    database_db_name: str
-    database_user: str
-    database_password: str
-
-
-def get_secrets_class_type(secret_type: str):
-    match secret_type:
-        case "aclara":
-            return AclaraSecrets
-        case "beacon_360":
-            return Beacon360Secrets
-        case "metersense":
-            return MetersenseSecrets
-        case "neptune":
-            return NeptuneSecrets
-        case "sentryx":
-            return SentryxSecrets
-        case "subeca":
-            return SubecaSecrets
-        case "xylem_moulton_niguel":
-            return XylemMoultonNiguelSecrets
-        case "snowflake":
-            return SnowflakeSecrets
-        case _:
-            raise ValueError(f"Unrecognized secrets class name: {secret_type}")
-
-
-class ConfiguredStorageSinkType:
-    SNOWFLAKE = "snowflake"
-
-
-class ConfiguredStorageSink:
-    """
-    Configuration for a storage sink. We include convenience methods for
-    creating connections off of the configuration.
-    """
-
-    def __init__(
-        self,
-        type: str,
-        id: str,
-        secrets: Union[SnowflakeSecrets],
-        data_quality_check_names: List = None,
-    ):
-        self.type = self._type(type)
-        self.id = self._id(id)
-        self.secrets = self._secrets(secrets)
-        self.data_quality_check_names = data_quality_check_names or []
-
-    def connection(self):
-        match self.type:
-            case ConfiguredStorageSinkType.SNOWFLAKE:
-                return create_snowflake_connection(
-                    account=self.secrets.account,
-                    user=self.secrets.user,
-                    password=self.secrets.password,
-                    warehouse=self.secrets.warehouse,
-                    database=self.secrets.database,
-                    schema=self.secrets.schema,
-                    role=self.secrets.role,
-                )
-            case _:
-                ValueError(f"Unrecognized type {self.type}")
-
-    def checks(self) -> List:
-        """
-        Return names of configured data quality checks for this sink.
-        """
-        from amiadapters.storage.base import BaseAMIDataQualityCheck
-
-        conn = self.connection()
-        checks_by_name = BaseAMIDataQualityCheck.get_all_checks_by_name(conn)
-        result = []
-        for name in self.data_quality_check_names:
-            if name in checks_by_name:
-                result.append(checks_by_name[name])
-            else:
-                raise ValueError(
-                    f"Unrecognized data quality check name: {name}. Choices are: {", ".join(checks_by_name.keys())}"
-                )
-        return result
-
-    def _type(self, type: str) -> str:
-        if type in {
-            ConfiguredStorageSinkType.SNOWFLAKE,
-        }:
-            return type
-        raise ValueError(f"Unrecognized storage sink type: {type}")
-
-    def _id(self, id: str) -> str:
-        if id is None:
-            raise ValueError("Storage sink must have id")
-        return id
-
-    def _secrets(self, secrets: Union[SnowflakeSecrets]) -> Union[SnowflakeSecrets]:
-        if self.type == ConfiguredStorageSinkType.SNOWFLAKE and isinstance(
-            secrets, SnowflakeSecrets
-        ):
-            return secrets
-        raise ValueError(f"Unrecognized secret type for sink type {self.type}")
-
-
-class ConfiguredLocalTaskOutputController:
-
-    def __init__(self, output_folder: str):
-        self.type = IntermediateOutputType.LOCAL.value
-        self.output_folder = self._output_folder(output_folder)
-
-    def _output_folder(self, output_folder: str) -> str:
-        if output_folder is None:
-            raise ValueError(
-                "ConfiguredLocalTaskOutputController must have output_folder"
-            )
-        return output_folder
-
-
-class ConfiguredS3TaskOutputController:
-
-    def __init__(self, dev_aws_profile_name: str, s3_bucket_name: str):
-        self.type = IntermediateOutputType.S3.value
-        # Only use for specifying local development AWS credentials. Prod should use
-        # IAM role provisioned in terraform.
-        self.dev_aws_profile_name = dev_aws_profile_name
-        self.s3_bucket_name = self._s3_bucket_name(s3_bucket_name)
-
-    def _s3_bucket_name(self, s3_bucket_name: str) -> str:
-        if s3_bucket_name is None:
-            raise ValueError(
-                "ConfiguredS3TaskOutputController must have s3_bucket_name"
-            )
-        return s3_bucket_name
-
-
-@dataclass
-class ConfiguredNotifications:
-    """
-    Configuration for sending notifications on DAG/task state change, or other
-    """
-
-    on_failure_sns_arn: str  # SNS Topic ARN for notifications when DAGs fail
-
-
-@dataclass
-class Backfill:
-    """
-    Configuration for backfilling an organization's data from start_date to end_date.
-    """
-
-    org_id: str
-    start_date: datetime
-    end_date: datetime
-    interval_days: str  # Number of days to backfill in one run
-    schedule: str  # crontab-formatted string specifying run schedule
-
-
-@dataclass
-class ConfiguredSftp:
-    host: str
-    remote_data_directory: str
-    local_download_directory: str
-    local_known_hosts_file: str
-
-
-@dataclass
-class ConfiguredSSHTunnelToDatabase:
-    ssh_tunnel_server_host: str
-    ssh_tunnel_key_path: str
-    database_host: str
-    database_port: str
-
-
 class SourceSchema:
     """
     Definition of a source, its secrets configuration and which types of storage
@@ -700,9 +478,7 @@ class SourceSchema:
     def __init__(
         self,
         type: str,
-        secret_type: Union[
-            AclaraSecrets, Beacon360Secrets, MetersenseSecrets, SentryxSecrets
-        ],
+        secret_type: SecretsBase,
         valid_sink_types: List[ConfiguredStorageSinkType],
     ):
         self.type = type
@@ -750,14 +526,7 @@ class ConfiguredAMISourceType(Enum):
     def is_valid_secret_for_type(
         cls,
         the_type: str,
-        secret_type: Union[
-            AclaraSecrets,
-            Beacon360Secrets,
-            MetersenseSecrets,
-            SentryxSecrets,
-            SubecaSecrets,
-            XylemMoultonNiguelSecrets,
-        ],
+        secret_type: SecretsBase,
     ) -> bool:
         matching_schema = cls._matching_schema_for_type(the_type)
         return matching_schema.secret_type == secret_type
@@ -798,13 +567,11 @@ class ConfiguredAMISource:
         org_id: str,
         timezone: str,
         use_raw_data_cache: bool,
-        task_output_controller: Union[
-            ConfiguredLocalTaskOutputController, ConfiguredS3TaskOutputController
-        ],
+        task_output_controller: IntermediateOutputControllerConfiguration,
         utility_name: str,
         api_url: str,
-        configured_sftp: ConfiguredSftp,
-        configured_ssh_tunnel_to_database: ConfiguredSSHTunnelToDatabase,
+        configured_sftp: SftpConfiguration,
+        configured_ssh_tunnel_to_database: SSHTunnelToDatabaseConfiguration,
         secrets: Union[Beacon360Secrets, SentryxSecrets],
         sinks: List[ConfiguredStorageSink],
         external_adapter_location: str,
@@ -843,15 +610,13 @@ class ConfiguredAMISource:
 
     def _task_output_controller(
         self,
-        task_output_controller: Union[
-            ConfiguredLocalTaskOutputController, ConfiguredS3TaskOutputController
-        ],
-    ) -> Union[ConfiguredLocalTaskOutputController, ConfiguredS3TaskOutputController]:
+        task_output_controller: IntermediateOutputControllerConfiguration,
+    ) -> IntermediateOutputControllerConfiguration:
         if task_output_controller is None:
             raise ValueError("AMI Source must have task_output_controller")
         return task_output_controller
 
-    def _configured_sftp(self, configured_sftp: ConfiguredSftp) -> ConfiguredSftp:
+    def _configured_sftp(self, configured_sftp: SftpConfiguration) -> SftpConfiguration:
         if self.type == ConfiguredAMISourceType.ACLARA.value.type:
             if any(
                 i is None
@@ -868,8 +633,8 @@ class ConfiguredAMISource:
         return configured_sftp
 
     def _configured_ssh_tunnel_to_database(
-        self, configured_ssh_tunnel_to_database: ConfiguredSSHTunnelToDatabase
-    ) -> ConfiguredSSHTunnelToDatabase:
+        self, configured_ssh_tunnel_to_database: SSHTunnelToDatabaseConfiguration
+    ) -> SSHTunnelToDatabaseConfiguration:
         if self.type == ConfiguredAMISourceType.METERSENSE.value.type:
             if any(
                 i is None
