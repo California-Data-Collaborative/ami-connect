@@ -5,8 +5,6 @@ from enum import Enum
 import json
 from typing import List, Union
 
-from amiadapters.configuration.base import create_snowflake_connection
-
 
 class IntermediateOutputType(str, Enum):
     LOCAL = "local"  # Extract and Transform outputs go to local filesystem
@@ -189,6 +187,7 @@ class ConfiguredStorageSink:
         self.data_quality_check_names = data_quality_check_names or []
 
     def connection(self):
+        from amiadapters.configuration.base import create_snowflake_connection
         match self.type:
             case ConfiguredStorageSinkType.SNOWFLAKE:
                 return create_snowflake_connection(

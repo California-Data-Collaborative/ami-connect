@@ -17,10 +17,7 @@ from typing_extensions import Annotated
 
 import typer
 
-from amiadapters.config import (
-    AMIAdapterConfiguration,
-    get_secrets_class_type,
-)
+from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.configuration.base import (
     add_data_quality_check_configurations,
     add_source_configuration,
@@ -39,7 +36,7 @@ from amiadapters.configuration.base import (
     update_task_output_configuration,
 )
 from amiadapters.configuration.env import set_global_aws_profile, set_global_aws_region
-from amiadapters.configuration.models import IntermediateOutputType
+from amiadapters.configuration.models import IntermediateOutputType, get_secrets_class_type
 from amiadapters.configuration.secrets import get_secrets, SecretType
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
