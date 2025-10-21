@@ -97,6 +97,7 @@ class Beacon360Adapter(BaseAMIAdapter):
         use_cache: bool,
         org_id: str,
         org_timezone: DstTzInfo,
+        pipeline_configuration,
         configured_task_output_controller,
         configured_sinks,
         cache_output_folder: str = "./output",
@@ -108,6 +109,7 @@ class Beacon360Adapter(BaseAMIAdapter):
         super().__init__(
             org_id,
             org_timezone,
+            pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
             BeaconRawSnowflakeLoader(),

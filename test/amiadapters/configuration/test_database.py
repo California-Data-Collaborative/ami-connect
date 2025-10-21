@@ -130,6 +130,7 @@ class TestDatabase(BaseTestCase):
                     "intermediate_output_dev_profile": "my-aws-profile",
                     "intermediate_output_local_output_path": None,
                     "run_post_processors": True,
+                    "publish_load_finished_events": False,
                 },
             ]
         elif table_name == "configuration_notifications":
@@ -169,6 +170,7 @@ class TestDatabase(BaseTestCase):
             pipeline_config.intermediate_output_s3_bucket,
         )
         self.assertTrue(pipeline_config.should_run_post_processor)
+        self.assertFalse(pipeline_config.should_publish_load_finished_events)
         self.assertEqual(expected["notifications"], notifications)
         self.assertEqual(expected["backfills"], backfills)
 

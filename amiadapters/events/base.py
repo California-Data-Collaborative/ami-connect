@@ -9,6 +9,7 @@ from amiadapters.configuration.env import get_global_aws_profile, get_global_aws
 logger = logging.getLogger(__name__)
 
 
+# Matches value in terraform code that creates the SQS queue
 LOAD_FINISHED_QUEUE_NAME = "ami-connect-dag-event-queue"
 
 

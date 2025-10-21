@@ -7,7 +7,8 @@ CREATE TABLE if not exists configuration_pipeline (
     intermediate_output_s3_bucket STRING,
     intermediate_output_dev_profile STRING,
     intermediate_output_local_output_path STRING,
-    run_post_processors BOOLEAN NOT NULL
+    run_post_processors BOOLEAN NOT NULL DEFAULT TRUE,
+    publish_load_finished_events BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- =========================================

@@ -24,6 +24,7 @@ class TestAclaraAdapter(BaseTestCase):
         self.adapter = AclaraAdapter(
             org_id="this-org",
             org_timezone=pytz.timezone("Europe/Rome"),
+            pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
             configured_sftp=SftpConfiguration(
                 host="example.com",
                 remote_data_directory="/remote",
@@ -32,9 +33,7 @@ class TestAclaraAdapter(BaseTestCase):
             ),
             sftp_user="user",
             sftp_password="pw",
-            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
-                "/tmp/output"
-            ),
+            configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
             configured_sinks=[],
         )
         self.range_start = datetime(2024, 1, 2, 0, 0)

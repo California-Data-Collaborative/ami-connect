@@ -144,9 +144,8 @@ class TestSentryxAdapter(BaseTestCase):
             api_key="key",
             org_id="this-utility",
             org_timezone=pytz.timezone("Africa/Algiers"),
-            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
-                "/tmp/output"
-            ),
+            pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
+            configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
             configured_sinks=[],
             utility_name="my-utility-name",
         )

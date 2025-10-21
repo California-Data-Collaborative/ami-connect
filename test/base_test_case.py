@@ -2,10 +2,26 @@ import logging
 from pathlib import Path
 import unittest
 
+from amiadapters.configuration.models import PipelineConfiguration
+from amiadapters.configuration.models import (
+    LocalIntermediateOutputControllerConfiguration,
+)
+
 
 class BaseTestCase(unittest.TestCase):
 
     FIXTURE_DIR = Path(__file__).parent / "fixtures"
+    TEST_PIPELINE_CONFIGURATION = PipelineConfiguration(
+        intermediate_output_type=None,
+        intermediate_output_s3_bucket=None,
+        intermediate_output_dev_profile=None,
+        intermediate_output_local_output_path="/tmp/output",
+        should_run_post_processor=True,
+        should_publish_load_finished_events=False,
+    )
+    TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION = (
+        LocalIntermediateOutputControllerConfiguration("/tmp/output")
+    )
 
     # Silence logging for all tests
     logging.disable(logging.CRITICAL)

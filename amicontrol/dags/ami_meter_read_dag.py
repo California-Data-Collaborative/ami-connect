@@ -23,7 +23,6 @@ def ami_control_dag_factory(
     params,
     adapter,
     on_failure_sns_notifier,
-    should_run_post_processor,
     backfill_params=None,
 ):
     """
@@ -47,14 +46,7 @@ def ami_control_dag_factory(
         @task()
         def extract(adapter: BaseAMIAdapter, **context):
             run_id = context["dag_run"].run_id
-
-            # start and end dates from Airflow UI, if specified
-            start_from_params = context["params"].get("extract_range_start")
-            end_from_params = context["params"].get("extract_range_end")
-
-            start, end = adapter.calculate_extract_range(
-                start_from_params, end_from_params, backfill_params=backfill_params
-            )
+            start, end = _calculate_extract_range(adapter, context)
             adapter.extract_and_output(run_id, start, end)
 
         @task()
@@ -75,11 +67,8 @@ def ami_control_dag_factory(
         @task()
         def post_process(**context):
             run_id = context["dag_run"].run_id
-            if should_run_post_processor:
-                logger.info("Running post processor as configured")
-                adapter.post_process(run_id)
-            else:
-                logger.info("Skipping post processor as configured")
+            start, end = _calculate_extract_range(adapter, context)
+            adapter.post_process(run_id, start, end)
 
         # Set sequence of tasks for this utility
         (
@@ -94,6 +83,20 @@ def ami_control_dag_factory(
             ]
             >> post_process.override(task_id=f"post-process-{adapter.name()}")()
         )
+
+        def _calculate_extract_range(
+            adapter, context: dict
+        ) -> tuple[datetime, datetime]:
+            """
+            Given the DAG's inputs, figure out the start and end range for the pipeline's extract.
+            Could come from DAG params, from backfill configuration, or could rely on default values.
+            """
+            # start and end dates from Airflow UI, if specified
+            start_from_params = context["params"].get("extract_range_start")
+            end_from_params = context["params"].get("extract_range_end")
+            return adapter.calculate_extract_range(
+                start_from_params, end_from_params, backfill_params=backfill_params
+            )
 
     ami_control_dag()
 
@@ -132,7 +135,6 @@ for adapter in utility_adapters:
         standard_params,
         adapter,
         on_failure_sns_notifier,
-        config.should_run_post_processors(),
     )
 
     # Standard run that fetches most recent meter read data
@@ -142,7 +144,6 @@ for adapter in utility_adapters:
         {},
         adapter,
         on_failure_sns_notifier,
-        config.should_run_post_processors(),
     )
 
 # Create DAGs for configured backfill runs
@@ -156,7 +157,6 @@ for backfill in backfills:
         {},
         matching_adapters[0],
         on_failure_sns_notifier,
-        config.should_run_post_processors(),
         backfill_params=backfill,
     )
 

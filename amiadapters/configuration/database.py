@@ -154,6 +154,7 @@ def _parse_pipeline_configuration(all_config: dict) -> PipelineConfiguration:
             "intermediate_output_local_output_path"
         ],
         should_run_post_processor=row["run_post_processors"],
+        should_publish_load_finished_events=row["publish_load_finished_events"],
     )
 
 

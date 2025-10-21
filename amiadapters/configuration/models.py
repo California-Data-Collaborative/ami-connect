@@ -18,6 +18,7 @@ class PipelineConfiguration:
     intermediate_output_dev_profile: str
     intermediate_output_local_output_path: str
     should_run_post_processor: bool
+    should_publish_load_finished_events: bool
 
 
 @dataclass

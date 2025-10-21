@@ -155,6 +155,7 @@ class SentryxAdapter(BaseAMIAdapter):
         api_key: str,
         org_id: str,
         org_timezone: str,
+        pipeline_configuration,
         configured_task_output_controller,
         configured_sinks,
         utility_name: str = None,
@@ -168,6 +169,7 @@ class SentryxAdapter(BaseAMIAdapter):
         super().__init__(
             org_id,
             org_timezone,
+            pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
             SentryxRawSnowflakeLoader(),

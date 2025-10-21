@@ -20,11 +20,10 @@ class TestBaseAdapter(BaseTestCase):
             api_user="user",
             api_password="pass",
             use_cache=False,
+            pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
             org_id="this-org",
             org_timezone=pytz.timezone("Europe/Rome"),
-            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
-                "output"
-            ),
+            configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
             configured_sinks=[],
         )
 

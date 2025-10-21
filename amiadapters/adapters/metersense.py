@@ -207,6 +207,7 @@ class MetersenseAdapter(BaseAMIAdapter):
         self,
         org_id,
         org_timezone,
+        pipeline_configuration,
         configured_task_output_controller,
         ssh_tunnel_server_host,
         ssh_tunnel_username,
@@ -239,6 +240,7 @@ class MetersenseAdapter(BaseAMIAdapter):
         super().__init__(
             org_id,
             org_timezone,
+            pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
             MetersenseRawSnowflakeLoader(),

@@ -48,17 +48,17 @@ class AMIAdapterConfiguration:
         self,
         sources,
         task_output_controller,
+        pipeline_configuration: PipelineConfiguration,
         backfills=None,
         notifications=None,
         sinks=None,
-        should_run_post_processors=True,
     ):
         self._sources = sources
         self._task_output_controller = task_output_controller
+        self._pipeline_configuration = pipeline_configuration
         self._backfills = backfills if backfills is not None else []
         self._notifications = notifications
         self._sinks = sinks if sinks is not None else []
-        self._should_run_post_processors = should_run_post_processors
 
     @classmethod
     def from_yaml(cls, config_file: str, secrets_file: str):
@@ -80,6 +80,9 @@ class AMIAdapterConfiguration:
             intermediate_output_dev_profile=task_output.get("dev_profile"),
             intermediate_output_local_output_path=task_output.get("output_folder"),
             should_run_post_processor=pipeline.get("run_post_processors", True),
+            should_publish_load_finished_events=pipeline.get(
+                "should_publish_load_finished_events", True
+            ),
         )
 
         return cls._make_instance(
@@ -321,10 +324,10 @@ class AMIAdapterConfiguration:
         return AMIAdapterConfiguration(
             sources=sources,
             task_output_controller=task_output_controller,
+            pipeline_configuration=pipeline_configuration,
             backfills=backfills,
             notifications=notifications,
             sinks=all_sinks,
-            should_run_post_processors=pipeline_configuration.should_run_post_processor,
         )
 
     def adapters(self):
@@ -340,6 +343,7 @@ class AMIAdapterConfiguration:
                         AclaraAdapter(
                             source.org_id,
                             source.timezone,
+                            self._pipeline_configuration,
                             source.configured_sftp,
                             source.secrets.sftp_user,
                             source.secrets.sftp_password,
@@ -355,6 +359,7 @@ class AMIAdapterConfiguration:
                             source.use_raw_data_cache,
                             source.org_id,
                             source.timezone,
+                            self._pipeline_configuration,
                             source.task_output_controller,
                             source.storage_sinks,
                         )
@@ -364,6 +369,7 @@ class AMIAdapterConfiguration:
                         MetersenseAdapter(
                             source.org_id,
                             source.timezone,
+                            self._pipeline_configuration,
                             source.task_output_controller,
                             ssh_tunnel_server_host=source.configured_ssh_tunnel_to_database.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
@@ -389,6 +395,7 @@ class AMIAdapterConfiguration:
                         NeptuneAdapter(
                             source.org_id,
                             source.timezone,
+                            self._pipeline_configuration,
                             source.secrets.site_id,
                             source.secrets.api_key,
                             source.secrets.client_id,
@@ -403,6 +410,7 @@ class AMIAdapterConfiguration:
                             source.secrets.api_key,
                             source.org_id,
                             source.timezone,
+                            self._pipeline_configuration,
                             source.task_output_controller,
                             source.storage_sinks,
                             utility_name=source.utility_name,
@@ -413,6 +421,7 @@ class AMIAdapterConfiguration:
                         SubecaAdapter(
                             source.org_id,
                             source.timezone,
+                            self._pipeline_configuration,
                             source.api_url,
                             source.secrets.api_key,
                             source.task_output_controller,
@@ -424,6 +433,7 @@ class AMIAdapterConfiguration:
                         XylemMoultonNiguelAdapter(
                             source.org_id,
                             source.timezone,
+                            self._pipeline_configuration,
                             source.task_output_controller,
                             ssh_tunnel_server_host=source.configured_ssh_tunnel_to_database.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
@@ -461,9 +471,6 @@ class AMIAdapterConfiguration:
 
     def task_output_controller(self):
         return self._task_output_controller
-
-    def should_run_post_processors(self) -> bool:
-        return self._should_run_post_processors
 
     def __repr__(self):
         return f"sources=[{", ".join(str(s) for s in self._sources)}]"
