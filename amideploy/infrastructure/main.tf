@@ -210,6 +210,47 @@ resource "aws_iam_role_policy_attachment" "airflow_attach_sns" {
   policy_arn = aws_iam_policy.airflow_sns_publish.arn
 }
 
+# SQS queue
+resource "aws_sqs_queue" "ami_connect_dag_event_queue" {
+  name                      = "ami-connect-dag-event-queue"
+  visibility_timeout_seconds = 3600   # 1 hour for processing
+  message_retention_seconds  = 604800 # 7 days
+  receive_wait_time_seconds = 20  # Enable long polling
+
+  tags = {
+    Name = var.ami_connect_tag
+  }
+}
+
+# Allow EC2 to use SQS
+resource "aws_iam_policy" "sqs_access_policy" {
+  name        = "ami-connect-sqs-access"
+  description = "Allow EC2 to send and receive messages from SQS queue"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage",
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueUrl",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = aws_sqs_queue.ami_connect_dag_event_queue.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "attach_sqs_policy" {
+  role       = aws_iam_role.ami_connect_pipeline.name
+  policy_arn = aws_iam_policy.sqs_access_policy.arn
+}
+
+# Elastic IP
 resource "aws_eip" "ami_connect_airflow_server_ip" {
   instance = aws_instance.ami_connect_airflow_server.id
 

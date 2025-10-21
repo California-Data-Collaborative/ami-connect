@@ -41,6 +41,7 @@ from amiadapters.configuration.models import (
     get_secrets_class_type,
 )
 from amiadapters.configuration.secrets import get_secrets, SecretType
+from amiadapters.events.base import EventSubscriber
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
 
@@ -117,21 +118,21 @@ def run(
             start_date,
             end_date,
         )
-        logger.info(f"Extracting data for {adapter.name()} from {start} to {end}")
-        adapter.extract_and_output(run_id, start, end)
-        logger.info(f"Extracted data for {adapter.name()}")
+        # logger.info(f"Extracting data for {adapter.name()} from {start} to {end}")
+        # adapter.extract_and_output(run_id, start, end)
+        # logger.info(f"Extracted data for {adapter.name()}")
 
-        logger.info(f"Transforming data for {adapter.name()}")
-        adapter.transform_and_output(run_id)
-        logger.info(f"Transformed data for {adapter.name()}")
+        # logger.info(f"Transforming data for {adapter.name()}")
+        # adapter.transform_and_output(run_id)
+        # logger.info(f"Transformed data for {adapter.name()}")
 
-        logger.info(f"Loading raw data for {adapter.name()}")
-        adapter.load_raw(run_id)
-        logger.info(f"Loaded raw data for {adapter.name()}")
+        # logger.info(f"Loading raw data for {adapter.name()}")
+        # adapter.load_raw(run_id)
+        # logger.info(f"Loaded raw data for {adapter.name()}")
 
-        logger.info(f"Loading transformed data for {adapter.name()}")
-        adapter.load_transformed(run_id)
-        logger.info(f"Loaded transformed data for {adapter.name()}")
+        # logger.info(f"Loading transformed data for {adapter.name()}")
+        # adapter.load_transformed(run_id)
+        # logger.info(f"Loaded transformed data for {adapter.name()}")
 
         logger.info(f"Executing postprocess data for {adapter.name()}")
         adapter.post_process(run_id)
@@ -173,6 +174,24 @@ def download_intermediate_output(
             f"Task output configuration with invalid type {configured_task_output_controller.type}"
         )
     controller.download_for_path(path, "./output", decompress=True)
+
+
+@app.command()
+@sets_environment_from_profile
+def read_event_queue(
+    name: Annotated[
+        str,
+        typer.Argument(
+            help="Path or prefix of path to files for download. If S3, can be anything after the bucket name, e.g. for s3://my-ami-connect-bucket/intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 you may enter intermediate_outputs/scheduled__2025-09-15T19:25:00+00:00 ."
+        ),
+    ],
+    profile: ANNOTATION__PROFILE = None,
+):
+    """
+    Read a message from the given event queue. Helpful for debugging changes to the event publisher system.
+    """
+    subscriber = EventSubscriber()
+    subscriber.print_message_from_queue(name)
 
 
 ########################################################################################

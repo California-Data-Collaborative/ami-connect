@@ -42,13 +42,23 @@ class S3TaskOutputController(BaseTaskOutputController):
         self.s3_prefix = s3_prefix.strip("/")
 
         if s3_client is None:
-            if aws_profile_name:
+            # TODO clean up
+            from amiadapters.configuration.env import get_global_aws_profile
+
+            profile = get_global_aws_profile()
+            # if profile:
+            #     session = boto3.Session(profile_name=profile)
+            #     return session.client("secretsmanager", region_name=region)
+            # else:
+            #     # Use default boto3 client (e.g. IAM role on EC2)
+            #     return boto3.client("secretsmanager", region_name=region)
+            if profile:
                 try:
-                    session = boto3.Session(profile_name=aws_profile_name)
+                    session = boto3.Session(profile_name=profile)
                     self.s3 = session.client("s3")
                 except ProfileNotFound as e:
                     logger.info(
-                        f"AWS profile '{aws_profile_name}' not found, falling back to default"
+                        f"AWS profile '{profile}' not found, falling back to default"
                     )
                     self.s3 = boto3.client("s3")
             else:

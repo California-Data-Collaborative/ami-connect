@@ -157,6 +157,19 @@ class BaseAMIAdapter(ABC):
                 f"Running post processor for sink {sink.__class__.__name__} from {start_date} to {end_date}"
             )
             sink.exec_postprocessor(run_id, start_date, end_date)
+        # TODO cleanup
+        # TODO check settings to see if we should publish event
+        # TODO consider decoupling from the leak queries
+        # TODO use the right date range, make sure it's okay for leak detection to do the same
+        from amiadapters.events.base import EventPublisher
+
+        event_publisher = EventPublisher()
+        event_publisher.publish_load_finished_event(
+            run_id=run_id,
+            org_id=self.org_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
     def load_transformed(self, run_id: str):
         """
