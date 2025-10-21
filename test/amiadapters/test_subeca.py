@@ -76,11 +76,10 @@ class TestSubecaAdapter(BaseTestCase):
         self.adapter = SubecaAdapter(
             org_id="this-utility",
             org_timezone=pytz.timezone("Africa/Algiers"),
+            pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
             api_url="my-url",
             api_key="test-key",
-            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
-                "/tmp/output"
-            ),
+            configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
             configured_sinks=[],
         )
         self.start_date = datetime.datetime(2024, 1, 2, 0, 0)

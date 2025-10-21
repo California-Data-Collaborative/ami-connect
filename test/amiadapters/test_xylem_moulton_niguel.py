@@ -28,9 +28,8 @@ class TestMetersenseAdapter(BaseTestCase):
         self.adapter = XylemMoultonNiguelAdapter(
             org_id="this-org",
             org_timezone=self.tz,
-            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
-                "/tmp/output"
-            ),
+            pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
+            configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
             configured_sinks=[],
             ssh_tunnel_server_host="tunnel-ip",
             ssh_tunnel_username="ubuntu",

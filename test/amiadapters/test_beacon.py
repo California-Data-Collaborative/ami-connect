@@ -135,12 +135,11 @@ class TestBeacon360Adapter(BaseTestCase):
         self.adapter = Beacon360Adapter(
             api_user="user",
             api_password="pass",
+            pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
             use_cache=False,
             org_id="this-org",
             org_timezone=pytz.timezone("Europe/Rome"),
-            configured_task_output_controller=LocalIntermediateOutputControllerConfiguration(
-                "/tmp/output"
-            ),
+            configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
             configured_sinks=[],
             cache_output_folder="/tmp/output",
         )

@@ -69,6 +69,7 @@ class SubecaAdapter(BaseAMIAdapter):
         self,
         org_id: str,
         org_timezone: str,
+        pipeline_configuration,
         api_url: str,
         api_key: str,
         configured_task_output_controller,
@@ -79,6 +80,7 @@ class SubecaAdapter(BaseAMIAdapter):
         super().__init__(
             org_id,
             org_timezone,
+            pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
             SubecaRawSnowflakeLoader(),

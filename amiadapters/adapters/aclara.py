@@ -61,6 +61,7 @@ class AclaraAdapter(BaseAMIAdapter):
         self,
         org_id,
         org_timezone,
+        pipeline_configuration,
         configured_sftp: SftpConfiguration,
         sftp_user,
         sftp_password,
@@ -76,6 +77,7 @@ class AclaraAdapter(BaseAMIAdapter):
         super().__init__(
             org_id,
             org_timezone,
+            pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
             AclaraRawSnowflakeLoader(),

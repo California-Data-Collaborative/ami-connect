@@ -10,6 +10,8 @@ from amiadapters.configuration.models import BackfillConfiguration
 from amiadapters.configuration.models import ConfiguredStorageSink
 from amiadapters.configuration.models import ConfiguredStorageSinkType
 from amiadapters.configuration.models import IntermediateOutputType
+from amiadapters.configuration.models import PipelineConfiguration
+from amiadapters.events.base import EventPublisher
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
@@ -30,6 +32,7 @@ class BaseAMIAdapter(ABC):
         self,
         org_id: str,
         org_timezone: DstTzInfo,
+        pipeline_configuration: PipelineConfiguration,
         configured_task_output_controller,
         configured_sinks: List[ConfiguredStorageSink] = None,
         raw_snowflake_loader: RawSnowflakeLoader = None,
@@ -40,6 +43,7 @@ class BaseAMIAdapter(ABC):
         """
         self.org_id = org_id
         self.org_timezone = org_timezone
+        self.pipeline_configuration = pipeline_configuration
         self.output_controller = self._create_task_output_controller(
             configured_task_output_controller, org_id
         )
@@ -149,14 +153,41 @@ class BaseAMIAdapter(ABC):
         for sink in self.storage_sinks:
             sink.store_raw(run_id, extract_outputs)
 
-    def post_process(self, run_id: str):
-        for sink in self.storage_sinks:
-            end_date = datetime.today()
-            start_date = end_date - timedelta(days=30)
-            logger.info(
-                f"Running post processor for sink {sink.__class__.__name__} from {start_date} to {end_date}"
+    def post_process(
+        self,
+        run_id: str,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+    ):
+        # Sink post processing, e.g. leak detection queries
+        if self.pipeline_configuration.should_run_post_processor:
+            logger.info("Running sink post processor")
+            for sink in self.storage_sinks:
+                sink_post_process_end_date = datetime.today()
+                sink_post_process_start_date = sink_post_process_end_date - timedelta(
+                    days=30
+                )
+                logger.info(
+                    f"Running post processor for sink {sink.__class__.__name__} from {sink_post_process_start_date} to {sink_post_process_end_date}"
+                )
+                sink.exec_postprocessor(
+                    run_id, sink_post_process_start_date, sink_post_process_end_date
+                )
+        else:
+            logger.info("Skipping sink post processor as configured")
+
+        # Publish event saying we finished loading data
+        if self.pipeline_configuration.should_publish_load_finished_events:
+            logger.info("Publishing load finished event")
+            event_publisher = EventPublisher()
+            event_publisher.publish_load_finished_event(
+                run_id=run_id,
+                org_id=self.org_id,
+                start_date=extract_range_start,
+                end_date=extract_range_end,
             )
-            sink.exec_postprocessor(run_id, start_date, end_date)
+        else:
+            logger.info("Skipping load finished event publication as configured")
 
     def load_transformed(self, run_id: str):
         """
