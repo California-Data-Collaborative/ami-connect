@@ -163,7 +163,6 @@ for backfill in backfills:
 #######################################################
 # Configure data quality check DAG
 #######################################################
-on_failure_sns_notifier = config.on_failure_sns_notifier()
 checks = [check for storage_sink in config.sinks() for check in storage_sink.checks()]
 if checks:
 

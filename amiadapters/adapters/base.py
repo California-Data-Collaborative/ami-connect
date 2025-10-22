@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
 from typing import List, Tuple
@@ -113,8 +114,10 @@ class BaseAMIAdapter(ABC):
 
     def calculate_extract_range(
         self,
-        start: datetime,
-        end: datetime,
+        specified_start: datetime,
+        specified_end: datetime,
+        interval: timedelta = None,
+        lag: timedelta = timedelta(days=0),
         backfill_params: BackfillConfiguration = None,
     ) -> Tuple[datetime, datetime]:
         """
@@ -122,15 +125,20 @@ class BaseAMIAdapter(ABC):
         this is a backfill and calculates a range based on backfill parameters. Otherwise calculates
         a range for extracting recent data.
 
-        min_date: caps how far back we will backfill
-        max_date: caps how far forward we will backfill
-        interval_days: the number of days of data we should backfill
+        specified_start: explicitly stated start time, overrides other settings if this is not a backfill
+        specified_end: explicitly stated end time, overrides other settings if this is not a backfill
+        interval: if specified_start or specified_end is None, interval tells us how big the extract range should be.
+        lag: specified_start and specified_end are None, lag tells us if we should extract something farther
+            back than the most recent data. Defaults to a lag of zero, i.e. "extract the most recent data".
         """
-        range_calculator = ExtractRangeCalculator(
-            self.org_id, self.storage_sinks, self.default_extract_interval_days()
-        )
+        range_calculator = ExtractRangeCalculator(self.org_id, self.storage_sinks)
+        interval = interval or timedelta(days=self.default_extract_interval_days())
         calculated_start, calculated_end = range_calculator.calculate_extract_range(
-            start, end, backfill_params=backfill_params
+            specified_start,
+            specified_end,
+            interval,
+            lag,
+            backfill_params=backfill_params,
         )
         self._validate_extract_range(calculated_start, calculated_end)
         return calculated_start, calculated_end
@@ -409,30 +417,35 @@ class ExtractRangeCalculator:
         self,
         org_id: str,
         storage_sinks: List[BaseAMIStorageSink],
-        default_interval_days,
     ):
         """
         org_id: the org ID
         storage_sinks: sinks configured for this run. We use the Snowflake sink if we need to smartly calculate a range for backfills.
-        default_interval_days: number of days in a range, used if range size hasn't been explicitly told to us
         """
         self.org_id = org_id
         self.storage_sinks = storage_sinks
-        self.default_interval_days = default_interval_days
 
     def calculate_extract_range(
-        self, start: datetime, end: datetime, backfill_params: BackfillConfiguration
+        self,
+        specified_start: datetime,
+        specified_end: datetime,
+        interval: timedelta,
+        lag: timedelta,
+        backfill_params: BackfillConfiguration,
     ) -> Tuple[datetime, datetime]:
         """
         Returns a date range for which we should extract data. Automatically determines if
         this is a backfill and calculates a range based on backfill parameters. Otherwise calculates
         a range for extracting recent data.
 
-        min_date: caps how far back we will backfill
-        max_date: caps how far forward we will backfill
-        interval_days: the number of days of data we should backfill
+        specified_start: explicitly stated start time, overrides other settings if this is not a backfill
+        specified_end: explicitly stated end time, overrides other settings if this is not a backfill
+        interval: if specified_start or specified_end is None, interval tells us how big the extract range should be.
+        lag: specified_start and specified_end are None, lag tells us if we should extract something farther
+            back than the most recent data. Defaults to a lag of zero, i.e. "extract the most recent data".
         """
         if backfill_params is not None:
+            # This is a backfill, use the backfill config to find the range
             return self._calculate_backfill_range(
                 backfill_params.start_date,
                 backfill_params.end_date,
@@ -440,14 +453,25 @@ class ExtractRangeCalculator:
             )
         else:
             # Make sure our start and end are of type datetime
-            if isinstance(start, str):
-                start = datetime.fromisoformat(start)
-            if isinstance(end, str):
-                end = datetime.fromisoformat(end)
+            if isinstance(specified_start, str):
+                specified_start = datetime.fromisoformat(specified_start.strip())
+            if isinstance(specified_end, str):
+                specified_end = datetime.fromisoformat(specified_end.strip())
 
-            # If start or end hasn't been explicitly specified, we have to calculate it
-            if start is None or end is None:
-                start, end = self._default_date_range(start, end)
+            # If start and end are explicitly specified, just use them
+            if specified_start is not None and specified_end is not None:
+                start, end = specified_start, specified_end
+            else:
+                # Otherwise we have to calculate the range
+                if specified_start is None and specified_end is None:
+                    end = datetime.now() - lag
+                    start = end - interval
+                elif specified_start is not None and specified_end is None:
+                    end = specified_start + interval
+                    start = specified_start
+                elif specified_start is None and specified_end is not None:
+                    end = specified_end
+                    start = specified_end - interval
 
             return start, end
 
@@ -480,13 +504,19 @@ class ExtractRangeCalculator:
         start = end - timedelta(days=interval_days)
         return start, end
 
-    def _default_date_range(self, start: datetime, end: datetime):
-        if start is None and end is None:
-            end = datetime.now()
-            start = end - timedelta(days=self.default_interval_days)
-        elif start is not None and end is None:
-            end = start + timedelta(days=self.default_interval_days)
-        elif start is None and end is not None:
-            start = end - timedelta(days=self.default_interval_days)
 
-        return start, end
+@dataclass
+class ScheduledExtract:
+
+    name: str
+    lag: timedelta
+    interval: timedelta
+    schedule_crontab: str
+
+
+STANDARD_DAILY_SCHEDULED_EXTRACT = ScheduledExtract(
+    name="standard",
+    lag=timedelta(days=0),
+    interval=timedelta(days=2),
+    schedule_crontab="0 12 * * *",
+)
