@@ -10,6 +10,7 @@ from pytz.tzinfo import DstTzInfo
 import yaml
 
 from amiadapters.adapters.aclara import AclaraAdapter
+from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.adapters.beacon import Beacon360Adapter
 from amiadapters.adapters.metersense import MetersenseAdapter
 from amiadapters.adapters.sentryx import SentryxAdapter
@@ -330,7 +331,7 @@ class AMIAdapterConfiguration:
             sinks=all_sinks,
         )
 
-    def adapters(self):
+    def adapters(self) -> List[BaseAMIAdapter]:
         """
         Preferred method for instantiating AMI Adapters off of a user's configuration.
         Reads configuration to see which adapters to run and where to store the data.

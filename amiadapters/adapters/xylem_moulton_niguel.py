@@ -1,5 +1,5 @@
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 import logging
 import json
@@ -8,7 +8,11 @@ from typing import Dict, Generator, List, Set, Tuple, Union
 import psycopg2
 from pytz.tzinfo import DstTzInfo
 
-from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
+from amiadapters.adapters.base import (
+    BaseAMIAdapter,
+    GeneralMeterUnitOfMeasure,
+    ScheduledExtract,
+)
 from amiadapters.adapters.connections import open_ssh_tunnel
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
@@ -167,12 +171,16 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"xylem-moulton-niguel-{self.org_id}"
 
-    def default_extract_interval_days(self):
+    def scheduled_extracts(self) -> List[ScheduledExtract]:
         """
         We've seen in some cases that Moulton's meter reads aren't fully represented in the source until two days
         after the flowtime. We set our standard extract range to 3+ days to cover this lag.
         """
-        return 6
+        return [
+            ScheduledExtract(
+                interval=timedelta(days=6),
+            )
+        ]
 
     def _extract(
         self,

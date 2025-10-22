@@ -5,10 +5,7 @@ import pytz
 
 from amiadapters.adapters.base import ExtractRangeCalculator
 from amiadapters.adapters.beacon import Beacon360Adapter
-from amiadapters.configuration.models import (
-    BackfillConfiguration,
-    LocalIntermediateOutputControllerConfiguration,
-)
+from amiadapters.configuration.models import BackfillConfiguration
 from amiadapters.storage.snowflake import SnowflakeStorageSink
 from test.base_test_case import BaseTestCase
 
@@ -119,6 +116,15 @@ class TestBaseAdapter(BaseTestCase):
     def test_map_reading__unrecognized_unit(self):
         with self.assertRaises(ValueError, msg="Unrecognized unit of measure: Pounds"):
             self.adapter.map_reading(5.0, "Pounds")
+
+    def test_scheduled_extracts__default_schedule(self):
+        result = self.adapter.scheduled_extracts()
+        self.assertEqual(1, len(result))
+        extract = result[0]
+        self.assertEqual("standard", extract.name)
+        self.assertEqual(timedelta(days=2), extract.interval)
+        self.assertEqual(timedelta(days=0), extract.lag)
+        self.assertEqual("0 12 * * *", extract.schedule_crontab)
 
 
 class TestExtractRangeCalculator(BaseTestCase):

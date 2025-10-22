@@ -1,5 +1,5 @@
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
 from typing import Dict, Generator, List, Set, Tuple, Union
@@ -7,7 +7,7 @@ from typing import Dict, Generator, List, Set, Tuple, Union
 import oracledb
 from pytz.tzinfo import DstTzInfo
 
-from amiadapters.adapters.base import BaseAMIAdapter
+from amiadapters.adapters.base import BaseAMIAdapter, ScheduledExtract
 from amiadapters.adapters.connections import open_ssh_tunnel
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
@@ -249,12 +249,16 @@ class MetersenseAdapter(BaseAMIAdapter):
     def name(self) -> str:
         return f"metersense-{self.org_id}"
 
-    def default_extract_interval_days(self):
+    def scheduled_extracts(self) -> List[ScheduledExtract]:
         """
         We've seen in some cases that Metersense meter reads aren't fully represented in the source until two days
         after the flowtime. We set our standard extract range to 3+ days to cover this lag.
         """
-        return 3
+        return [
+            ScheduledExtract(
+                interval=timedelta(days=3),
+            )
+        ]
 
     def _extract(
         self,

@@ -22,6 +22,22 @@ from amiadapters.storage.snowflake import SnowflakeStorageSink, RawSnowflakeLoad
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class ScheduledExtract:
+    """
+    Used to configure a scheduled extract for a source using this adapter.
+    """
+
+    name: str = "standard"
+    lag: timedelta = timedelta(days=0)
+    interval: timedelta = timedelta(days=2)
+    schedule_crontab: str = "0 12 * * *"
+
+
+# Most adapters will use this standard daily extract with the default values
+STANDARD_DAILY_SCHEDULED_EXTRACT = ScheduledExtract()
+
+
 class BaseAMIAdapter(ABC):
     """
     Abstraction of an AMI data source. If you're adding a new type of data source,
@@ -58,6 +74,17 @@ class BaseAMIAdapter(ABC):
     @abstractmethod
     def name(self) -> str:
         pass
+
+    def scheduled_extracts(self) -> List[ScheduledExtract]:
+        """
+        List of scheduled extractions that must be run for a source that uses
+        this adapter type in order for their AMI data set to be complete.
+        Most adapter types will run a single "standard" daily extract that retrieves
+        the last ~2 days of data. Others will schedule additional extracts, e.g. on a lag that
+        re-retrieves last week's data. Adapters should override this function if they don't want
+        the default behavior.
+        """
+        return [STANDARD_DAILY_SCHEDULED_EXTRACT]
 
     def extract_and_output(
         self,
@@ -116,8 +143,8 @@ class BaseAMIAdapter(ABC):
         self,
         specified_start: datetime,
         specified_end: datetime,
-        interval: timedelta = None,
-        lag: timedelta = timedelta(days=0),
+        interval: timedelta,
+        lag: timedelta,
         backfill_params: BackfillConfiguration = None,
     ) -> Tuple[datetime, datetime]:
         """
@@ -132,7 +159,6 @@ class BaseAMIAdapter(ABC):
             back than the most recent data. Defaults to a lag of zero, i.e. "extract the most recent data".
         """
         range_calculator = ExtractRangeCalculator(self.org_id, self.storage_sinks)
-        interval = interval or timedelta(days=self.default_extract_interval_days())
         calculated_start, calculated_end = range_calculator.calculate_extract_range(
             specified_start,
             specified_end,
@@ -142,14 +168,6 @@ class BaseAMIAdapter(ABC):
         )
         self._validate_extract_range(calculated_start, calculated_end)
         return calculated_start, calculated_end
-
-    def default_extract_interval_days(self):
-        """
-        For extract tasks with an unspecified start and/or end date, we calculate the extract range.
-        This function determines the range size for this adapter type. Daily standard runs will use this
-        range. Override it if your adapter needs a different interval size for daily runs.
-        """
-        return 2
 
     def load_raw(self, run_id: str):
         """
@@ -503,20 +521,3 @@ class ExtractRangeCalculator:
             )
         start = end - timedelta(days=interval_days)
         return start, end
-
-
-@dataclass
-class ScheduledExtract:
-
-    name: str
-    lag: timedelta
-    interval: timedelta
-    schedule_crontab: str
-
-
-STANDARD_DAILY_SCHEDULED_EXTRACT = ScheduledExtract(
-    name="standard",
-    lag=timedelta(days=0),
-    interval=timedelta(days=2),
-    schedule_crontab="0 12 * * *",
-)
