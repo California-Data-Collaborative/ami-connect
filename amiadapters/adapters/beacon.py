@@ -132,11 +132,11 @@ class Beacon360Adapter(BaseAMIAdapter):
         return [
             # Get the last couple days of readings
             STANDARD_DAILY_SCHEDULED_EXTRACT,
-            # Re-retireve last week's readings
+            # Re-retireve readings from N days ago
             ScheduledExtract(
                 name="lagged",
                 interval=timedelta(days=1),
-                lag=timedelta(days=7),
+                lag=timedelta(days=14),
                 schedule_crontab="0 10 * * *",
             ),
         ]
