@@ -257,7 +257,6 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual("db-name", self.adapter.database_db_name)
         self.assertEqual("dbu", self.adapter.database_user)
         self.assertEqual("dbp", self.adapter.database_password)
-        self.assertEqual(3, self.adapter.default_extract_interval_days())
 
     @patch("amiadapters.adapters.metersense.open_ssh_tunnel")
     @patch("amiadapters.adapters.metersense.oracledb.connect")

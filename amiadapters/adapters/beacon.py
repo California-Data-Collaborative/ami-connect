@@ -11,7 +11,11 @@ from typing import Generator, List, Tuple
 from pytz.tzinfo import DstTzInfo
 import requests
 
-from amiadapters.adapters.base import BaseAMIAdapter
+from amiadapters.adapters.base import (
+    BaseAMIAdapter,
+    ScheduledExtract,
+    STANDARD_DAILY_SCHEDULED_EXTRACT,
+)
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader
@@ -117,6 +121,25 @@ class Beacon360Adapter(BaseAMIAdapter):
 
     def name(self) -> str:
         return f"beacon-360-{self.org_id}"
+
+    def scheduled_extracts(self) -> List[ScheduledExtract]:
+        """
+        We've seen that sources using the Beacon adapter don't get their full set of reads with
+        the standard daily polling - they get maybe 90% of the reads. The rest show up 3+ days
+        after flowtime. But Beacon limits the number of readings we can extract, so a larger
+        interval isn't possible. We use a lagged scheduled extract to go back for the full set of reads.
+        """
+        return [
+            # Get the last couple days of readings
+            STANDARD_DAILY_SCHEDULED_EXTRACT,
+            # Re-retireve last week's readings
+            ScheduledExtract(
+                name="lagged",
+                interval=timedelta(days=1),
+                lag=timedelta(days=7),
+                schedule_crontab="0 10 * * *",
+            ),
+        ]
 
     def _extract(
         self,

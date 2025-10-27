@@ -9,9 +9,6 @@ from amiadapters.adapters.beacon import (
     BeaconRawSnowflakeLoader,
     REQUESTED_COLUMNS,
 )
-from amiadapters.configuration.models import (
-    LocalIntermediateOutputControllerConfiguration,
-)
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 
@@ -151,6 +148,23 @@ class TestBeacon360Adapter(BaseTestCase):
         self.assertEqual("user", self.adapter.user)
         self.assertEqual("pass", self.adapter.password)
         self.assertEqual("beacon-360-this-org", self.adapter.name())
+        self.assertEqual(2, len(self.adapter.scheduled_extracts()))
+
+    def test_scheduled_extracts__scheduled_with_lag(self):
+        result = self.adapter.scheduled_extracts()
+        self.assertEqual(2, len(result))
+
+        standard_extract = result[0]
+        self.assertEqual("standard", standard_extract.name)
+        self.assertEqual(datetime.timedelta(days=2), standard_extract.interval)
+        self.assertEqual(datetime.timedelta(days=0), standard_extract.lag)
+        self.assertEqual("0 12 * * *", standard_extract.schedule_crontab)
+
+        lagged_extract = result[1]
+        self.assertEqual("lagged", lagged_extract.name)
+        self.assertEqual(datetime.timedelta(days=1), lagged_extract.interval)
+        self.assertEqual(datetime.timedelta(days=7), lagged_extract.lag)
+        self.assertEqual("0 10 * * *", lagged_extract.schedule_crontab)
 
     @mock.patch("requests.get")
     @mock.patch("requests.post")

@@ -5,10 +5,7 @@ import pytz
 
 from amiadapters.adapters.base import ExtractRangeCalculator
 from amiadapters.adapters.beacon import Beacon360Adapter
-from amiadapters.configuration.models import (
-    BackfillConfiguration,
-    LocalIntermediateOutputControllerConfiguration,
-)
+from amiadapters.configuration.models import BackfillConfiguration
 from amiadapters.storage.snowflake import SnowflakeStorageSink
 from test.base_test_case import BaseTestCase
 
@@ -128,8 +125,11 @@ class TestExtractRangeCalculator(BaseTestCase):
         self.snowflake_sink.calculate_end_of_backfill_range.return_value = 3
         sinks = [self.snowflake_sink]
         self.calculator = ExtractRangeCalculator(
-            org_id="my_org", storage_sinks=sinks, default_interval_days=2
+            org_id="my_org",
+            storage_sinks=sinks,
         )
+        self.interval = timedelta(days=2)
+        self.lag = timedelta(days=0)
 
     @patch("amiadapters.adapters.base.datetime")
     def test_calculate_extract_range__both_dates_none(self, mock_datetime):
@@ -143,7 +143,7 @@ class TestExtractRangeCalculator(BaseTestCase):
 
         # Test when both start and end are None
         result_start, result_end = self.calculator.calculate_extract_range(
-            None, None, backfill_params=None
+            None, None, self.interval, self.lag, backfill_params=None
         )
 
         # Verify results
@@ -152,22 +152,21 @@ class TestExtractRangeCalculator(BaseTestCase):
         mock_datetime.now.assert_called_once()
 
     @patch("amiadapters.adapters.base.datetime")
-    def test_calculate_extract_range__honors_default_interval_param(
-        self, mock_datetime
-    ):
-        default_interval_days = 5
+    def test_calculate_extract_range__honors_interval_param(self, mock_datetime):
+        other_interval = timedelta(days=5)
         calculator = ExtractRangeCalculator(
-            org_id="my_org", storage_sinks=[], default_interval_days=5
+            org_id="my_org",
+            storage_sinks=[],
         )
 
         end = datetime(2024, 1, 1)
         result_start, result_end = calculator.calculate_extract_range(
-            None, end, backfill_params=None
+            None, end, other_interval, self.lag, backfill_params=None
         )
 
         # Expected values
         expected_end = end
-        expected_start = end - timedelta(days=default_interval_days)
+        expected_start = end - timedelta(days=5)
 
         # Verify results
         self.assertEqual(result_start, expected_start)
@@ -183,7 +182,7 @@ class TestExtractRangeCalculator(BaseTestCase):
 
         # Test when start is None and end is provided
         result_start, result_end = self.calculator.calculate_extract_range(
-            None, end_date, backfill_params=None
+            None, end_date, self.interval, self.lag, backfill_params=None
         )
 
         # Verify results
@@ -200,7 +199,7 @@ class TestExtractRangeCalculator(BaseTestCase):
 
         # Test when start is provided and end is None
         result_start, result_end = self.calculator.calculate_extract_range(
-            start_date, None, backfill_params=None
+            start_date, None, self.interval, self.lag, backfill_params=None
         )
 
         # Verify results
@@ -218,7 +217,7 @@ class TestExtractRangeCalculator(BaseTestCase):
 
         # Test when both start and end are provided
         result_start, result_end = self.calculator.calculate_extract_range(
-            start_date, end_date, backfill_params=None
+            start_date, end_date, self.interval, self.lag, backfill_params=None
         )
 
         # Verify results
@@ -257,7 +256,7 @@ class TestExtractRangeCalculator(BaseTestCase):
 
         # Test when backfill
         result_start, result_end = self.calculator.calculate_extract_range(
-            None, None, backfill_params=backfill_params
+            None, None, self.interval, self.lag, backfill_params=backfill_params
         )
 
         expected_start = end_date - timedelta(days=3)
