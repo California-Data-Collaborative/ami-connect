@@ -24,10 +24,6 @@ resource "aws_security_group" "airflow_server_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = {
-    Name = var.ami_connect_tag
-  }
 }
 
 resource "aws_security_group" "airflow_db_sg" {
@@ -46,9 +42,5 @@ resource "aws_security_group" "airflow_db_sg" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = var.ami_connect_tag
   }
 }

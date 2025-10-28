@@ -6,10 +6,6 @@
 resource "aws_s3_bucket" "ami_connect_canaries_s3_bucket_name" {
   bucket = var.ami_connect_canaries_s3_bucket_name
   force_destroy = true
-
-  tags = {
-    Name = var.ami_connect_tag
-  }
 }
 
 locals {
