@@ -16,8 +16,4 @@ resource "aws_db_instance" "ami_connect_airflow_metastore" {
   vpc_security_group_ids     = [aws_security_group.airflow_db_sg.id]
   skip_final_snapshot        = false
   final_snapshot_identifier  = "final-snapshot-ami-connect-airflow-db"
-
-  tags = {
-    Name = var.ami_connect_tag
-  }
 }

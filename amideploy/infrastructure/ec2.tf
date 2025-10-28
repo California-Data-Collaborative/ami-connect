@@ -60,17 +60,9 @@ resource "aws_instance" "ami_connect_airflow_server" {
                 -a fetch-config -m ec2 \
                 -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json -s
               EOF
-
-  tags = {
-    Name = var.ami_connect_tag
-  }
 }
 
 # Elastic IP
 resource "aws_eip" "ami_connect_airflow_server_ip" {
   instance = aws_instance.ami_connect_airflow_server.id
-
-  tags = {
-    Name = var.ami_connect_tag
-  }
 }

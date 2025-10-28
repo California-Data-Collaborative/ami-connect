@@ -31,10 +31,6 @@ resource "aws_iam_role" "ami_connect_pipeline" {
       }
     ]
   })
-
-  tags = {
-    Name = var.ami_connect_tag
-  }
 }
 
 

@@ -1,10 +1,6 @@
 resource "aws_s3_bucket" "ami_connect_s3_bucket" {
   bucket = var.ami_connect_s3_bucket_name
   force_destroy = true
-
-  tags = {
-    Name = var.ami_connect_tag
-  }
 }
 
 # Expire objects after 90 days
