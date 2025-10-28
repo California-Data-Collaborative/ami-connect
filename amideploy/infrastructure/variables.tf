@@ -30,6 +30,11 @@ variable "ami_connect_s3_bucket_name" {
   type        = string
 }
 
+variable "ami_connect_canaries_s3_bucket_name" {
+  description = "Name for S3 bucket used for CloudWatch canaries, e.g. for site down alerting."
+  type        = string
+}
+
 variable "ami_connect_tag" {
   description = "AWS tag used on all resources for this project."
   type        = string
