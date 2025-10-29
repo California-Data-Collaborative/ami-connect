@@ -100,6 +100,20 @@ class TestDatabase(BaseTestCase):
                         }
                     ),
                 },
+                {
+                    "id": 7,
+                    "type": "xylem_sensus",
+                    "org_id": "my_xylem_sensus_utility",
+                    "timezone": "America/Los_Angeles",
+                    "config": json.dumps(
+                        {
+                            "sftp_host": "example.com",
+                            "sftp_remote_data_directory": "./data",
+                            "sftp_local_download_directory": "./output",
+                            "sftp_local_known_hosts_file": "./known-hosts",
+                        }
+                    ),
+                },
             ]
         elif table_name == "configuration_sinks":
             return [{"id": "my_snowflake_instance", "type": "snowflake"}]

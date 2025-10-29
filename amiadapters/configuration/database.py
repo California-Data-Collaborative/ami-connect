@@ -56,7 +56,7 @@ def get_configuration(snowflake_connection) -> Tuple[
                 source["use_raw_data_cache"] = type_specific_config.get(
                     "use_raw_data_cache", False
                 )
-            case "aclara":
+            case "aclara" | "xylem_sensus":
                 source["sftp_host"] = type_specific_config.get("sftp_host")
                 source["sftp_remote_data_directory"] = type_specific_config.get(
                     "sftp_remote_data_directory"

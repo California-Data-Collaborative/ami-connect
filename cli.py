@@ -8,7 +8,7 @@ Run from root directory with:
 """
 
 from dataclasses import asdict, fields
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 import logging
 from pprint import pprint
@@ -73,8 +73,9 @@ def sets_environment_from_profile(func):
 
     @wraps(func)
     def wrapper(*args, **kwargs):
-        set_global_aws_region("us-west-2")
-        set_global_aws_profile(kwargs.get("profile"))
+        if "local" not in kwargs:
+            set_global_aws_region("us-west-2")
+            set_global_aws_profile(kwargs.get("profile"))
         return func(*args, **kwargs)
 
     return wrapper
@@ -96,12 +97,22 @@ def run(
         ),
     ] = None,
     profile: ANNOTATION__PROFILE = None,
+    local: Annotated[
+        str,
+        typer.Option(
+            help="Local configuration file that includes secret and non-secret configuration. Used instead of database configuration if specified. Meant for local development."
+        ),
+    ] = None,
 ):
     """
     Run AMI API adapters to fetch AMI data, then shape it into generalized format, then store it.
     """
-    logger.info(f"Loading configuration from database using profile {profile}")
-    config = AMIAdapterConfiguration.from_database()
+    if local is not None:
+        logger.info(f"Loading configuration from local file {local}")
+        config = AMIAdapterConfiguration.from_yaml(local, local)
+    else:
+        logger.info(f"Loading configuration from database using profile {profile}")
+        config = AMIAdapterConfiguration.from_database()
 
     adapters = config.adapters()
     if org_ids:
@@ -117,6 +128,9 @@ def run(
         start, end = adapter.calculate_extract_range(
             start_date,
             end_date,
+            lag=timedelta(days=0),
+            # Default two interval of two days if start or end is not specified
+            interval=timedelta(days=2),
         )
         logger.info(f"Extracting data for {adapter.name()} from {start} to {end}")
         adapter.extract_and_output(run_id, start, end)
