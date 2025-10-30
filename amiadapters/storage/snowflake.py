@@ -300,6 +300,39 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         """
         conn.cursor().execute(ami_leaks_agg_sql)
 
+        ami_irrigation_detection_agg_sql = f"""
+            create or replace table irrigation_detection_agg
+            as
+            select
+                meter_id
+                , array_agg(timestamp) within group (order by timestamp) as timestamp
+                , array_agg(total_volume) within group (order by timestamp) as total_volume
+                , array_agg(irrigation_volume) within group (order by timestamp) as irrigation_volume
+                , array_agg(non_irrigation_volume) within group (order by timestamp) as non_irrigation_volume
+                --
+                , array_agg(irrigation_flag) within group (order by timestamp) as irrigation_flag
+                , array_agg(daily_irrigation_detected) within group (order by timestamp) as daily_irrigation_detected
+                --
+                , array_agg(daily_confidence) within group (order by timestamp) as daily_confidence
+                , array_agg(hourly_confidence) within group (order by timestamp) as hourly_confidence
+                --
+                , model_used
+                , meter_baseline_days
+                , meter_normal_days
+                , meter_total_training_days
+                , meter_needs_finetuning
+                , meter_has_custom_model
+                , district_source
+                , meter_type
+            from
+                irrigation_detection
+            where
+                1=1
+            group by all
+        """
+        conn.cursor().execute(ami_irrigation_detection_agg_sql)
+
+
     def _meter_tuple(self, meter: GeneralMeter, row_active_from: datetime):
         result = [
             meter.org_id,
