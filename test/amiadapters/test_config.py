@@ -15,7 +15,7 @@ from amiadapters.config import (
 from amiadapters.adapters.metersense import MetersenseAdapter
 from amiadapters.adapters.sentryx import SentryxAdapter
 from amiadapters.adapters.subeca import SubecaAdapter
-from amiadapters.storage.snowflake import SnowflakeStorageSink
+from amiadapters.adapters.xylem_sensus import XylemSensusAdapter
 from test.base_test_case import BaseTestCase
 
 
@@ -191,12 +191,13 @@ class TestConfig(BaseTestCase):
         )
         adapters = config.adapters()
 
-        self.assertEqual(6, len(adapters))
+        self.assertEqual(7, len(adapters))
         self.assertIn(AclaraAdapter, map(lambda a: type(a), adapters))
         self.assertIn(Beacon360Adapter, map(lambda a: type(a), adapters))
         self.assertIn(MetersenseAdapter, map(lambda a: type(a), adapters))
         self.assertIn(SentryxAdapter, map(lambda a: type(a), adapters))
         self.assertIn(SubecaAdapter, map(lambda a: type(a), adapters))
+        self.assertIn(XylemSensusAdapter, map(lambda a: type(a), adapters))
 
     def test_can_create_on_failure_notifier(self):
         config = AMIAdapterConfiguration.from_yaml(

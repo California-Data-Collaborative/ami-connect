@@ -16,6 +16,7 @@ from amiadapters.adapters.metersense import MetersenseAdapter
 from amiadapters.adapters.sentryx import SentryxAdapter
 from amiadapters.adapters.subeca import SubecaAdapter
 from amiadapters.adapters.xylem_moulton_niguel import XylemMoultonNiguelAdapter
+from amiadapters.adapters.xylem_sensus import XylemSensusAdapter
 from amiadapters.configuration.base import create_snowflake_from_secrets
 from amiadapters.configuration.models import (
     AclaraSecrets,
@@ -38,6 +39,7 @@ from amiadapters.configuration.models import (
     SnowflakeSecrets,
     SubecaSecrets,
     XylemMoultonNiguelSecrets,
+    XylemSensusSecrets,
 )
 from amiadapters.configuration.database import get_configuration
 from amiadapters.configuration.secrets import get_secrets
@@ -72,6 +74,9 @@ class AMIAdapterConfiguration:
 
         with open(secrets_file, "r") as f:
             secrets = yaml.safe_load(f)
+            # Allows us to combine config and secrets files into one
+            if nested := secrets.get("secrets", {}):
+                secrets = nested
 
         task_output = config.get("task_output", {})
         pipeline = config.get("pipeline", {})
@@ -236,6 +241,11 @@ class AMIAdapterConfiguration:
                         this_source_secrets.get("database_db_name"),
                         this_source_secrets.get("database_user"),
                         this_source_secrets.get("database_password"),
+                    )
+                case ConfiguredAMISourceType.XYLEM_SENSUS.value.type:
+                    secrets = XylemSensusSecrets(
+                        this_source_secrets.get("sftp_user"),
+                        this_source_secrets.get("sftp_password"),
                     )
                 case _:
                     secrets = None
@@ -447,6 +457,19 @@ class AMIAdapterConfiguration:
                             configured_sinks=source.storage_sinks,
                         )
                     )
+                case ConfiguredAMISourceType.XYLEM_SENSUS.value.type:
+                    adapters.append(
+                        XylemSensusAdapter(
+                            source.org_id,
+                            source.timezone,
+                            self._pipeline_configuration,
+                            source.configured_sftp,
+                            source.secrets.sftp_user,
+                            source.secrets.sftp_password,
+                            source.task_output_controller,
+                            source.storage_sinks,
+                        )
+                    )
 
         return adapters
 
@@ -523,6 +546,9 @@ class ConfiguredAMISourceType(Enum):
         "xylem_moulton_niguel",
         XylemMoultonNiguelSecrets,
         [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    XYLEM_SENSUS = SourceSchema(
+        "xylem_sensus", XylemSensusSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
     )
 
     @classmethod

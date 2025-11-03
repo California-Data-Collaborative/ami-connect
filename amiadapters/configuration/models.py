@@ -140,6 +140,12 @@ class XylemMoultonNiguelSecrets(SecretsBase):
     database_password: str
 
 
+@dataclass
+class XylemSensusSecrets(SecretsBase):
+    sftp_user: str
+    sftp_password: str
+
+
 def get_secrets_class_type(secret_type: str):
     match secret_type:
         case "aclara":
@@ -156,6 +162,8 @@ def get_secrets_class_type(secret_type: str):
             return SubecaSecrets
         case "xylem_moulton_niguel":
             return XylemMoultonNiguelSecrets
+        case "xylem_sensus":
+            return XylemSensusSecrets
         case "snowflake":
             return SnowflakeSecrets
         case _:
