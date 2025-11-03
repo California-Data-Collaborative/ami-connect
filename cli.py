@@ -149,7 +149,7 @@ def run(
         logger.info(f"Loaded transformed data for {adapter.name()}")
 
         logger.info(f"Executing postprocess data for {adapter.name()}")
-        adapter.post_process(run_id)
+        adapter.post_process(run_id, start, end)
         logger.info(f"Executed postprocess data for {adapter.name()}")
 
     logger.info(f"Finished for {len(adapters)} adapters")

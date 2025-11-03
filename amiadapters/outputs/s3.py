@@ -43,7 +43,8 @@ class S3TaskOutputController(BaseTaskOutputController):
         self.s3_prefix = s3_prefix.strip("/")
 
         if s3_client is None:
-            profile = get_global_aws_profile()
+            # Try to get the profile name from the environment, else use what was passed in
+            profile = get_global_aws_profile() or aws_profile_name
             if profile:
                 try:
                     session = boto3.Session(profile_name=profile)
@@ -54,6 +55,8 @@ class S3TaskOutputController(BaseTaskOutputController):
                     )
                     self.s3 = boto3.client("s3")
             else:
+                # If we could not find a profile name, we create the client and rely on
+                # IAM roles for authorization, e.g. on the Airflow server
                 self.s3 = boto3.client("s3")
         else:
             self.s3 = s3_client

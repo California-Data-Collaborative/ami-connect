@@ -52,6 +52,22 @@ class XylemSensusMeterAndReads:
     quantity: str
     reads: list[XylemSensusRead]
 
+    @classmethod
+    def from_json_file(cls, extract_output: ExtractOutput, filename: str) -> List:
+        """
+        Parses instances from JSON file, including nested reads.
+        """
+        raw_meters_with_reads = extract_output.load_from_file(
+            filename, XylemSensusMeterAndReads
+        )
+        for raw_meter in raw_meters_with_reads:
+            raw_meter: XylemSensusMeterAndReads = raw_meter
+            reads = []
+            for read in raw_meter.reads:
+                reads.append(XylemSensusRead(**read))
+            raw_meter.reads = reads
+        return raw_meters_with_reads
+
 
 class XylemSensusAdapter(BaseAMIAdapter):
     """
@@ -157,8 +173,8 @@ class XylemSensusAdapter(BaseAMIAdapter):
                 row[start_of_read + 2],
             )
             if not date_time_text:
-                # TODO this is a valid state according to protocol, need to calculate from row's base date time plus intervals
-                # TODO but maybe we handle it in the transform?
+                # This is a valid state according to protocol - we'd need to calculate the date from the row's base date time plus intervals
+                # We've punted on handling it. For now, throw an error if it comes up.
                 raise Exception(
                     "No date time text for reading, which we do not support"
                 )
@@ -218,24 +234,101 @@ class XylemSensusAdapter(BaseAMIAdapter):
     #                 meter_and_read = XylemSensusMeterAndRead(**data)
     #                 yield json.dumps(meter_and_read, cls=DataclassJSONEncoder)
 
-    def _transform(self, run_id: str, extract_outputs: ExtractOutput):
-        raise Exception("Not implemented")
-        # raw_meters_with_reads = extract_outputs.load_from_file(
-        #     "meters_and_reads.json", XylemSensusMeterAndRead
-        # )
-        # return self._transform_meters_and_reads(raw_meters_with_reads)
+    def _transform(
+        self, run_id: str, extract_outputs: ExtractOutput
+    ) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
+        raw_meters_with_reads = XylemSensusMeterAndReads.from_json_file(
+            extract_outputs, "meters_and_reads.json"
+        )
 
-    # def _transform_meters_and_reads(
-    #     self, raw_meters_with_reads: List[XylemSensusMeterAndRead]
-    # ) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
-    #     transformed_meters_by_device_id = {}
-    #     transformed_reads_by_key = {}
+        transformed_meters_by_device_id = {}
+        transformed_reads_by_key = {}
 
-    #     # TODO
+        for raw_meter_with_reads in raw_meters_with_reads:
+            raw_meter_with_reads: XylemSensusMeterAndReads = raw_meter_with_reads
 
-    #     return list(transformed_meters_by_device_id.values()), list(
-    #         transformed_reads_by_key.values()
-    #     )
+            device_id = raw_meter_with_reads.meter_id
+            if not device_id:
+                logger.warning(
+                    f"Skipping meter {raw_meter_with_reads} with null device ID"
+                )
+                continue
+
+            if raw_meter_with_reads.commodity != "W":
+                logger.info(
+                    f"Skipping meter {device_id} with commodity type {raw_meter_with_reads.commodity} which is not a water meter"
+                )
+                continue
+
+            if raw_meter_with_reads.purpose != "OK":
+                # Other transmission purposes include, for example, "SUMMARY" which might include monthly totals which
+                # we aren't prepared to handle
+                logger.info(
+                    f"Skipping meter {device_id} with data transmission purpose {raw_meter_with_reads.purpose} because transmission may not contain hourly readings"
+                )
+                continue
+
+            # TODO ask CaDC about receiver_id and receiver_customer_id. In sample, both have 3210 unique values out of the 3213 rows
+            # TODO so they might be correlated. Confirm it's a good account ID. Is there a location vs account distinction?
+            account_id = raw_meter_with_reads.reciever_customer_id
+            location_id = None
+            meter_id = raw_meter_with_reads.meter_id
+            endpoint_id = None
+
+            meter = GeneralMeter(
+                org_id=self.org_id,
+                device_id=device_id,
+                account_id=account_id,
+                location_id=location_id,
+                meter_id=meter_id,
+                endpoint_id=endpoint_id,
+                meter_install_date=None,
+                meter_size=None,
+                meter_manufacturer=None,
+                multiplier=raw_meter_with_reads.calculation_constant,
+                location_address=None,
+                location_city=None,
+                location_state=None,
+                location_zip=None,
+            )
+            if (
+                device_id in transformed_meters_by_device_id
+                and meter != transformed_meters_by_device_id[device_id]
+            ):
+                # We expect duplicate rows for some devices, but they should be identical besides the readings
+                raise Exception(
+                    f"Found duplicate meters that do not match for device_id {device_id}"
+                )
+
+            transformed_meters_by_device_id[device_id] = meter
+
+            # Interval reads
+            for raw_read in raw_meter_with_reads.reads:
+                flowtime = datetime.strptime(raw_read.time, "%Y%m%d%H%M")
+                interval_value, interval_unit = self.map_reading(
+                    float(raw_read.quantity),
+                    raw_meter_with_reads.units,
+                )
+                read = GeneralMeterRead(
+                    org_id=self.org_id,
+                    device_id=device_id,
+                    account_id=account_id,
+                    location_id=location_id,
+                    flowtime=flowtime,
+                    register_value=None,
+                    register_unit=None,
+                    interval_value=interval_value,
+                    interval_unit=interval_unit,
+                    battery=None,
+                    install_date=None,
+                    connection=None,
+                    estimated=1 if raw_read.code == "E" else 0,
+                )
+                transformed_reads_by_key[(device_id, flowtime)] = read
+
+        return list(transformed_meters_by_device_id.values()), list(
+            transformed_reads_by_key.values()
+        )
 
 
 # TODO DRY this out from Aclara code if we're going to use it
