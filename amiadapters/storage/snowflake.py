@@ -428,21 +428,21 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         """
         conn = self.sink_config.connection()
 
-        # Temporary hack for Long Beach backfill, remove after finished
-        if org_id == "cadc_long_beach":
+        # Temporary hack for Thousand Oaks backfill, remove after finished
+        if org_id == "cadc_thousand_oaks":
             earliest = (
                 conn.cursor()
                 .execute(
-                    "select earliest from backfills where org_id = 'cadc_long_beach'"
+                    "select earliest from backfills where org_id = 'cadc_thousand_oaks'"
                 )
                 .fetchall()[0][0]
             )
             logger.info(f"Earliest end date of backfill for {org_id} is {earliest}")
             from datetime import timedelta
 
-            next_end = earliest - timedelta(days=3)
+            next_end = earliest - timedelta(days=2)
             conn.cursor().execute(
-                f"update backfills set earliest = '{next_end}' where org_id = 'cadc_long_beach'"
+                f"update backfills set earliest = '{next_end}' where org_id = 'cadc_thousand_oaks'"
             ).fetchall()[0][0]
             logger.info(f"Set earliest to {next_end.isoformat()}")
             return earliest
