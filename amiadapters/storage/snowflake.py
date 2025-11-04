@@ -440,7 +440,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             logger.info(f"Earliest end date of backfill for {org_id} is {earliest}")
             from datetime import timedelta
 
-            next_end = earliest - timedelta(days=2)
+            next_end = earliest - timedelta(days=1)
             conn.cursor().execute(
                 f"update backfills set earliest = '{next_end}' where org_id = 'cadc_thousand_oaks'"
             ).fetchall()[0][0]
