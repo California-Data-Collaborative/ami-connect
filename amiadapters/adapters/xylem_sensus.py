@@ -4,14 +4,16 @@ from datetime import datetime
 import logging
 import json
 import os
-from typing import Generator, List, Tuple
+from typing import List, Set, Tuple
 
 import paramiko
 import pytz
+from pytz.tzinfo import DstTzInfo
 
-from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
+from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.configuration.models import SftpConfiguration
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
+from amiadapters.storage.snowflake import RawSnowflakeLoader
 from amiadapters.outputs.base import ExtractOutput
 
 logger = logging.getLogger(__name__)
@@ -41,7 +43,7 @@ class XylemSensusMeterAndReads:
     sender_id: str
     sender_customer_id: str
     receiver_id: str
-    reciever_customer_id: str
+    receiver_customer_id: str
     time_stamp: str
     meter_id: str
     purpose: str
@@ -97,7 +99,7 @@ class XylemSensusAdapter(BaseAMIAdapter):
             pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
-            None,  # Replace with a XylemSensusRawSnowflakeLoader if needed
+            XylemSensusRawSnowflakeLoader(),
         )
 
     def name(self) -> str:
@@ -188,7 +190,7 @@ class XylemSensusAdapter(BaseAMIAdapter):
             sender_id=row[2],
             sender_customer_id=row[3],
             receiver_id=row[4],
-            reciever_customer_id=row[5],
+            receiver_customer_id=row[5],
             time_stamp=row[6],
             meter_id=row[7],
             purpose=row[8],
@@ -270,7 +272,7 @@ class XylemSensusAdapter(BaseAMIAdapter):
 
             # TODO ask CaDC about receiver_id and receiver_customer_id. In sample, both have 3210 unique values out of the 3213 rows
             # TODO so they might be correlated. Confirm it's a good account ID. Is there a location vs account distinction?
-            account_id = raw_meter_with_reads.reciever_customer_id
+            account_id = raw_meter_with_reads.receiver_customer_id
             location_id = None
             meter_id = raw_meter_with_reads.meter_id
             endpoint_id = None
@@ -329,6 +331,145 @@ class XylemSensusAdapter(BaseAMIAdapter):
         return list(transformed_meters_by_device_id.values()), list(
             transformed_reads_by_key.values()
         )
+
+
+class XylemSensusRawSnowflakeLoader(RawSnowflakeLoader):
+
+    def load(self, *args):
+        self._load_raw_meters_and_reads(*args)
+
+    def _load_raw_meters_and_reads(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        extract_outputs: ExtractOutput,
+        snowflake_conn,
+    ) -> None:
+        raw_data = XylemSensusMeterAndReads.from_json_file(
+            extract_outputs, "meters_and_reads.json"
+        )
+        for raw_meter_and_read in raw_data:
+            raw_meter_and_read.reads = json.dumps(
+                raw_meter_and_read.reads, cls=DataclassJSONEncoder
+            )
+        fields = set(XylemSensusMeterAndReads.__dataclass_fields__.keys())
+        self._load_raw_data(
+            run_id,
+            org_id,
+            org_timezone,
+            snowflake_conn,
+            raw_data,
+            fields,
+            table="XYLEM_SENSUS_METER_AND_READS_BASE",
+            unique_by=["meter_id", "time_stamp"],
+        )
+
+    def _load_raw_data(
+        self,
+        run_id: str,
+        org_id: str,
+        org_timezone: DstTzInfo,
+        snowflake_conn,
+        raw_data: List,
+        fields: set[str],
+        table: str,
+        unique_by: List[str],
+    ) -> None:
+        """
+        Extract raw data from intermediate outputs, then load into raw data table.
+
+        extract_output_filename: name of file in extract_outputs that contains the raw data
+        raw_data: list of dataclass instances deserialized from extract outputs
+        fields: list of dataclass field names to include in load. These must match Snowflake table column names.
+        table: name of raw data table in Snowflake
+        unique_by: list of field names used with org_id to uniquely identify a row in the base table
+        """
+        temp_table = f"temp_{table}"
+        unique_by = [u.lower() for u in unique_by]
+        self._create_temp_table(
+            snowflake_conn,
+            temp_table,
+            table,
+            fields,
+            org_timezone,
+            org_id,
+            raw_data,
+        )
+        self._merge_from_temp_table(
+            snowflake_conn,
+            table,
+            temp_table,
+            fields,
+            unique_by,
+        )
+
+    def _create_temp_table(
+        self, snowflake_conn, temp_table, table, fields, org_timezone, org_id, raw_data
+    ) -> None:
+        """
+        Insert every object in raw_data into a temp copy of the table.
+        """
+        logger.info(f"Prepping for raw load to table {table}")
+
+        # Create the temp table
+        create_temp_table_sql = (
+            f"CREATE OR REPLACE TEMPORARY TABLE {temp_table} LIKE {table};"
+        )
+        snowflake_conn.cursor().execute(create_temp_table_sql)
+
+        # Insert raw data
+        columns_as_comma_str = ", ".join(fields)
+        qmarks = "?, " * (len(fields) - 1) + "?"
+        insert_temp_data_sql = f"""
+            INSERT INTO {temp_table} (org_id, created_time, {columns_as_comma_str}) 
+                VALUES (?, ?, {qmarks})
+        """
+        created_time = datetime.now(tz=org_timezone)
+        rows = [
+            tuple(
+                [org_id, created_time] + [i.__getattribute__(name) for name in fields]
+            )
+            for i in raw_data
+        ]
+        snowflake_conn.cursor().executemany(insert_temp_data_sql, rows)
+
+    def _merge_from_temp_table(
+        self,
+        snowflake_conn,
+        table: str,
+        temp_table: str,
+        fields: List[str],
+        unique_by: List[str],
+    ) -> None:
+        """
+        Merge data from temp table into the base table using the unique_by keys
+        """
+        fields_lower = list(f.lower() for f in fields)
+        logger.info(f"Merging {temp_table} into {table}")
+        merge_sql = f"""
+            MERGE INTO {table} AS target
+            USING (
+                -- Use GROUP BY to ensure there are no duplicate rows before merge
+                SELECT 
+                    org_id,
+                    {", ".join(unique_by)},
+                    {", ".join([f"max({name}) as {name}" for name in fields_lower if name not in unique_by])}, 
+                    max(created_time) as created_time
+                FROM {temp_table} t
+                GROUP BY org_id, {", ".join(unique_by)}
+            ) AS source
+            ON source.org_id = target.org_id 
+                {" ".join(f"AND source.{i} = target.{i}" for i in unique_by)}
+            WHEN MATCHED THEN
+                UPDATE SET
+                    target.created_time = source.created_time,
+                    {",".join([f"target.{name} = source.{name}" for name in fields_lower])}
+            WHEN NOT MATCHED THEN
+                INSERT (org_id, {", ".join(name for name in fields_lower)}, created_time) 
+                        VALUES (source.org_id, {", ".join(f"source.{name}" for name in fields_lower)}, source.created_time)
+        """
+        snowflake_conn.cursor().execute(merge_sql)
 
 
 # TODO DRY this out from Aclara code if we're going to use it
