@@ -20,7 +20,7 @@ class TestXylemSensusAdapter(BaseTestCase):
             "sender_id": "SENDER",
             "sender_customer_id": "SCUST",
             "receiver_id": "RECV",
-            "reciever_customer_id": "RCUST",
+            "receiver_customer_id": "RCUST",
             "time_stamp": "202406010000",
             "meter_id": "MTR123",
             "purpose": "OK",
