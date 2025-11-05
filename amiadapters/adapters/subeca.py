@@ -4,13 +4,12 @@ import logging
 import json
 from typing import Dict, Generator, List, Set, Tuple
 
-from pytz.tzinfo import DstTzInfo
 import requests
 
 from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
-from amiadapters.storage.snowflake import RawSnowflakeLoader
+from amiadapters.storage.snowflake import RawSnowflakeLoader, RawSnowflakeTableLoader
 
 logger = logging.getLogger(__name__)
 
@@ -422,182 +421,46 @@ class SubecaAdapter(BaseAMIAdapter):
 
 class SubecaRawSnowflakeLoader(RawSnowflakeLoader):
 
-    def load(self, *args):
-        self._load_raw_accounts(*args)
-        self._load_raw_latest_read(*args)
-        self._load_raw_usage(*args)
-
-    def _load_raw_accounts(
+    def __init__(
         self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-    ) -> None:
-        raw_data = extract_outputs.load_from_file("accounts.json", SubecaAccount)
-        fields = set(SubecaAccount.__dataclass_fields__.keys()) - {
-            "latestReading",
-        }
-        self._load_raw_data(
-            run_id,
-            org_id,
-            org_timezone,
-            snowflake_conn,
-            raw_data,
-            fields,
-            table="SUBECA_ACCOUNT_BASE",
-            unique_by=["deviceId"],
-        )
+        base_accounts_table: str = "SUBECA_ACCOUNT_BASE",
+        base_latest_read_table: str = "SUBECA_DEVICE_LATEST_READ_BASE",
+        base_usage_table: str = "SUBECA_USAGE_BASE",
+    ):
+        self.base_accounts_table = base_accounts_table
+        self.base_latest_read_table = base_latest_read_table
+        self.base_usage_table = base_usage_table
 
-    def _load_raw_latest_read(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-    ) -> None:
-        # Pluck the latestReading off the account metadata and turn it into a reading
-        raw_data = [i.latestReading for i in _read_accounts_file(extract_outputs)]
-        fields = set(SubecaReading.__dataclass_fields__.keys())
-        self._load_raw_data(
-            run_id,
-            org_id,
-            org_timezone,
-            snowflake_conn,
-            raw_data,
-            fields,
-            table="SUBECA_DEVICE_LATEST_READ_BASE",
-            unique_by=["deviceId", "usageTime"],
-        )
-
-    def _load_raw_usage(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-    ) -> None:
-        raw_data = extract_outputs.load_from_file("usages.json", SubecaReading)
-        fields = set(SubecaReading.__dataclass_fields__.keys())
-        self._load_raw_data(
-            run_id,
-            org_id,
-            org_timezone,
-            snowflake_conn,
-            raw_data,
-            fields,
-            table="SUBECA_USAGE_BASE",
-            unique_by=["deviceId", "usageTime"],
-        )
-
-    def _load_raw_data(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        snowflake_conn,
-        raw_data: List,
-        fields: Set[str],
-        table: str,
-        unique_by: List[str],
-    ) -> None:
-        """
-        Extract raw data from intermediate outputs, then load into raw data table.
-
-        extract_output_filename: name of file in extract_outputs that contains the raw data
-        raw_data: list of dataclass instances deserialized from extract outputs
-        fields: list of dataclass field names to include in load. These must match Snowflake table column names.
-        table: name of raw data table in Snowflake
-        unique_by: list of field names used with org_id to uniquely identify a row in the base table
-        """
-        temp_table = f"temp_{table}"
-        unique_by = [u.lower() for u in unique_by]
-        self._create_temp_table(
-            snowflake_conn,
-            temp_table,
-            table,
-            fields,
-            org_timezone,
-            org_id,
-            raw_data,
-        )
-        self._merge_from_temp_table(
-            snowflake_conn,
-            table,
-            temp_table,
-            fields,
-            unique_by,
-        )
-
-    def _create_temp_table(
-        self, snowflake_conn, temp_table, table, fields, org_timezone, org_id, raw_data
-    ) -> None:
-        """
-        Insert every object in raw_data into a temp copy of the table.
-        """
-        logger.info(f"Prepping for raw load to table {table}")
-
-        # Create the temp table
-        create_temp_table_sql = (
-            f"CREATE OR REPLACE TEMPORARY TABLE {temp_table} LIKE {table};"
-        )
-        snowflake_conn.cursor().execute(create_temp_table_sql)
-
-        # Insert raw data
-        columns_as_comma_str = ", ".join(fields)
-        qmarks = "?, " * (len(fields) - 1) + "?"
-        insert_temp_data_sql = f"""
-            INSERT INTO {temp_table} (org_id, created_time, {columns_as_comma_str}) 
-                VALUES (?, ?, {qmarks})
-        """
-        created_time = datetime.now(tz=org_timezone)
-        rows = [
-            tuple(
-                [org_id, created_time] + [i.__getattribute__(name) for name in fields]
-            )
-            for i in raw_data
+    def table_loaders(self):
+        return [
+            RawSnowflakeTableLoader(
+                table_name=self.base_accounts_table,
+                fields=set(SubecaAccount.__dataclass_fields__.keys())
+                - {
+                    "latestReading",
+                },
+                unique_by=["deviceId"],
+                parse_raw_data_fn=lambda extract_outputs: extract_outputs.load_from_file(
+                    "accounts.json", SubecaAccount
+                ),
+            ),
+            RawSnowflakeTableLoader(
+                table_name=self.base_usage_table,
+                fields=set(SubecaReading.__dataclass_fields__.keys()),
+                unique_by=["deviceId", "usageTime"],
+                parse_raw_data_fn=lambda extract_outputs: extract_outputs.load_from_file(
+                    "usages.json", SubecaReading
+                ),
+            ),
+            RawSnowflakeTableLoader(
+                table_name=self.base_latest_read_table,
+                fields=set(SubecaReading.__dataclass_fields__.keys()),
+                unique_by=["deviceId", "usageTime"],
+                parse_raw_data_fn=lambda extract_outputs: [
+                    i.latestReading for i in _read_accounts_file(extract_outputs)
+                ],
+            ),
         ]
-        snowflake_conn.cursor().executemany(insert_temp_data_sql, rows)
-
-    def _merge_from_temp_table(
-        self,
-        snowflake_conn,
-        table: str,
-        temp_table: str,
-        fields: List[str],
-        unique_by: List[str],
-    ) -> None:
-        """
-        Merge data from temp table into the base table using the unique_by keys
-        """
-        fields_lower = list(f.lower() for f in fields)
-        logger.info(f"Merging {temp_table} into {table}")
-        merge_sql = f"""
-            MERGE INTO {table} AS target
-            USING (
-                -- Use GROUP BY to ensure there are no duplicate rows before merge
-                SELECT 
-                    org_id,
-                    {", ".join(unique_by)},
-                    {", ".join([f"max({name}) as {name}" for name in fields_lower if name not in unique_by])}, 
-                    max(created_time) as created_time
-                FROM {temp_table} t
-                GROUP BY org_id, {", ".join(unique_by)}
-            ) AS source
-            ON source.org_id = target.org_id 
-                {" ".join(f"AND source.{i} = target.{i}" for i in unique_by)}
-            WHEN MATCHED THEN
-                UPDATE SET
-                    target.created_time = source.created_time,
-                    {",".join([f"target.{name} = source.{name}" for name in fields_lower])}
-            WHEN NOT MATCHED THEN
-                INSERT (org_id, {", ".join(name for name in fields_lower)}, created_time) 
-                        VALUES (source.org_id, {", ".join(f"source.{name}" for name in fields_lower)}, source.created_time)
-        """
-        snowflake_conn.cursor().execute(merge_sql)
 
 
 def _read_accounts_file(extract_outputs: ExtractOutput) -> List[SubecaAccount]:

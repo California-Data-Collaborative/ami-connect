@@ -2,20 +2,29 @@
 Run integration test for snowflake queries.
 
 Does not run with CI, you must run this manually.
-Assumes config.yaml and secrets.yaml are set up with an adapter that uses a Snowflake sink.
+Assumes configuration is set up with an adapter that uses a Snowflake sink.
 Connects to production Snowflake.
 
 Usage:
-    python -m test.integration.snowflake_integration_test
+    AMI_CONNECT__AWS_PROFILE=my-profile python -m test.integration.snowflake_integration_test
 
 """
 
-import unittest
 import datetime
+import json
+import os
 import pytz
+import unittest
 
+from amiadapters.adapters.subeca import (
+    SubecaAccount,
+    SubecaRawSnowflakeLoader,
+    SubecaReading,
+)
+from amiadapters.configuration.env import set_global_aws_profile, set_global_aws_region
 from amiadapters.config import AMIAdapterConfiguration
-from amiadapters.models import GeneralMeter, GeneralMeterRead
+from amiadapters.models import GeneralMeter, GeneralMeterRead, DataclassJSONEncoder
+from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import (
     SnowflakeStorageSink,
     SnowflakeMetersUniqueByDeviceIdCheck,
@@ -27,6 +36,9 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        profile = os.environ.get("AMI_CONNECT__AWS_PROFILE")
+        set_global_aws_profile(aws_profile=profile)
+        set_global_aws_region(None)
         cls.config = AMIAdapterConfiguration.from_database()
         # Hack! Pick an adapter out of the config so we can create a connection to Snowflake.
         adapter = cls.config.adapters()[0]
@@ -85,6 +97,11 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
             connection=None,
             estimated=estimated,
         )
+
+    def _assert_num_rows(self, table_name: str, expected_number_of_rows: int):
+        self.cs.execute(f"SELECT COUNT(*) FROM {table_name}")
+        result = self.cs.fetchone()[0]
+        self.assertEqual(result, expected_number_of_rows)
 
 
 class TestSnowflakeUpserts(BaseSnowflakeIntegrationTestCase):
@@ -214,11 +231,6 @@ class TestSnowflakeUpserts(BaseSnowflakeIntegrationTestCase):
 
         self._assert_num_rows(self.test_readings_table, 2)
 
-    def _assert_num_rows(self, table_name: str, expected_number_of_rows: int):
-        self.cs.execute(f"SELECT COUNT(*) FROM {table_name}")
-        result = self.cs.fetchone()[0]
-        self.assertEqual(result, expected_number_of_rows)
-
 
 class TestSnowflakeDataQualityChecks(BaseSnowflakeIntegrationTestCase):
 
@@ -258,6 +270,124 @@ class TestSnowflakeDataQualityChecks(BaseSnowflakeIntegrationTestCase):
             table_name=self.test_readings_table,
         )
         self.assertTrue(check.check())
+
+
+class TestSubecaRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
+
+    def setUp(self):
+        self.test_subeca_account_base_table = "SUBECA_ACCOUNT_BASE_int_test"
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_subeca_account_base_table} LIKE SUBECA_ACCOUNT_BASE;"
+        )
+        self.test_subeca_device_latest_read_base_table = (
+            "SUBECA_DEVICE_LATEST_READ_BASE_int_test"
+        )
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_subeca_device_latest_read_base_table} LIKE SUBECA_DEVICE_LATEST_READ_BASE;"
+        )
+        self.test_subeca_usage_base_table = "SUBECA_USAGE_BASE_int_test"
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_subeca_usage_base_table} LIKE SUBECA_USAGE_BASE;"
+        )
+        self.loader = SubecaRawSnowflakeLoader(
+            base_accounts_table=self.test_subeca_account_base_table,
+            base_usage_table=self.test_subeca_usage_base_table,
+            base_latest_read_table=self.test_subeca_device_latest_read_base_table,
+        )
+
+    def test_load_upserts_new_row(self):
+        latest_reading = SubecaReading(
+            deviceId="testDeviceId",
+            usageTime="2025-01-01",
+            value="1",
+            unit="CF",
+        )
+        accounts = [
+            SubecaAccount(
+                accountId="accountId",
+                accountStatus="accountStatus",
+                meterSerial="meterSerial",
+                billingRoute="billingRoute",
+                registerSerial="registerSerial",
+                meterSize="meterSize",
+                createdAt="createdAt",
+                deviceId="testDeviceId",
+                activeProtocol="activeProtocol",
+                installationDate="installationDate",
+                latestCommunicationDate="latestCommunicationDate",
+                latestReading=latest_reading,
+            )
+        ]
+        usages = [
+            SubecaReading(
+                deviceId="testDeviceId",
+                usageTime="2025-02-01",
+                value="44",
+                unit="CF",
+            )
+        ]
+        extract_outputs = ExtractOutput(
+            {
+                "accounts.json": "\n".join(
+                    json.dumps(i, cls=DataclassJSONEncoder) for i in accounts
+                ),
+                "usages.json": "\n".join(
+                    json.dumps(i, cls=DataclassJSONEncoder) for i in usages
+                ),
+            }
+        )
+
+        self._assert_num_rows(self.test_subeca_account_base_table, 0)
+        self._assert_num_rows(self.test_subeca_usage_base_table, 0)
+        self._assert_num_rows(self.test_subeca_device_latest_read_base_table, 0)
+
+        # Load data into empty table
+        self.loader.load(
+            "run-1",
+            "org1",
+            pytz.UTC,
+            extract_outputs,
+            self.conn,
+        )
+        self._assert_num_rows(self.test_subeca_account_base_table, 1)
+        self._assert_num_rows(self.test_subeca_usage_base_table, 1)
+        self._assert_num_rows(self.test_subeca_device_latest_read_base_table, 1)
+
+        # Load data again and make sure it didn't create new rows
+        self.loader.load(
+            "run-1",
+            "org1",
+            pytz.UTC,
+            extract_outputs,
+            self.conn,
+        )
+        self._assert_num_rows(self.test_subeca_account_base_table, 1)
+        self._assert_num_rows(self.test_subeca_usage_base_table, 1)
+        self._assert_num_rows(self.test_subeca_device_latest_read_base_table, 1)
+
+        # Check account table has correct values
+        self.cs.execute(f"SELECT * FROM {self.test_subeca_account_base_table}")
+        account = self.cs.fetchone()
+        self.assertEqual("org1", account[0])
+        self.assertEqual("testDeviceId", account[9])
+
+        # Check usage table has correct values
+        self.cs.execute(f"SELECT * FROM {self.test_subeca_usage_base_table}")
+        usage = self.cs.fetchone()
+        self.assertEqual("testDeviceId", usage[2])
+        self.assertEqual("2025-02-01", usage[3])
+        self.assertEqual("CF", usage[4])
+        self.assertEqual("44", usage[5])
+
+        # Check latest reading table has correct values
+        self.cs.execute(
+            f"SELECT * FROM {self.test_subeca_device_latest_read_base_table}"
+        )
+        latest_read = self.cs.fetchone()
+        self.assertEqual("testDeviceId", latest_read[2])
+        self.assertEqual("2025-01-01", latest_read[3])
+        self.assertEqual("CF", latest_read[4])
+        self.assertEqual("1", latest_read[5])
 
 
 if __name__ == "__main__":
