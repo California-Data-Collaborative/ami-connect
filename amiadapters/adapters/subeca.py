@@ -422,6 +422,16 @@ class SubecaAdapter(BaseAMIAdapter):
 
 class SubecaRawSnowflakeLoader(RawSnowflakeLoader):
 
+    def __init__(
+        self,
+        base_accounts_table: str = "SUBECA_ACCOUNT_BASE",
+        base_latest_read_table: str = "SUBECA_DEVICE_LATEST_READ_BASE",
+        base_usage_table: str = "SUBECA_USAGE_BASE",
+    ):
+        self.base_accounts_table = base_accounts_table
+        self.base_latest_read_table = base_latest_read_table
+        self.base_usage_table = base_usage_table
+
     def load(self, *args):
         self._load_raw_accounts(*args)
         self._load_raw_latest_read(*args)
@@ -446,7 +456,7 @@ class SubecaRawSnowflakeLoader(RawSnowflakeLoader):
             snowflake_conn,
             raw_data,
             fields,
-            table="SUBECA_ACCOUNT_BASE",
+            table=self.base_accounts_table,
             unique_by=["deviceId"],
         )
 
@@ -468,7 +478,7 @@ class SubecaRawSnowflakeLoader(RawSnowflakeLoader):
             snowflake_conn,
             raw_data,
             fields,
-            table="SUBECA_DEVICE_LATEST_READ_BASE",
+            table=self.base_latest_read_table,
             unique_by=["deviceId", "usageTime"],
         )
 
@@ -489,7 +499,7 @@ class SubecaRawSnowflakeLoader(RawSnowflakeLoader):
             snowflake_conn,
             raw_data,
             fields,
-            table="SUBECA_USAGE_BASE",
+            table=self.base_usage_table,
             unique_by=["deviceId", "usageTime"],
         )
 
