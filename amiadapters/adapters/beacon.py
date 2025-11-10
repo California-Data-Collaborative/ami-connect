@@ -125,19 +125,26 @@ class Beacon360Adapter(BaseAMIAdapter):
     def scheduled_extracts(self) -> List[ScheduledExtract]:
         """
         We've seen that sources using the Beacon adapter don't get their full set of reads with
-        the standard daily polling - they get maybe 90% of the reads. The rest show up 3+ days
-        after flowtime. But Beacon limits the number of readings we can extract, so a larger
-        interval isn't possible. We use a lagged scheduled extract to go back for the full set of reads.
+        the standard daily polling - they get maybe 80% of the reads. Many more show up 3+ days
+        after flowtime. Still more show up 5+ months after flowtime.
+        We use lagged scheduled extracts to go back for the full set of reads.
         """
         return [
             # Get the last couple days of readings
             STANDARD_DAILY_SCHEDULED_EXTRACT,
-            # Re-retireve readings from N days ago
+            # Re-retrieve readings from a couple weeks ago
             ScheduledExtract(
                 name="lagged",
                 interval=timedelta(days=1),
                 lag=timedelta(days=14),
                 schedule_crontab="0 10 * * *",
+            ),
+            # Re-retrieve readings from many months ago
+            ScheduledExtract(
+                name="half-year-lagged",
+                interval=timedelta(days=1),
+                lag=timedelta(days=6 * 30),
+                schedule_crontab="0 11 * * *",
             ),
         ]
 
