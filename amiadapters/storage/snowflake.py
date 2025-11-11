@@ -16,33 +16,62 @@ from amiadapters.storage.base import BaseAMIStorageSink, BaseAMIDataQualityCheck
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class RawSnowflakeTableLoader:
+class RawSnowflakeTableLoader(ABC):
     """
     Abstraction used during raw Snowflake loads to keep code DRY.
     """
 
-    # Name of the raw data table, e.g. "subeca_account_base"
-    table_name: str
-    # Set of field names in the raw data that should be stored. Should match Snowflake table's column names unless otherwise specified in `columns`.
-    fields: set[str]
-    # List of above fields that constitute the unique key on the Snowflake table. For a device/meter table, often the device ID field.
-    # For readings tables, often the device ID plus the flowtime field.
-    unique_by: list[str]
-    # Function that defines how to get the raw data for this table out of the ExtractOutput object
-    # Return as list of dataclass instances
-    parse_raw_data_fn: Callable[[ExtractOutput], list]
-    # Set of base table column names. Typically same as fields, but may differ e.g. if any fields need escaping.
-    columns: set[str] = None
+    @abstractmethod
+    def table_name(self) -> str:
+        """
+        Name of the raw data table, e.g. "subeca_account_base
+        """
+        pass
+
+    @abstractmethod
+    def columns(self) -> List[str]:
+        """
+        List of column names for the Snowflake table. Should match the order of the data in the tuples from `prepare_raw_data`.
+        Omit org_id and created_time, those are added automatically.
+        """
+        pass
+
+    @abstractmethod
+    def unique_by(self) -> List[str]:
+        """
+        List of column names that constitute the unique key on the Snowflake table. For a device/meter table, often the device ID field.
+        For readings tables, often the device ID plus the flowtime field.
+        """
+        pass
+
+    @abstractmethod
+    def prepare_raw_data(self, extract_outputs: ExtractOutput) -> List[tuple]:
+        """
+        Defines how to get the raw data for this table out of the ExtractOutput object.
+        Return as list of tuples that will be inserted into Snowflake table.
+        """
+        pass
 
 
-class RawSnowflakeLoader(ABC):
+class RawSnowflakeLoader:
     """
     An adapter must define how it stores raw data in Snowflake because, by nature,
     raw data schemas are specific to the adapter. This abstract class
     allows an adapter to define its implementation, then pass it up to
     the Snowflake sink abstractions during instantiation.
     """
+
+    def __init__(self, table_loaders: List[RawSnowflakeTableLoader] = None):
+        self.table_loaders = table_loaders
+
+    @classmethod
+    def with_table_loaders(
+        cls, table_loaders: List[RawSnowflakeTableLoader]
+    ) -> "RawSnowflakeLoader":
+        """
+        Factory method to create a RawSnowflakeLoader with specified table loaders.
+        """
+        return cls(table_loaders=table_loaders)
 
     def load(
         self,
@@ -56,35 +85,26 @@ class RawSnowflakeLoader(ABC):
         Using a Snowflake connection and output controller, get the raw
         data and store it in Snowflake.
         """
-        for table_loader in self.table_loaders():
-            raw_data = table_loader.parse_raw_data_fn(extract_outputs)
-            self._load_raw_data(
+        for table_loader in self.table_loaders:
+            raw_data = table_loader.prepare_raw_data(extract_outputs)
+            self._load_raw_data_for_table(
                 run_id=run_id,
                 org_id=org_id,
                 org_timezone=org_timezone,
                 snowflake_conn=snowflake_conn,
                 raw_data=raw_data,
-                fields=table_loader.fields,
-                columns=table_loader.columns,
-                table=table_loader.table_name,
-                unique_by=table_loader.unique_by,
+                columns=table_loader.columns(),
+                table=table_loader.table_name(),
+                unique_by=table_loader.unique_by(),
             )
 
-    def table_loaders(self) -> List[RawSnowflakeTableLoader]:
-        """
-        Most concrete implementations will override this function to define which raw tables should
-        get data. This is how you do it with the least amount of code.
-        """
-        return []
-
-    def _load_raw_data(
+    def _load_raw_data_for_table(
         self,
         run_id: str,
         org_id: str,
         org_timezone: DstTzInfo,
         snowflake_conn,
         raw_data: List,
-        fields: Set[str],
         table: str,
         unique_by: List[str],
         columns: Set[str] = None,
@@ -107,19 +127,16 @@ class RawSnowflakeLoader(ABC):
         """
         temp_table = f"temp_{table}"
         unique_by = [u.lower() for u in unique_by]
-        if columns is None:
-            columns = [f for f in fields]
-        self._create_temp_table(
+        self._create_temp_table_with_raw_data(
             snowflake_conn,
             temp_table,
             table,
-            fields,
             org_timezone,
             org_id,
             raw_data,
-            columns=columns
+            columns,
         )
-        self._merge_from_temp_table(
+        self._merge_raw_data_from_temp_table(
             snowflake_conn,
             table,
             temp_table,
@@ -127,16 +144,20 @@ class RawSnowflakeLoader(ABC):
             unique_by,
         )
 
-    def _create_temp_table(
-        self, snowflake_conn, temp_table, table, fields, org_timezone, org_id, raw_data, columns=None,
+    def _create_temp_table_with_raw_data(
+        self,
+        snowflake_conn,
+        temp_table,
+        table,
+        org_timezone,
+        org_id,
+        raw_data,
+        columns=None,
     ) -> None:
         """
         Insert every object in raw_data into a temp copy of the table.
         """
         logger.info(f"Prepping for raw load to table {table}")
-
-        if columns is None:
-            columns = [f for f in fields]
 
         # Create the temp table
         create_temp_table_sql = (
@@ -152,15 +173,18 @@ class RawSnowflakeLoader(ABC):
                 VALUES (?, ?, {qmarks})
         """
         created_time = datetime.now(tz=org_timezone)
+        # Prepend org_id and created_time to each data tuple
         rows = [
-            tuple(
-                [org_id, created_time] + [i.__getattribute__(name) for name in fields]
+            (
+                org_id,
+                created_time,
             )
+            + i
             for i in raw_data
         ]
         snowflake_conn.cursor().executemany(insert_temp_data_sql, rows)
 
-    def _merge_from_temp_table(
+    def _merge_raw_data_from_temp_table(
         self,
         snowflake_conn,
         table: str,

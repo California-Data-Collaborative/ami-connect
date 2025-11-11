@@ -333,7 +333,6 @@ class BaseAMIAdapter(ABC):
             "0.001Cu.Ft.": "0.001CuFt",
             "Cu.Ft.": "1CuFt",
             "1CuFt": "1CuFt",
-
         }
         size = size.strip()
         result = mapping.get(size)

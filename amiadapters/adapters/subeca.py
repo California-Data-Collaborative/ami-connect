@@ -82,7 +82,13 @@ class SubecaAdapter(BaseAMIAdapter):
             pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
-            SubecaRawSnowflakeLoader(),
+            RawSnowflakeLoader.with_table_loaders(
+                [
+                    RawAccountsLoader(),
+                    RawLatestReadingLoader(),
+                    RawUsageLoader(),
+                ]
+            ),
         )
 
     def name(self) -> str:
@@ -419,47 +425,59 @@ class SubecaAdapter(BaseAMIAdapter):
         yield from lines
 
 
-class SubecaRawSnowflakeLoader(RawSnowflakeLoader):
+class RawAccountsLoader(RawSnowflakeTableLoader):
 
-    def __init__(
-        self,
-        base_accounts_table: str = "SUBECA_ACCOUNT_BASE",
-        base_latest_read_table: str = "SUBECA_DEVICE_LATEST_READ_BASE",
-        base_usage_table: str = "SUBECA_USAGE_BASE",
-    ):
-        self.base_accounts_table = base_accounts_table
-        self.base_latest_read_table = base_latest_read_table
-        self.base_usage_table = base_usage_table
+    def table_name(self) -> str:
+        return "SUBECA_ACCOUNT_BASE"
 
-    def table_loaders(self):
+    def columns(self) -> List[str]:
+        cols = list(SubecaAccount.__dataclass_fields__.keys())
+        cols.remove("latestReading")
+        return cols
+
+    def unique_by(self) -> List[str]:
+        return ["deviceId"]
+
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = extract_outputs.load_from_file("accounts.json", SubecaAccount)
         return [
-            RawSnowflakeTableLoader(
-                table_name=self.base_accounts_table,
-                fields=set(SubecaAccount.__dataclass_fields__.keys())
-                - {
-                    "latestReading",
-                },
-                unique_by=["deviceId"],
-                parse_raw_data_fn=lambda extract_outputs: extract_outputs.load_from_file(
-                    "accounts.json", SubecaAccount
-                ),
-            ),
-            RawSnowflakeTableLoader(
-                table_name=self.base_usage_table,
-                fields=set(SubecaReading.__dataclass_fields__.keys()),
-                unique_by=["deviceId", "usageTime"],
-                parse_raw_data_fn=lambda extract_outputs: extract_outputs.load_from_file(
-                    "usages.json", SubecaReading
-                ),
-            ),
-            RawSnowflakeTableLoader(
-                table_name=self.base_latest_read_table,
-                fields=set(SubecaReading.__dataclass_fields__.keys()),
-                unique_by=["deviceId", "usageTime"],
-                parse_raw_data_fn=lambda extract_outputs: [
-                    i.latestReading for i in _read_accounts_file(extract_outputs)
-                ],
-            ),
+            tuple(i.__getattribute__(col) for col in self.columns()) for i in raw_data
+        ]
+
+
+class RawLatestReadingLoader(RawSnowflakeTableLoader):
+
+    def table_name(self) -> str:
+        return "SUBECA_DEVICE_LATEST_READ_BASE"
+
+    def columns(self) -> List[str]:
+        return list(SubecaReading.__dataclass_fields__.keys())
+
+    def unique_by(self) -> List[str]:
+        return ["deviceId", "usageTime"]
+
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = [i.latestReading for i in _read_accounts_file(extract_outputs)]
+        return [
+            tuple(i.__getattribute__(col) for col in self.columns()) for i in raw_data
+        ]
+
+
+class RawUsageLoader(RawSnowflakeTableLoader):
+
+    def table_name(self) -> str:
+        return "SUBECA_USAGE_BASE"
+
+    def columns(self) -> List[str]:
+        return list(SubecaReading.__dataclass_fields__.keys())
+
+    def unique_by(self) -> List[str]:
+        return ["deviceId", "usageTime"]
+
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = extract_outputs.load_from_file("usages.json", SubecaReading)
+        return [
+            tuple(i.__getattribute__(col) for col in self.columns()) for i in raw_data
         ]
 
 

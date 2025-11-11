@@ -16,10 +16,12 @@ import os
 import pytz
 import unittest
 
-from amiadapters.adapters.aclara import AclaraRawSnowflakeLoader, AclaraMeterAndRead
+from amiadapters.adapters.aclara import AclaraBaseTableLoader, AclaraMeterAndRead
 from amiadapters.adapters.subeca import (
+    RawAccountsLoader,
+    RawLatestReadingLoader,
+    RawUsageLoader,
     SubecaAccount,
-    SubecaRawSnowflakeLoader,
     SubecaReading,
 )
 from amiadapters.configuration.env import set_global_aws_profile, set_global_aws_region
@@ -27,6 +29,7 @@ from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.models import GeneralMeter, GeneralMeterRead, DataclassJSONEncoder
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import (
+    RawSnowflakeLoader,
     SnowflakeStorageSink,
     SnowflakeMetersUniqueByDeviceIdCheck,
     SnowflakeReadingsUniqueByDeviceIdAndFlowtimeCheck,
@@ -273,6 +276,24 @@ class TestSnowflakeDataQualityChecks(BaseSnowflakeIntegrationTestCase):
         self.assertTrue(check.check())
 
 
+class IntTestSubecaRawAccountsLoader(RawAccountsLoader):
+    # Override the table name for the integration test
+    def table_name(self) -> str:
+        return "SUBECA_ACCOUNT_BASE_int_test"
+
+
+class IntTestSubecaRawLatestReadingLoader(RawLatestReadingLoader):
+    # Override the table name for the integration test
+    def table_name(self) -> str:
+        return "SUBECA_DEVICE_LATEST_READ_BASE_int_test"
+
+
+class IntTestSubecaRawUsageLoader(RawUsageLoader):
+    # Override the table name for the integration test
+    def table_name(self) -> str:
+        return "SUBECA_USAGE_BASE_int_test"
+
+
 class TestSubecaRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
 
     def setUp(self):
@@ -290,10 +311,12 @@ class TestSubecaRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
         self.cs.execute(
             f"CREATE OR REPLACE TEMPORARY TABLE {self.test_subeca_usage_base_table} LIKE SUBECA_USAGE_BASE;"
         )
-        self.loader = SubecaRawSnowflakeLoader(
-            base_accounts_table=self.test_subeca_account_base_table,
-            base_usage_table=self.test_subeca_usage_base_table,
-            base_latest_read_table=self.test_subeca_device_latest_read_base_table,
+        self.loader = RawSnowflakeLoader.with_table_loaders(
+            [
+                IntTestSubecaRawAccountsLoader(),
+                IntTestSubecaRawLatestReadingLoader(),
+                IntTestSubecaRawUsageLoader(),
+            ]
         )
 
     def test_load_upserts_new_row(self):
@@ -391,16 +414,21 @@ class TestSubecaRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
         self.assertEqual("1", latest_read[5])
 
 
+class IntTestAclaraBaseTableLoader(AclaraBaseTableLoader):
+    # Override the table name for the integration test
+    def table_name(self) -> str:
+        return "ACLARA_BASE_int_test"
+
+
 class TestAclaraRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
 
     def setUp(self):
-        self.test_aclara_base_table = "ACLARA_BASE_int_test"
+        table_loader = IntTestAclaraBaseTableLoader()
+        self.test_aclara_base_table = table_loader.table_name()
         self.cs.execute(
             f"CREATE OR REPLACE TEMPORARY TABLE {self.test_aclara_base_table} LIKE ACLARA_BASE;"
         )
-        self.loader = AclaraRawSnowflakeLoader(
-            base_table=self.test_aclara_base_table,
-        )
+        self.loader = RawSnowflakeLoader.with_table_loaders([table_loader])
 
     def test_load_upserts_new_row(self):
         meter_and_read = AclaraMeterAndRead(
@@ -459,7 +487,6 @@ class TestAclaraRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
         # Check account table has correct values
         self.cs.execute(f"SELECT * FROM {self.test_aclara_base_table}")
         meter_and_read = self.cs.fetchone()
-        print(meter_and_read)
         self.assertEqual("org1", meter_and_read[0])
         self.assertEqual("17305709", meter_and_read[3])
 
