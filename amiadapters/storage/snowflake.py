@@ -24,7 +24,7 @@ class RawSnowflakeTableLoader:
 
     # Name of the raw data table, e.g. "subeca_account_base"
     table_name: str
-    # Set of field names in the raw data that should be stored. Should match Snowflake table's column names.
+    # Set of field names in the raw data that should be stored. Should match Snowflake table's column names unless otherwise specified in `columns`.
     fields: set[str]
     # List of above fields that constitute the unique key on the Snowflake table. For a device/meter table, often the device ID field.
     # For readings tables, often the device ID plus the flowtime field.
@@ -32,6 +32,8 @@ class RawSnowflakeTableLoader:
     # Function that defines how to get the raw data for this table out of the ExtractOutput object
     # Return as list of dataclass instances
     parse_raw_data_fn: Callable[[ExtractOutput], list]
+    # Set of base table column names. Typically same as fields, but may differ e.g. if any fields need escaping.
+    columns: set[str] = None
 
 
 class RawSnowflakeLoader(ABC):
@@ -63,6 +65,7 @@ class RawSnowflakeLoader(ABC):
                 snowflake_conn=snowflake_conn,
                 raw_data=raw_data,
                 fields=table_loader.fields,
+                columns=table_loader.columns,
                 table=table_loader.table_name,
                 unique_by=table_loader.unique_by,
             )
@@ -84,6 +87,7 @@ class RawSnowflakeLoader(ABC):
         fields: Set[str],
         table: str,
         unique_by: List[str],
+        columns: Set[str] = None,
     ) -> None:
         """
         Extracts raw data from intermediate outputs and loads it into a Snowflake raw data table using an upsert (MERGE) operation.
@@ -96,12 +100,15 @@ class RawSnowflakeLoader(ABC):
             fields (Set[str]): Set of dataclass field names to include in the load. Must match Snowflake table column names.
             table (str): Name of the target raw data table in Snowflake.
             unique_by (List[str]): List of field names (in addition to org_id) that uniquely identify a row in the base table.
+            columns (Set[str], optional): Set of Snowflake table column names. If not provided, defaults to `fields`.
         Notes:
             - Assumes the target table includes 'org_id' and 'created_time' columns.
             - Performs upsert by creating a temporary table and executing a MERGE query.
         """
         temp_table = f"temp_{table}"
         unique_by = [u.lower() for u in unique_by]
+        if columns is None:
+            columns = [f for f in fields]
         self._create_temp_table(
             snowflake_conn,
             temp_table,
@@ -110,22 +117,26 @@ class RawSnowflakeLoader(ABC):
             org_timezone,
             org_id,
             raw_data,
+            columns=columns
         )
         self._merge_from_temp_table(
             snowflake_conn,
             table,
             temp_table,
-            fields,
+            columns,
             unique_by,
         )
 
     def _create_temp_table(
-        self, snowflake_conn, temp_table, table, fields, org_timezone, org_id, raw_data
+        self, snowflake_conn, temp_table, table, fields, org_timezone, org_id, raw_data, columns=None,
     ) -> None:
         """
         Insert every object in raw_data into a temp copy of the table.
         """
         logger.info(f"Prepping for raw load to table {table}")
+
+        if columns is None:
+            columns = [f for f in fields]
 
         # Create the temp table
         create_temp_table_sql = (
@@ -134,12 +145,13 @@ class RawSnowflakeLoader(ABC):
         snowflake_conn.cursor().execute(create_temp_table_sql)
 
         # Insert raw data
-        columns_as_comma_str = ", ".join(fields)
-        qmarks = "?, " * (len(fields) - 1) + "?"
+        columns_as_comma_str = ", ".join(columns)
+        qmarks = "?, " * (len(columns) - 1) + "?"
         insert_temp_data_sql = f"""
             INSERT INTO {temp_table} (org_id, created_time, {columns_as_comma_str}) 
                 VALUES (?, ?, {qmarks})
         """
+        print(insert_temp_data_sql)
         created_time = datetime.now(tz=org_timezone)
         rows = [
             tuple(
@@ -154,13 +166,13 @@ class RawSnowflakeLoader(ABC):
         snowflake_conn,
         table: str,
         temp_table: str,
-        fields: List[str],
+        columns: Set[str],
         unique_by: List[str],
     ) -> None:
         """
         Merge data from temp table into the base table using the unique_by keys
         """
-        fields_lower = list(f.lower() for f in fields)
+        columns_lower = list(column.lower() for column in columns)
         logger.info(f"Merging {temp_table} into {table}")
         merge_sql = f"""
             MERGE INTO {table} AS target
@@ -169,7 +181,7 @@ class RawSnowflakeLoader(ABC):
                 SELECT 
                     org_id,
                     {", ".join(unique_by)},
-                    {", ".join([f"max({name}) as {name}" for name in fields_lower if name not in unique_by])}, 
+                    {", ".join([f"max({name}) as {name}" for name in columns_lower if name not in unique_by])}, 
                     max(created_time) as created_time
                 FROM {temp_table} t
                 GROUP BY org_id, {", ".join(unique_by)}
@@ -179,10 +191,10 @@ class RawSnowflakeLoader(ABC):
             WHEN MATCHED THEN
                 UPDATE SET
                     target.created_time = source.created_time,
-                    {",".join([f"target.{name} = source.{name}" for name in fields_lower])}
+                    {",".join([f"target.{name} = source.{name}" for name in columns_lower])}
             WHEN NOT MATCHED THEN
-                INSERT (org_id, {", ".join(name for name in fields_lower)}, created_time) 
-                        VALUES (source.org_id, {", ".join(f"source.{name}" for name in fields_lower)}, source.created_time)
+                INSERT (org_id, {", ".join(name for name in columns_lower)}, created_time) 
+                        VALUES (source.org_id, {", ".join(f"source.{name}" for name in columns_lower)}, source.created_time)
         """
         snowflake_conn.cursor().execute(merge_sql)
 
