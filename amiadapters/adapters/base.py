@@ -246,6 +246,8 @@ class BaseAMIAdapter(ABC):
         Map an AMI data provider meter's size to one
         of our generalized values. Return None if it can't be mapped.
         """
+        if size is None:
+            return None
         mapping = {
             '3/8"': "0.375",
             "3/8": "0.375",
@@ -322,6 +324,7 @@ class BaseAMIAdapter(ABC):
             "W-TRB4": "4",
             "W-UM8": "8",
         }
+        size = size.strip()
         result = mapping.get(size)
         if size is not None and result is None:
             logger.info(f"Unable to map meter size: {size}")

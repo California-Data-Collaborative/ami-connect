@@ -4,15 +4,12 @@ import pytz
 from pytz import timezone
 from unittest.mock import MagicMock, patch
 
-from amiadapters.configuration.models import (
-    LocalIntermediateOutputControllerConfiguration,
-)
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.adapters.subeca import (
     SubecaAccount,
     SubecaAdapter,
-    SubecaRawSnowflakeLoader,
     SubecaReading,
+    SUBECA_RAW_SNOWFLAKE_LOADER,
 )
 from test.base_test_case import BaseTestCase
 
@@ -426,7 +423,7 @@ class TestSubecaAdapter(BaseTestCase):
 
 class TestSubecaRawSnowflakeLoader(BaseTestCase):
     def setUp(self):
-        self.loader = SubecaRawSnowflakeLoader()
+        self.loader = SUBECA_RAW_SNOWFLAKE_LOADER
         self.run_id = "run-123"
         self.org_id = "test-org"
         self.org_timezone = timezone("UTC")

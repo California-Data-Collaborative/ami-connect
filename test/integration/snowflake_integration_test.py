@@ -16,9 +16,12 @@ import os
 import pytz
 import unittest
 
+from amiadapters.adapters.aclara import AclaraBaseTableLoader, AclaraMeterAndRead
 from amiadapters.adapters.subeca import (
+    RawAccountsLoader,
+    RawLatestReadingLoader,
+    RawUsageLoader,
     SubecaAccount,
-    SubecaRawSnowflakeLoader,
     SubecaReading,
 )
 from amiadapters.configuration.env import set_global_aws_profile, set_global_aws_region
@@ -26,6 +29,7 @@ from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.models import GeneralMeter, GeneralMeterRead, DataclassJSONEncoder
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import (
+    RawSnowflakeLoader,
     SnowflakeStorageSink,
     SnowflakeMetersUniqueByDeviceIdCheck,
     SnowflakeReadingsUniqueByDeviceIdAndFlowtimeCheck,
@@ -272,6 +276,24 @@ class TestSnowflakeDataQualityChecks(BaseSnowflakeIntegrationTestCase):
         self.assertTrue(check.check())
 
 
+class IntTestSubecaRawAccountsLoader(RawAccountsLoader):
+    # Override the table name for the integration test
+    def table_name(self) -> str:
+        return "SUBECA_ACCOUNT_BASE_int_test"
+
+
+class IntTestSubecaRawLatestReadingLoader(RawLatestReadingLoader):
+    # Override the table name for the integration test
+    def table_name(self) -> str:
+        return "SUBECA_DEVICE_LATEST_READ_BASE_int_test"
+
+
+class IntTestSubecaRawUsageLoader(RawUsageLoader):
+    # Override the table name for the integration test
+    def table_name(self) -> str:
+        return "SUBECA_USAGE_BASE_int_test"
+
+
 class TestSubecaRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
 
     def setUp(self):
@@ -289,10 +311,12 @@ class TestSubecaRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
         self.cs.execute(
             f"CREATE OR REPLACE TEMPORARY TABLE {self.test_subeca_usage_base_table} LIKE SUBECA_USAGE_BASE;"
         )
-        self.loader = SubecaRawSnowflakeLoader(
-            base_accounts_table=self.test_subeca_account_base_table,
-            base_usage_table=self.test_subeca_usage_base_table,
-            base_latest_read_table=self.test_subeca_device_latest_read_base_table,
+        self.loader = RawSnowflakeLoader.with_table_loaders(
+            [
+                IntTestSubecaRawAccountsLoader(),
+                IntTestSubecaRawLatestReadingLoader(),
+                IntTestSubecaRawUsageLoader(),
+            ]
         )
 
     def test_load_upserts_new_row(self):
@@ -388,6 +412,83 @@ class TestSubecaRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
         self.assertEqual("2025-01-01", latest_read[3])
         self.assertEqual("CF", latest_read[4])
         self.assertEqual("1", latest_read[5])
+
+
+class IntTestAclaraBaseTableLoader(AclaraBaseTableLoader):
+    # Override the table name for the integration test
+    def table_name(self) -> str:
+        return "ACLARA_BASE_int_test"
+
+
+class TestAclaraRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
+
+    def setUp(self):
+        table_loader = IntTestAclaraBaseTableLoader()
+        self.test_aclara_base_table = table_loader.table_name()
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_aclara_base_table} LIKE ACLARA_BASE;"
+        )
+        self.loader = RawSnowflakeLoader.with_table_loaders([table_loader])
+
+    def test_load_upserts_new_row(self):
+        meter_and_read = AclaraMeterAndRead(
+            AccountNumber="17305709",
+            MeterSN="1",
+            MTUID="2",
+            Port="1",
+            AccountType="Residential",
+            Address1="12 MY LN",
+            City="LOS ANGELES",
+            State="CA",
+            Zip="00000",
+            RawRead="23497071",
+            ScaledRead="1",
+            ReadingTime="2025-05-25 16:00:00.000",
+            LocalTime="2025-05-25 09:00:00.000",
+            Active="1",
+            Scalar="0.001",
+            MeterTypeID="2212",
+            Vendor="BADGER",
+            Model="HR-E LCD",
+            Description="Badger M25/LP HRE LCD 5/8x3/4in 9D 0.001CuFt",
+            ReadInterval="60",
+        )
+
+        extract_outputs = ExtractOutput(
+            {
+                "meters_and_reads.json": "\n".join(
+                    json.dumps(i, cls=DataclassJSONEncoder) for i in [meter_and_read]
+                ),
+            }
+        )
+
+        self._assert_num_rows(self.test_aclara_base_table, 0)
+
+        # Load data into empty table
+        self.loader.load(
+            "run-1",
+            "org1",
+            pytz.UTC,
+            extract_outputs,
+            self.conn,
+        )
+        self._assert_num_rows(self.test_aclara_base_table, 1)
+
+        # Load data again and make sure it didn't create new rows
+        self.loader.load(
+            "run-1",
+            "org1",
+            pytz.UTC,
+            extract_outputs,
+            self.conn,
+        )
+        self._assert_num_rows(self.test_aclara_base_table, 1)
+
+        # Check account table has correct values
+        self.cs.execute(f"SELECT * FROM {self.test_aclara_base_table}")
+        meter_and_read = self.cs.fetchone()
+        self.assertEqual("org1", meter_and_read[0])
+        self.assertEqual("17305709", meter_and_read[3])
 
 
 if __name__ == "__main__":

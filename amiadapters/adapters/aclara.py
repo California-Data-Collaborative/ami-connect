@@ -8,13 +8,12 @@ from typing import Generator, List, Tuple
 
 import paramiko
 import pytz
-from pytz.tzinfo import DstTzInfo
 
 from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
 from amiadapters.configuration.models import SftpConfiguration
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
-from amiadapters.storage.snowflake import RawSnowflakeLoader
+from amiadapters.storage.snowflake import RawSnowflakeLoader, RawSnowflakeTableLoader
 
 
 logger = logging.getLogger(__name__)
@@ -80,7 +79,7 @@ class AclaraAdapter(BaseAMIAdapter):
             pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
-            AclaraRawSnowflakeLoader(),
+            RawSnowflakeLoader.with_table_loaders([AclaraBaseTableLoader()]),
         )
 
     def name(self) -> str:
@@ -344,64 +343,30 @@ def files_for_date_range(
     return result
 
 
-class AclaraRawSnowflakeLoader(RawSnowflakeLoader):
-    """
-    Aclara implementation of raw storage in Snowflake.
-    """
+class AclaraBaseTableLoader(RawSnowflakeTableLoader):
 
-    def load(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-    ):
-        raw_meters_with_reads = extract_outputs.load_from_file(
+    def table_name(self):
+        return "aclara_base"
+
+    def columns(self):
+        cols = list(AclaraMeterAndRead.__dataclass_fields__.keys())
+        # The field "localtime" is a reserved word in Snowflake, so we need to escape it
+        cols = [c if c != "LocalTime" else "`LOCALTIME`" for c in cols]
+        # aclara_base's first column is device_id, populated from a field in the raw data
+        cols = ["device_id"] + cols
+        return cols
+
+    def unique_by(self):
+        return ["device_id", "readingtime"]
+
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = extract_outputs.load_from_file(
             "meters_and_reads.json", AclaraMeterAndRead
         )
-
-        created_time = datetime.now(tz=org_timezone)
-
-        create_temp_table_sql = (
-            "CREATE OR REPLACE TEMPORARY TABLE temp_aclara_base LIKE aclara_base;"
-        )
-        snowflake_conn.cursor().execute(create_temp_table_sql)
-
-        insert_temp_data_sql = f"""
-            INSERT INTO temp_aclara_base (
-                org_id,
-                device_id,
-                created_time,
-                ACCOUNTNUMBER,
-                METERSN,
-                MTUID,
-                PORT,
-                ACCOUNTTYPE,
-                ADDRESS1,
-                CITY,
-                STATE,
-                ZIP,
-                RAWREAD,
-                SCALEDREAD,
-                READINGTIME,
-                `LOCALTIME`,
-                ACTIVE,
-                SCALAR,
-                METERTYPEID,
-                VENDOR,
-                MODEL,
-                DESCRIPTION,
-                READINTERVAL
-            )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        rows = [
+        return [
             tuple(
                 [
-                    org_id,
                     i.MeterSN,
-                    created_time,
                     i.AccountNumber,
                     i.MeterSN,
                     i.MTUID,
@@ -424,114 +389,5 @@ class AclaraRawSnowflakeLoader(RawSnowflakeLoader):
                     i.ReadInterval,
                 ]
             )
-            for i in raw_meters_with_reads
+            for i in raw_data
         ]
-        snowflake_conn.cursor().executemany(insert_temp_data_sql, rows)
-
-        merge_sql = f"""
-            MERGE INTO aclara_base AS target
-            USING (
-                -- Use GROUP BY to ensure there are no duplicate rows before merge
-                SELECT
-                    org_id,
-                    device_id,
-                    READINGTIME,
-                    max(ACCOUNTNUMBER) as ACCOUNTNUMBER,
-                    max(METERSN) as METERSN,
-                    max(MTUID) as MTUID,
-                    max(PORT) as PORT,
-                    max(ACCOUNTTYPE) as ACCOUNTTYPE,
-                    max(ADDRESS1) as ADDRESS1,
-                    max(CITY) as CITY,
-                    max(STATE) as STATE,
-                    max(ZIP) as ZIP,
-                    max(RAWREAD) as RAWREAD,
-                    max(SCALEDREAD) as SCALEDREAD,
-                    max(`LOCALTIME`) as `LOCALTIME`,
-                    max(ACTIVE) as ACTIVE,
-                    max(SCALAR) as SCALAR,
-                    max(METERTYPEID) as METERTYPEID,
-                    max(VENDOR) as VENDOR,
-                    max(MODEL) as MODEL,
-                    max(DESCRIPTION) as DESCRIPTION,
-                    max(READINTERVAL) as READINTERVAL,
-                    max(created_time) as created_time
-                FROM temp_aclara_base
-                GROUP BY org_id, device_id, READINGTIME
-            ) AS source
-            ON source.org_id = target.org_id
-                AND source.device_id = target.device_id
-                AND source.READINGTIME = target.READINGTIME
-            WHEN MATCHED THEN
-                UPDATE SET
-                    target.created_time = source.created_time,
-                    target.ACCOUNTNUMBER = source.ACCOUNTNUMBER,
-                    target.METERSN = source.METERSN,
-                    target.MTUID = source.MTUID,
-                    target.PORT = source.PORT,
-                    target.ACCOUNTTYPE = source.ACCOUNTTYPE,
-                    target.ADDRESS1 = source.ADDRESS1,
-                    target.CITY = source.CITY,
-                    target.STATE = source.STATE,
-                    target.ZIP = source.ZIP,
-                    target.RAWREAD = source.RAWREAD,
-                    target.SCALEDREAD = source.SCALEDREAD,
-                    target.`LOCALTIME` = source.`LOCALTIME`,
-                    target.ACTIVE = source.ACTIVE,
-                    target.SCALAR = source.SCALAR,
-                    target.METERTYPEID = source.METERTYPEID,
-                    target.VENDOR = source.VENDOR,
-                    target.MODEL = source.MODEL,
-                    target.DESCRIPTION = source.DESCRIPTION,
-                    target.READINTERVAL = source.READINTERVAL
-            WHEN NOT MATCHED THEN
-                INSERT (
-                    org_id,
-                    device_id,
-                    ACCOUNTNUMBER,
-                    METERSN,
-                    MTUID,
-                    PORT,
-                    ACCOUNTTYPE,
-                    ADDRESS1,
-                    CITY,
-                    STATE,
-                    ZIP,
-                    RAWREAD,
-                    SCALEDREAD,
-                    READINGTIME,
-                    `LOCALTIME`,
-                    ACTIVE,
-                    SCALAR,
-                    METERTYPEID,
-                    VENDOR,
-                    MODEL,
-                    DESCRIPTION,
-                    READINTERVAL,
-                    created_time)
-                        VALUES (
-                        source.org_id,
-                        source.device_id,
-                        source.ACCOUNTNUMBER,
-                        source.METERSN,
-                        source.MTUID,
-                        source.PORT,
-                        source.ACCOUNTTYPE,
-                        source.ADDRESS1,
-                        source.CITY,
-                        source.STATE,
-                        source.ZIP,
-                        source.RAWREAD,
-                        source.SCALEDREAD,
-                        source.READINGTIME,
-                        source.`LOCALTIME`,
-                        source.ACTIVE,
-                        source.SCALAR,
-                        source.METERTYPEID,
-                        source.VENDOR,
-                        source.MODEL,
-                        source.DESCRIPTION,
-                        source.READINTERVAL,
-                        source.created_time)
-        """
-        snowflake_conn.cursor().execute(merge_sql)
