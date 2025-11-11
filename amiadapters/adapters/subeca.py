@@ -82,13 +82,7 @@ class SubecaAdapter(BaseAMIAdapter):
             pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
-            RawSnowflakeLoader.with_table_loaders(
-                [
-                    RawAccountsLoader(),
-                    RawLatestReadingLoader(),
-                    RawUsageLoader(),
-                ]
-            ),
+            SUBECA_RAW_SNOWFLAKE_LOADER,
         )
 
     def name(self) -> str:
@@ -479,6 +473,15 @@ class RawUsageLoader(RawSnowflakeTableLoader):
         return [
             tuple(i.__getattribute__(col) for col in self.columns()) for i in raw_data
         ]
+
+
+SUBECA_RAW_SNOWFLAKE_LOADER = RawSnowflakeLoader.with_table_loaders(
+    [
+        RawAccountsLoader(),
+        RawLatestReadingLoader(),
+        RawUsageLoader(),
+    ]
+)
 
 
 def _read_accounts_file(extract_outputs: ExtractOutput) -> List[SubecaAccount]:

@@ -323,16 +323,6 @@ class BaseAMIAdapter(ABC):
             "W-RTRB8": "8",
             "W-TRB4": "4",
             "W-UM8": "8",
-            "Inch": "Inch",
-            "6D": "6D",
-            "7D": "7D",
-            "9D": "9D",
-            ".01": ".01",
-            "0.01CuFt": "0.01CuFt",
-            "0.001CuFt": "0.001CuFt",
-            "0.001Cu.Ft.": "0.001CuFt",
-            "Cu.Ft.": "1CuFt",
-            "1CuFt": "1CuFt",
         }
         size = size.strip()
         result = mapping.get(size)
