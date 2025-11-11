@@ -16,6 +16,7 @@ import os
 import pytz
 import unittest
 
+from amiadapters.adapters.aclara import AclaraRawSnowflakeLoader, AclaraMeterAndRead
 from amiadapters.adapters.subeca import (
     SubecaAccount,
     SubecaRawSnowflakeLoader,
@@ -388,6 +389,79 @@ class TestSubecaRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
         self.assertEqual("2025-01-01", latest_read[3])
         self.assertEqual("CF", latest_read[4])
         self.assertEqual("1", latest_read[5])
+
+
+class TestAclaraRawSnowflakeLoader(BaseSnowflakeIntegrationTestCase):
+
+    def setUp(self):
+        self.test_aclara_base_table = "ACLARA_BASE_int_test"
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_aclara_base_table} LIKE ACLARA_BASE;"
+        )
+        self.loader = AclaraRawSnowflakeLoader(
+            base_table=self.test_aclara_base_table,
+        )
+
+    def test_load_upserts_new_row(self):
+        meter_and_read = AclaraMeterAndRead(
+            AccountNumber="17305709",
+            MeterSN="1",
+            MTUID="2",
+            Port="1",
+            AccountType="Residential",
+            Address1="12 MY LN",
+            City="LOS ANGELES",
+            State="CA",
+            Zip="00000",
+            RawRead="23497071",
+            ScaledRead="1",
+            ReadingTime="2025-05-25 16:00:00.000",
+            LocalTime="2025-05-25 09:00:00.000",
+            Active="1",
+            Scalar="0.001",
+            MeterTypeID="2212",
+            Vendor="BADGER",
+            Model="HR-E LCD",
+            Description="Badger M25/LP HRE LCD 5/8x3/4in 9D 0.001CuFt",
+            ReadInterval="60",
+        )
+
+        extract_outputs = ExtractOutput(
+            {
+                "meters_and_reads.json": "\n".join(
+                    json.dumps(i, cls=DataclassJSONEncoder) for i in [meter_and_read]
+                ),
+            }
+        )
+
+        self._assert_num_rows(self.test_aclara_base_table, 0)
+
+        # Load data into empty table
+        self.loader.load(
+            "run-1",
+            "org1",
+            pytz.UTC,
+            extract_outputs,
+            self.conn,
+        )
+        self._assert_num_rows(self.test_aclara_base_table, 1)
+
+        # Load data again and make sure it didn't create new rows
+        self.loader.load(
+            "run-1",
+            "org1",
+            pytz.UTC,
+            extract_outputs,
+            self.conn,
+        )
+        self._assert_num_rows(self.test_aclara_base_table, 1)
+
+        # Check account table has correct values
+        self.cs.execute(f"SELECT * FROM {self.test_aclara_base_table}")
+        meter_and_read = self.cs.fetchone()
+        print(meter_and_read)
+        self.assertEqual("org1", meter_and_read[0])
+        self.assertEqual("17305709", meter_and_read[3])
 
 
 if __name__ == "__main__":

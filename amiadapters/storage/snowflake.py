@@ -151,7 +151,6 @@ class RawSnowflakeLoader(ABC):
             INSERT INTO {temp_table} (org_id, created_time, {columns_as_comma_str}) 
                 VALUES (?, ?, {qmarks})
         """
-        print(insert_temp_data_sql)
         created_time = datetime.now(tz=org_timezone)
         rows = [
             tuple(
