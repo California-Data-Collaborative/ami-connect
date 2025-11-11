@@ -16,8 +16,8 @@ jobs:
       # Added after pip began taking longer to install dependencies
       # due to changes in pip >=24.1, which uses the new “complete” resolver
       # that apparently doesn't work well with apache-airflow==2.10.5 --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.12.txt
-      - name: Downgrade pip
-        run: python -m pip install --upgrade "pip<24.1"
+      # - name: Downgrade pip
+      #   run: python -m pip install --upgrade "pip<24.1"
       
       - name: Install Dependencies
         run: 
