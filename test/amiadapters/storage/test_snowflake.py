@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytz
 
-from amiadapters.adapters.beacon import BeaconRawSnowflakeLoader
+from amiadapters.adapters.beacon import BEACON_RAW_SNOWFLAKE_LOADER
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import (
@@ -34,7 +34,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
             "org-id",
             pytz.timezone("Africa/Algiers"),
             sink_config,
-            BeaconRawSnowflakeLoader(),
+            BEACON_RAW_SNOWFLAKE_LOADER,
         )
 
     def test_upsert_meters(self):

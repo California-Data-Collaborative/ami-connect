@@ -6,7 +6,7 @@ from unittest import mock
 from amiadapters.adapters.beacon import (
     Beacon360Adapter,
     Beacon360MeterAndRead,
-    BeaconRawSnowflakeLoader,
+    BEACON_RAW_SNOWFLAKE_LOADER,
     REQUESTED_COLUMNS,
 )
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
@@ -614,7 +614,7 @@ class TestBeaconRawSnowflakeLoader(BaseTestCase):
         )
 
     def test_load(self):
-        loader = BeaconRawSnowflakeLoader()
+        loader = BEACON_RAW_SNOWFLAKE_LOADER
         loader.load(
             "run-id",
             "org-id",
