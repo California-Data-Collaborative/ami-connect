@@ -18,7 +18,7 @@ from amiadapters.adapters.base import (
 )
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
-from amiadapters.storage.snowflake import RawSnowflakeLoader
+from amiadapters.storage.snowflake import RawSnowflakeLoader, RawSnowflakeTableLoader
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ class Beacon360Adapter(BaseAMIAdapter):
             pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
-            BeaconRawSnowflakeLoader(),
+            BEACON_RAW_SNOWFLAKE_LOADER,
         )
 
     def name(self) -> str:
@@ -435,61 +435,30 @@ class Beacon360Adapter(BaseAMIAdapter):
         )
 
 
-class BeaconRawSnowflakeLoader(RawSnowflakeLoader):
+class BeaconRawTableLoader(RawSnowflakeTableLoader):
 
-    def load(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-    ):
-        raw_meters_with_reads = extract_outputs.load_from_file(
+    def table_name(self) -> str:
+        return "beacon_360_base"
+
+    def columns(self) -> List[str]:
+        return ["device_id"] + REQUESTED_COLUMNS
+
+    def unique_by(self) -> List[str]:
+        return ["device_id", "read_time"]
+
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = extract_outputs.load_from_file(
             "meters_and_reads.json", Beacon360MeterAndRead
         )
-
-        create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_beacon_360_base LIKE beacon_360_base;"
-        snowflake_conn.cursor().execute(create_temp_table_sql)
-
-        columns = ", ".join(REQUESTED_COLUMNS)
-        qmarks = "?, " * (len(REQUESTED_COLUMNS) - 1) + "?"
-        insert_temp_data_sql = f"""
-            INSERT INTO temp_beacon_360_base (org_id, device_id, created_time, {columns}) 
-                VALUES (?, ?, ?, {qmarks})
-        """
-        created_time = datetime.now(tz=org_timezone)
-        rows = [
+        return [
             tuple(
-                [org_id, i.Endpoint_SN, created_time]
+                [i.Endpoint_SN]
                 + [i.__getattribute__(name) for name in REQUESTED_COLUMNS]
             )
-            for i in raw_meters_with_reads
+            for i in raw_data
         ]
-        snowflake_conn.cursor().executemany(insert_temp_data_sql, rows)
 
-        merge_sql = f"""
-            MERGE INTO beacon_360_base AS target
-            USING (
-                -- Use GROUP BY to ensure there are no duplicate rows before merge
-                SELECT 
-                    org_id,
-                    device_id, 
-                    Read_Time, 
-                    {", ".join([f"max({name}) as {name}" for name in REQUESTED_COLUMNS if name not in {"Read_Time",}])}, 
-                    max(created_time) as created_time
-                FROM temp_beacon_360_base
-                GROUP BY org_id, device_id, Read_Time
-            ) AS source
-            ON source.org_id = target.org_id 
-                AND source.device_id = target.device_id
-                AND source.Read_Time = target.Read_Time
-            WHEN MATCHED THEN
-                UPDATE SET
-                    target.created_time = source.created_time,
-                    {",".join([f"target.{name} = source.{name}" for name in REQUESTED_COLUMNS])}
-            WHEN NOT MATCHED THEN
-                INSERT (org_id, device_id, {", ".join(name for name in REQUESTED_COLUMNS)}, created_time) 
-                        VALUES (source.org_id, source.device_id, {", ".join(f"source.{name}" for name in REQUESTED_COLUMNS)}, source.created_time)
-        """
-        snowflake_conn.cursor().execute(merge_sql)
+
+BEACON_RAW_SNOWFLAKE_LOADER = RawSnowflakeLoader.with_table_loaders(
+    [BeaconRawTableLoader()]
+)
