@@ -4,7 +4,6 @@ import logging
 import json
 from typing import List, Tuple
 
-from pytz.tzinfo import DstTzInfo
 import requests
 
 from amiadapters.models import (
@@ -14,7 +13,7 @@ from amiadapters.models import (
 )
 from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.outputs.base import ExtractOutput
-from amiadapters.storage.snowflake import RawSnowflakeLoader
+from amiadapters.storage.snowflake import RawSnowflakeLoader, RawSnowflakeTableLoader
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +171,12 @@ class SentryxAdapter(BaseAMIAdapter):
             pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
-            SentryxRawSnowflakeLoader(),
+            RawSnowflakeLoader.with_table_loaders(
+                [
+                    SentryxRawMetersLoader(),
+                    SentryxRawReadsLoader(),
+                ]
+            ),
         )
 
     def name(self) -> str:
@@ -366,224 +370,47 @@ class SentryxAdapter(BaseAMIAdapter):
         return list(meters_by_id.values()), meter_reads
 
 
-class SentryxRawSnowflakeLoader(RawSnowflakeLoader):
-    """
-    Sentryx implementation of raw storage in Snowflake.
-    """
+class SentryxRawMetersLoader(RawSnowflakeTableLoader):
 
-    def load(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-    ):
-        raw_meters = extract_outputs.load_from_file("meters.json", SentryxMeter)
-        raw_meters_with_reads = SentryxMeterWithReads.from_json_file(
-            extract_outputs, "reads.json"
-        )
+    def table_name(self) -> str:
+        return "sentryx_meter_base"
 
-        created_time = datetime.now(tz=org_timezone)
+    def columns(self) -> List[str]:
+        return list(SentryxMeter.__dataclass_fields__.keys())
 
-        self._store_raw_meters(snowflake_conn, org_id, created_time, raw_meters)
-        self._store_raw_meter_reads(
-            snowflake_conn, org_id, created_time, raw_meters_with_reads
-        )
+    def unique_by(self) -> List[str]:
+        return ["device_id"]
 
-    def _store_raw_meters(
-        self, conn, org_id: str, created_time: datetime, raw_meters: List[SentryxMeter]
-    ):
-        create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_sentryx_meter_base LIKE sentryx_meter_base;"
-        conn.cursor().execute(create_temp_table_sql)
-
-        insert_temp_data_sql = f"""
-            INSERT INTO temp_sentryx_meter_base (
-                org_id,
-                device_id,
-                created_time,
-                DEVICE_STATUS,
-                SERVICE_STATUS,
-                STREET,
-                CITY,
-                STATE,
-                ZIP,
-                DESCRIPTION,
-                MANUFACTURER,
-                INSTALL_NOTES,
-                INSTALL_DATE,
-                METER_SIZE
-            )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        rows = [
-            tuple(
-                [
-                    org_id,
-                    i.device_id,
-                    created_time,
-                    i.device_status,
-                    i.service_status,
-                    i.street,
-                    i.city,
-                    i.state,
-                    i.zip,
-                    i.description,
-                    i.manufacturer,
-                    i.install_notes,
-                    i.install_date,
-                    i.meter_size,
-                ]
-            )
-            for i in raw_meters
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = extract_outputs.load_from_file("meters.json", SentryxMeter)
+        return [
+            tuple(i.__getattribute__(name) for name in self.columns()) for i in raw_data
         ]
-        conn.cursor().executemany(insert_temp_data_sql, rows)
 
-        merge_sql = f"""
-            MERGE INTO sentryx_meter_base AS target
-            USING (
-                -- Use GROUP BY to ensure there are no duplicate rows before merge
-                SELECT
-                    org_id,
-                    device_id,
-                    max(DEVICE_STATUS) as DEVICE_STATUS,
-                    max(SERVICE_STATUS) as SERVICE_STATUS,
-                    max(STREET) as STREET,
-                    max(CITY) as CITY,
-                    max(STATE) as STATE,
-                    max(ZIP) as ZIP,
-                    max(DESCRIPTION) as DESCRIPTION,
-                    max(MANUFACTURER) as MANUFACTURER,
-                    max(INSTALL_NOTES) as INSTALL_NOTES,
-                    max(INSTALL_DATE) as INSTALL_DATE,
-                    max(METER_SIZE) as METER_SIZE,
-                    max(created_time) as created_time
-                FROM temp_sentryx_meter_base
-                GROUP BY org_id, device_id
-            ) AS source
-            ON source.org_id = target.org_id
-                AND source.device_id = target.device_id
-            WHEN MATCHED THEN
-                UPDATE SET
-                    target.created_time = source.created_time,
-                    target.DEVICE_STATUS = source.DEVICE_STATUS,
-                    target.SERVICE_STATUS = source.SERVICE_STATUS,
-                    target.STREET = source.STREET,
-                    target.CITY = source.CITY,
-                    target.STATE = source.STATE,
-                    target.ZIP = source.ZIP,
-                    target.DESCRIPTION = source.DESCRIPTION,
-                    target.MANUFACTURER = source.MANUFACTURER,
-                    target.INSTALL_NOTES = source.INSTALL_NOTES,
-                    target.INSTALL_DATE = source.INSTALL_DATE,
-                    target.METER_SIZE = source.METER_SIZE
-            WHEN NOT MATCHED THEN
-                INSERT (
-                    org_id, 
-                    device_id, 
-                    DEVICE_STATUS,
-                    SERVICE_STATUS,
-                    STREET,
-                    CITY,
-                    STATE,
-                    ZIP,
-                    DESCRIPTION,
-                    MANUFACTURER,
-                    INSTALL_NOTES,
-                    INSTALL_DATE,
-                    METER_SIZE,
-                    created_time)
-                        VALUES (
-                        source.org_id, 
-                        source.device_id, 
-                        source.DEVICE_STATUS,
-                        source.SERVICE_STATUS,
-                        source.STREET,
-                        source.CITY,
-                        source.STATE,
-                        source.ZIP,
-                        source.DESCRIPTION,
-                        source.MANUFACTURER,
-                        source.INSTALL_NOTES,
-                        source.INSTALL_DATE,
-                        source.METER_SIZE,
-                        source.created_time)
-        """
-        conn.cursor().execute(merge_sql)
 
-    def _store_raw_meter_reads(
-        self,
-        conn,
-        org_id: str,
-        created_time: datetime,
-        raw_meters_with_reads: List[SentryxMeterWithReads],
-    ):
-        create_temp_table_sql = "CREATE OR REPLACE TEMPORARY TABLE temp_sentryx_read_base LIKE sentryx_read_base;"
-        conn.cursor().execute(create_temp_table_sql)
+class SentryxRawReadsLoader(RawSnowflakeTableLoader):
 
-        insert_temp_data_sql = f"""
-            INSERT INTO temp_sentryx_read_base (
-                org_id,
-                device_id,
-                created_time,
-                TIME_STAMP,
-                READING,
-                UNITS
-            )
-                VALUES (?, ?, ?, ?, ?, ?)
-        """
-        rows = [
-            tuple(
-                [
-                    org_id,
-                    meter.device_id,
-                    created_time,
-                    reading.time_stamp,
-                    reading.reading,
-                    meter.units,
-                ]
-            )
-            for meter in raw_meters_with_reads
-            for reading in meter.data
+    def table_name(self) -> str:
+        return "sentryx_read_base"
+
+    def columns(self) -> List[str]:
+        return [
+            "device_id",
+            "TIME_STAMP",
+            "READING",
+            "UNITS",
         ]
-        conn.cursor().executemany(insert_temp_data_sql, rows)
 
-        merge_sql = f"""
-            MERGE INTO sentryx_read_base AS target
-            USING (
-                -- Use GROUP BY to ensure there are no duplicate rows before merge
-                SELECT
-                    org_id,
-                    device_id,
-                    TIME_STAMP,
-                    max(READING) as READING,
-                    max(UNITS) as UNITS,
-                    max(created_time) as created_time
-                FROM temp_sentryx_read_base
-                GROUP BY org_id, device_id, TIME_STAMP
-            ) AS source
-            ON source.org_id = target.org_id
-                AND source.device_id = target.device_id
-                AND source.TIME_STAMP = target.TIME_STAMP
-            WHEN MATCHED THEN
-                UPDATE SET
-                    target.created_time = source.created_time,
-                    target.READING = source.READING,
-                    target.UNITS = source.UNITS
-            WHEN NOT MATCHED THEN
-                INSERT (
-                    org_id, 
-                    device_id, 
-                    TIME_STAMP,
-                    READING,
-                    UNITS,
-                    created_time)
-                        VALUES (
-                        source.org_id, 
-                        source.device_id, 
-                        source.TIME_STAMP,
-                        source.READING,
-                        source.UNITS,
-                        source.created_time)
-        """
-        conn.cursor().execute(merge_sql)
+    def unique_by(self) -> List[str]:
+        return ["device_id", "TIME_STAMP"]
+
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = SentryxMeterWithReads.from_json_file(extract_outputs, "reads.json")
+        return [
+            tuple(
+                [meter_with_reads.device_id]
+                + [reading.__getattribute__(name) for name in self.columns()]
+            )
+            for meter_with_reads in raw_data
+            for reading in meter_with_reads
+        ]
