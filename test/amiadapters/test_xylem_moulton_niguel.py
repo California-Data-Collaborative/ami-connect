@@ -4,12 +4,9 @@ from unittest.mock import MagicMock
 
 import pytz
 
-from amiadapters.configuration.models import (
-    LocalIntermediateOutputControllerConfiguration,
-)
 from amiadapters.adapters.xylem_moulton_niguel import (
     XylemMoultonNiguelAdapter,
-    XylemMoultonNiguelRawSnowflakeLoader,
+    XYLEM_MOULTON_NIGUEL_RAW_SNOWFLAKE_LOADER,
     Ami,
     Customer,
     Meter,
@@ -413,7 +410,7 @@ class TestMetersenseAdapter(BaseTestCase):
 class TestMetersenseRawSnowflakeLoader(BaseTestCase):
 
     def test_load_calls_snowflake_cursor_expected_times(self):
-        loader = XylemMoultonNiguelRawSnowflakeLoader()
+        loader = XYLEM_MOULTON_NIGUEL_RAW_SNOWFLAKE_LOADER
 
         meter = {
             "id": "1",

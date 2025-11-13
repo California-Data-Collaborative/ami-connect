@@ -6,7 +6,6 @@ import json
 from typing import Dict, Generator, List, Set, Tuple, Union
 
 import psycopg2
-from pytz.tzinfo import DstTzInfo
 
 from amiadapters.adapters.base import (
     BaseAMIAdapter,
@@ -16,7 +15,7 @@ from amiadapters.adapters.base import (
 from amiadapters.adapters.connections import open_ssh_tunnel
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
-from amiadapters.storage.snowflake import RawSnowflakeLoader
+from amiadapters.storage.snowflake import RawSnowflakeLoader, RawSnowflakeTableLoader
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +164,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
             pipeline_configuration,
             configured_task_output_controller,
             configured_sinks,
-            XylemMoultonNiguelRawSnowflakeLoader(),
+            XYLEM_MOULTON_NIGUEL_RAW_SNOWFLAKE_LOADER,
         )
 
     def name(self) -> str:
@@ -580,225 +579,102 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         yield from lines
 
 
-class XylemMoultonNiguelRawSnowflakeLoader(RawSnowflakeLoader):
+class XylemMoultonNiguelRawMetersLoader(RawSnowflakeTableLoader):
 
-    def load(self, *args):
-        self._load_raw_meters(*args)
-        self._load_raw_service_points(*args)
-        self._load_raw_customers(*args)
-        self._load_raw_ami(*args)
-        self._load_raw_register_reads(*args)
+    def table_name(self) -> str:
+        return "XYLEM_MOULTON_NIGUEL_METER_BASE"
 
-    def _load_raw_meters(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-    ) -> None:
-        self._load_raw_data(
-            run_id,
-            org_id,
-            org_timezone,
-            extract_outputs,
-            snowflake_conn,
-            extract_output_filename="meter.json",
-            raw_dataclass=Meter,
-            table="XYLEM_MOULTON_NIGUEL_METER_BASE",
-            unique_by=["ID"],
-        )
+    def columns(self) -> List[str]:
+        return list(Meter.__dataclass_fields__.keys())
 
-    def _load_raw_service_points(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-    ) -> None:
-        self._load_raw_data(
-            run_id,
-            org_id,
-            org_timezone,
-            extract_outputs,
-            snowflake_conn,
-            extract_output_filename="service_point.json",
-            raw_dataclass=ServicePoint,
-            table="XYLEM_MOULTON_NIGUEL_SERVICE_POINT_BASE",
-            unique_by=["service_address", "service_point"],
-        )
+    def unique_by(self) -> List[str]:
+        return ["id"]
 
-    def _load_raw_customers(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-    ) -> None:
-        self._load_raw_data(
-            run_id,
-            org_id,
-            org_timezone,
-            extract_outputs,
-            snowflake_conn,
-            extract_output_filename="customer.json",
-            raw_dataclass=Customer,
-            table="XYLEM_MOULTON_NIGUEL_CUSTOMER_BASE",
-            unique_by=["id"],
-        )
-
-    def _load_raw_ami(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-    ) -> None:
-        self._load_raw_data(
-            run_id,
-            org_id,
-            org_timezone,
-            extract_outputs,
-            snowflake_conn,
-            extract_output_filename="ami.json",
-            raw_dataclass=Ami,
-            table="XYLEM_MOULTON_NIGUEL_AMI_BASE",
-            unique_by=["id"],
-        )
-
-    def _load_raw_register_reads(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-    ) -> None:
-        self._load_raw_data(
-            run_id,
-            org_id,
-            org_timezone,
-            extract_outputs,
-            snowflake_conn,
-            extract_output_filename="register_read.json",
-            raw_dataclass=RegisterRead,
-            table="XYLEM_MOULTON_NIGUEL_REGISTER_READ_BASE",
-            unique_by=["id"],
-        )
-
-    def _load_raw_data(
-        self,
-        run_id: str,
-        org_id: str,
-        org_timezone: DstTzInfo,
-        extract_outputs: ExtractOutput,
-        snowflake_conn,
-        extract_output_filename: str,
-        raw_dataclass,
-        table: str,
-        unique_by: List[str],
-    ) -> None:
-        """
-        Extract raw data from intermediate outputs, then load into raw data table.
-
-        extract_output_filename: name of file in extract_outputs that contains the raw data
-        raw_dataclass: e.g. Meter, used to deserialize raw data and determine table column names
-        table: name of raw data table in Snowflake
-        unique_by: list of field names used with org_id to uniquely identify a row in the base table
-        """
-        raw_data = extract_outputs.load_from_file(
-            extract_output_filename, raw_dataclass, allow_empty=True
-        )
-        if not raw_data:
-            logger.info(
-                f"No data found for {extract_output_filename}, skipping raw load"
-            )
-            return
-        temp_table = f"temp_{table}"
-        fields = [f.lower() for f in raw_dataclass.__dataclass_fields__.keys()]
-        unique_by = [u.lower() for u in unique_by]
-        self._create_temp_table(
-            snowflake_conn,
-            temp_table,
-            table,
-            fields,
-            org_timezone,
-            org_id,
-            raw_data,
-        )
-        self._merge_from_temp_table(
-            snowflake_conn,
-            table,
-            temp_table,
-            fields,
-            unique_by,
-        )
-
-    def _create_temp_table(
-        self, snowflake_conn, temp_table, table, fields, org_timezone, org_id, raw_data
-    ) -> None:
-        """
-        Insert every object in raw_data into a temp copy of the table.
-        """
-        logger.info(f"Prepping for raw load to table {table}")
-
-        # Create the temp table
-        create_temp_table_sql = (
-            f"CREATE OR REPLACE TEMPORARY TABLE {temp_table} LIKE {table};"
-        )
-        snowflake_conn.cursor().execute(create_temp_table_sql)
-
-        # Insert raw data
-        columns_as_comma_str = ", ".join(fields)
-        qmarks = "?, " * (len(fields) - 1) + "?"
-        insert_temp_data_sql = f"""
-            INSERT INTO {temp_table} (org_id, created_time, {columns_as_comma_str}) 
-                VALUES (?, ?, {qmarks})
-        """
-        created_time = datetime.now(tz=org_timezone)
-        rows = [
-            tuple(
-                [org_id, created_time] + [i.__getattribute__(name) for name in fields]
-            )
-            for i in raw_data
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = extract_outputs.load_from_file("meter.json", Meter)
+        return [
+            tuple(i.__getattribute__(name) for name in self.columns()) for i in raw_data
         ]
-        snowflake_conn.cursor().executemany(insert_temp_data_sql, rows)
 
-    def _merge_from_temp_table(
-        self,
-        snowflake_conn,
-        table: str,
-        temp_table: str,
-        fields: List[str],
-        unique_by: List[str],
-    ) -> None:
-        """
-        Merge data from temp table into the base table using the unique_by keys
-        """
-        logger.info(f"Merging {temp_table} into {table}")
-        merge_sql = f"""
-            MERGE INTO {table} AS target
-            USING (
-                -- Use GROUP BY to ensure there are no duplicate rows before merge
-                SELECT 
-                    org_id,
-                    {", ".join(unique_by)},
-                    {", ".join([f"max({name}) as {name}" for name in fields if name not in unique_by])}, 
-                    max(created_time) as created_time
-                FROM {temp_table} t
-                GROUP BY org_id, {", ".join(unique_by)}
-            ) AS source
-            ON source.org_id = target.org_id 
-                {" ".join(f"AND source.{i} = target.{i}" for i in unique_by)}
-            WHEN MATCHED THEN
-                UPDATE SET
-                    target.created_time = source.created_time,
-                    {",".join([f"target.{name} = source.{name}" for name in fields])}
-            WHEN NOT MATCHED THEN
-                INSERT (org_id, {", ".join(name for name in fields)}, created_time) 
-                        VALUES (source.org_id, {", ".join(f"source.{name}" for name in fields)}, source.created_time)
-        """
-        snowflake_conn.cursor().execute(merge_sql)
+
+class XylemMoultonNiguelRawServicePointLoader(RawSnowflakeTableLoader):
+
+    def table_name(self) -> str:
+        return "XYLEM_MOULTON_NIGUEL_SERVICE_POINT_BASE"
+
+    def columns(self) -> List[str]:
+        return list(ServicePoint.__dataclass_fields__.keys())
+
+    def unique_by(self) -> List[str]:
+        return ["service_address", "service_point"]
+
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = extract_outputs.load_from_file("service_point.json", ServicePoint)
+        return [
+            tuple(i.__getattribute__(name) for name in self.columns()) for i in raw_data
+        ]
+
+
+class XylemMoultonNiguelRawCustomersLoader(RawSnowflakeTableLoader):
+
+    def table_name(self) -> str:
+        return "XYLEM_MOULTON_NIGUEL_CUSTOMER_BASE"
+
+    def columns(self) -> List[str]:
+        return list(Customer.__dataclass_fields__.keys())
+
+    def unique_by(self) -> List[str]:
+        return ["id"]
+
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = extract_outputs.load_from_file("customer.json", Customer)
+        return [
+            tuple(i.__getattribute__(name) for name in self.columns()) for i in raw_data
+        ]
+
+
+class XylemMoultonNiguelRawAmiLoader(RawSnowflakeTableLoader):
+
+    def table_name(self) -> str:
+        return "XYLEM_MOULTON_NIGUEL_AMI_BASE"
+
+    def columns(self) -> List[str]:
+        return list(Ami.__dataclass_fields__.keys())
+
+    def unique_by(self) -> List[str]:
+        return ["id"]
+
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = extract_outputs.load_from_file("ami.json", Ami)
+        return [
+            tuple(i.__getattribute__(name) for name in self.columns()) for i in raw_data
+        ]
+
+
+class XylemMoultonNiguelRawRegisterReadsLoader(RawSnowflakeTableLoader):
+
+    def table_name(self) -> str:
+        return "XYLEM_MOULTON_NIGUEL_REGISTER_READ_BASE"
+
+    def columns(self) -> List[str]:
+        return list(RegisterRead.__dataclass_fields__.keys())
+
+    def unique_by(self) -> List[str]:
+        return ["id"]
+
+    def prepare_raw_data(self, extract_outputs):
+        raw_data = extract_outputs.load_from_file("register_read.json", RegisterRead)
+        return [
+            tuple(i.__getattribute__(name) for name in self.columns()) for i in raw_data
+        ]
+
+
+XYLEM_MOULTON_NIGUEL_RAW_SNOWFLAKE_LOADER = RawSnowflakeLoader.with_table_loaders(
+    [
+        XylemMoultonNiguelRawMetersLoader(),
+        XylemMoultonNiguelRawServicePointLoader(),
+        XylemMoultonNiguelRawCustomersLoader(),
+        XylemMoultonNiguelRawAmiLoader(),
+        XylemMoultonNiguelRawRegisterReadsLoader(),
+    ]
+)
