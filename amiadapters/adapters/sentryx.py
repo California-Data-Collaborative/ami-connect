@@ -376,7 +376,9 @@ class SentryxRawMetersLoader(RawSnowflakeTableLoader):
         return "sentryx_meter_base"
 
     def columns(self) -> List[str]:
-        return list(SentryxMeter.__dataclass_fields__.keys())
+        cols = list(SentryxMeter.__dataclass_fields__.keys())
+        cols.remove("account_id")
+        return cols
 
     def unique_by(self) -> List[str]:
         return ["device_id"]
@@ -408,9 +410,11 @@ class SentryxRawReadsLoader(RawSnowflakeTableLoader):
         raw_data = SentryxMeterWithReads.from_json_file(extract_outputs, "reads.json")
         return [
             tuple(
-                [meter_with_reads.device_id]
-                + [reading.__getattribute__(name) for name in self.columns()]
+                meter_with_reads.device_id,
+                reading.time_stamp,
+                reading.reading,
+                meter_with_reads.units,
             )
             for meter_with_reads in raw_data
-            for reading in meter_with_reads
+            for reading in meter_with_reads.data
         ]
