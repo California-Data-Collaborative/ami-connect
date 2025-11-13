@@ -4,9 +4,6 @@ from unittest.mock import MagicMock, patch
 
 import pytz
 
-from amiadapters.configuration.models import (
-    LocalIntermediateOutputControllerConfiguration,
-)
 from amiadapters.adapters.metersense import (
     MetersenseAdapter,
     MetersenseIntervalRead,
@@ -15,8 +12,8 @@ from amiadapters.adapters.metersense import (
     MetersenseLocation,
     MetersenseMeterLocationXref,
     MetersenseMetersView,
-    MetersenseRawSnowflakeLoader,
     MetersenseRegisterRead,
+    METERSENSE_RAW_SNOWFLAKE_LOADER,
 )
 from amiadapters.models import DataclassJSONEncoder
 from amiadapters.outputs.base import ExtractOutput
@@ -599,7 +596,7 @@ class TestMetersenseAdapter(BaseTestCase):
 
 class TestMetersenseRawSnowflakeLoader(BaseTestCase):
     def test_load_calls_snowflake_cursor_expected_times(self):
-        loader = MetersenseRawSnowflakeLoader()
+        loader = METERSENSE_RAW_SNOWFLAKE_LOADER
 
         fake_extract_output_files = {
             "account_services.json": '{"account_id": "1", "location_no": "2", "commodity_tp": "W", "last_read_dt": "2024-01-01T00:00:00", "service_id": "svc", "active_dt": "2023-01-01T00:00:00", "inactive_dt": "2025-01-01T00:00:00"}\n',
