@@ -1,0 +1,4 @@
+sudo yum install git
+sudo yum install docker
+sudo systemctl start docker
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/libexec/docker/cli-plugins/docker-compose

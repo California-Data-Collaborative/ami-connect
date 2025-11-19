@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+
+  scheduler:
+    image: airflow:${AIRFLOW_IMAGE_TAG}
+    container_name: airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+    env_file:
+      - .env
+    # depends_on:
+    #   - postgres
+    networks:
+      - airflow
+
+  webserver:
+    image: airflow:${AIRFLOW_IMAGE_TAG}
+    container_name: airflow-webserver
+    command: webserver
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - 8080:8080
+    # depends_on:
+    #   - postgres
+    networks:
+      - airflow
+
+  # postgres:
+  #   image: postgis/postgis:13-3.1-alpine
+  #   container_name: airflow-postgres
+  #   environment:
+  #     POSTGRES_USER: airflow
+  #     POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD}
+  #     POSTGRES_DB: airflow
+  #   ports:
+  #     - 5432:5432
+  #   restart: unless-stopped
+  #   volumes:
+  #     - postgres:/var/lib/postgresql/data
+  #   networks:
+  #     - airflow
+
+networks:
+  airflow:
+
+# volumes:
+#   postgres:
