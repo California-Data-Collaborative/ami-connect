@@ -17,17 +17,21 @@ else
     git reset --hard origin/main
 fi
 
+echo "🚚 Setting up .env file"
+cd $BUILD_DIR
+[ -f .env ] && rm .env
+echo "AIRFLOW_IMAGE_TAG=$VERSION" >> .env
+# The AMI_CONNECT__AIRFLOW_METASTORE_CONN variable is passed from the deploy script on your laptop
+echo "AIRFLOW__CORE__SQL_ALCHEMY_CONN=$AMI_CONNECT__AIRFLOW_METASTORE_CONN" >> .env
+
 echo "📦 Building Docker image"
 cd "$BUILD_DIR"
 sudo docker build -t airflow:$VERSION .
-
-echo "🚚 Updating Airflow image tag"
-echo "AIRFLOW_IMAGE_TAG=$VERSION" > .env
 
 echo "🔄 Restarting Docker Compose (no interruption to running tasks)"
 sudo docker compose up -d
 
 echo "🧹 Cleaning up old Docker images"
-docker image prune -f
+sudo docker image prune -f
 
 echo "✅ Deployment complete. Running version: $VERSION"

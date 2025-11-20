@@ -11,8 +11,7 @@ USER airflow
 COPY ./repo/requirements.txt .
 RUN pip install -r requirements.txt --no-cache-dir
 
-COPY ./repo/amiadapters .
-COPY ./repo/amicontrol .
-
-# Add "amiadapters" to PYTHONPATH so it'll be available to DAGs
-# ENV PYTHONPATH "${PYTHONPATH}:./amiadapters"
+COPY ./repo/amiadapters ./amiadapters
+COPY ./repo/amicontrol/dags ./dags
+# TODO this should handle when neptune does not exist
+COPY ./neptune ./neptune
