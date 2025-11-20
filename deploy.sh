@@ -1,49 +1,26 @@
 #!/bin/bash
+# ENV=$1
+# TODO make env configurable
+TERRAFORM_OUTPUT_FILE="./amideploy/configuration/cadc-output.json"
+AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME=$(jq -r '.airflow_server_ip.value' $TERRAFORM_OUTPUT_FILE)
+AMI_CONNECT__AIRFLOW_SERVER_USERNAME=ec2-user
+AMI_CONNECT__AIRFLOW_SERVER_PEM=amideploy/configuration/cadc-airflow-key.pem
 
-# Set these variables before running the script
-HOSTNAME=$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME
-PEM_PATH=$AMI_CONNECT__AIRFLOW_SERVER_PEM
+AMI_CONNECT__AIRFLOW_METASTORE_HOST=$(jq -r '.airflow_db_host.value' $TERRAFORM_OUTPUT_FILE)
+AMI_CONNECT__AIRFLOW_METASTORE_PASSWORD=$(jq -r '.airflow_db_password.value' $TERRAFORM_OUTPUT_FILE)
+AMI_CONNECT__AIRFLOW_METASTORE_CONN=postgresql+psycopg2://airflow_user:$AMI_CONNECT__AIRFLOW_METASTORE_PASSWORD@$AMI_CONNECT__AIRFLOW_METASTORE_HOST/airflow_db
 
-# Check if required environment variables are set
-if [ -z "$HOSTNAME" ]; then
-    echo "Error: Airflow server hostname is not set"
-    exit 1
-fi
+REMOTE_DIR="./build"
 
-if [ -z "$PEM_PATH" ]; then
-    echo "Error: Airflow server pem path is not set"
-    exit 1
-fi
+echo "Deploying to Airflow server at $AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME:$REMOTE_DIR using PEM $AMI_CONNECT__AIRFLOW_SERVER_PEM"
 
+echo "Copying deployment files to Airflow server..."
+ssh -i $AMI_CONNECT__AIRFLOW_SERVER_PEM $AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME "mkdir -p ${REMOTE_DIR}"
+scp -i $AMI_CONNECT__AIRFLOW_SERVER_PEM ./amideploy/deploy/Dockerfile "$AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME:$REMOTE_DIR/"
+scp -i $AMI_CONNECT__AIRFLOW_SERVER_PEM ./amideploy/deploy/docker-compose.yml "$AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME:$REMOTE_DIR/"
+scp -i $AMI_CONNECT__AIRFLOW_SERVER_PEM ./amideploy/deploy/remote-deploy.sh "$AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME:$REMOTE_DIR/"
+# TODO make neptune crap configurable, make it pull from GitHub
+ssh -i $AMI_CONNECT__AIRFLOW_SERVER_PEM $AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME "cp -r /home/ec2-user/neptune ${REMOTE_DIR}/"
 
-echo "Copying files to $HOSTNAME..."
-
-# Perform the SCP operations
-scp -i "$PEM_PATH" requirements.txt "ec2-user@$HOSTNAME:/home/ec2-user/"
-scp -i "$PEM_PATH" start-airflow.sh "ec2-user@$HOSTNAME:/home/ec2-user/"
-scp -i "$PEM_PATH" -r amiadapters "ec2-user@$HOSTNAME:/home/ec2-user/"
-scp -i "$PEM_PATH" -r amicontrol/dags "ec2-user@$HOSTNAME:/home/ec2-user/"
-
-# Check if the SCP command was successful
-echo
-if [ $? -eq 0 ]; then
-    echo "File copy successful!"
-    echo
-else
-    echo "File copy failed!"
-    exit 1
-fi
-
-echo "Activating virtual environment and installing requirements..."
-
-# SSH to the server and run the commands
-ssh -i "$PEM_PATH" "ec2-user@$HOSTNAME" "source venv/bin/activate && \
-    pip install -r requirements.txt"
-
-# Check if the SSH command was successful
-if [ $? -eq 0 ]; then
-    echo "Successful deploy! Virtual environment activated and requirements installed."
-else
-    echo "Error: Failed to activate virtual environment or install requirements."
-    exit 1
-fi
+echo "Executing deployment script on Airflow server..."
+ssh -i $AMI_CONNECT__AIRFLOW_SERVER_PEM $AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME "AMI_CONNECT__AIRFLOW_METASTORE_CONN=$AMI_CONNECT__AIRFLOW_METASTORE_CONN bash $REMOTE_DIR/remote-deploy.sh"
