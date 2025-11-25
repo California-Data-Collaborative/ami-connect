@@ -6,6 +6,11 @@ services:
     image: airflow:${AIRFLOW_IMAGE_TAG}
     container_name: airflow-scheduler
     command: scheduler
+    # command: >
+    #   bash -c "
+    #     if [ -f /home/airflow/.ssh/id_rsa ]; then chmod 600 /home/airflow/.ssh/id_rsa; fi &&
+    #     airflow scheduler
+    #   "
     restart: unless-stopped
     env_file:
       - .env
@@ -20,10 +25,16 @@ services:
       PYTHONPATH: /opt/airflow
     volumes:
       - logs:/opt/airflow/logs
+      # - /home/ec2-user/.ssh/id_rsa:/home/airflow/.ssh/id_rsa:ro
 
   webserver:
     image: airflow:${AIRFLOW_IMAGE_TAG}
     container_name: airflow-webserver
+    # command: >
+    #   bash -c "
+    #     if [ -f /home/airflow/.ssh/id_rsa ]; then chmod 600 /home/airflow/.ssh/id_rsa; fi &&
+    #     airflow webserver
+    #   "
     command: webserver
     restart: unless-stopped
     env_file:
@@ -41,6 +52,7 @@ services:
       PYTHONPATH: /opt/airflow
     volumes:
       - logs:/opt/airflow/logs
+      # - /home/ec2-user/.ssh/id_rsa:/home/airflow/.ssh/id_rsa:ro
 
 networks:
   airflow:
