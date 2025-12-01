@@ -750,6 +750,9 @@ def update_secret(
     ssh_tunnel_username: Annotated[
         str, typer.Option(help="SSH tunnel username, e.g. for Metersense.")
     ] = None,
+    ssh_tunnel_private_key: Annotated[
+        str, typer.Option(help="SSH tunnel private key, e.g. for Metersense.")
+    ] = None,
     database_db_name: Annotated[
         str, typer.Option(help="Name of database, e.g. for Metersense.")
     ] = None,
@@ -810,6 +813,7 @@ def update_secret(
         "sftp_user": sftp_user,
         "sftp_password": sftp_password,
         "ssh_tunnel_username": ssh_tunnel_username,
+        "ssh_tunnel_private_key": ssh_tunnel_private_key,
         "database_db_name": database_db_name,
         "database_user": database_user,
         "database_password": database_password,
