@@ -751,7 +751,10 @@ def update_secret(
         str, typer.Option(help="SSH tunnel username, e.g. for Metersense.")
     ] = None,
     ssh_tunnel_private_key: Annotated[
-        str, typer.Option(help="Path to file with SSH tunnel private key, e.g. for Metersense. We read the file's contents and store the contents in the secrets system.")
+        str,
+        typer.Option(
+            help="Path to file with SSH tunnel private key, e.g. for Metersense. We read the file's contents and store the contents in the secrets system."
+        ),
     ] = None,
     database_db_name: Annotated[
         str, typer.Option(help="Name of database, e.g. for Metersense.")
