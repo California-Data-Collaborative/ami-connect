@@ -821,6 +821,10 @@ def update_secret(
         "client_id": client_id,
         "client_secret": client_secret,
     }
+    if ssh_tunnel_private_key:
+        # Allow user to pass in path to private key file instead of raw key
+        with open(ssh_tunnel_private_key, "r") as f:
+            type_specific_options["ssh_tunnel_private_key"] = f.read()
 
     missing_fields = [
         f.name for f in required_fields if type_specific_options.get(f.name) is None

@@ -31,9 +31,9 @@ class TestOpenSSHTunnel(BaseTestCase):
         )
 
     @mock.patch("amiadapters.adapters.connections.sshtunnel.open_tunnel")
-    @mock.patch("amiadapters.adapters.connections.tempfile.NamedTemporaryFile")
+    @mock.patch("amiadapters.adapters.connections.paramiko.RSAKey.from_private_key")
     def test_open_ssh_tunnel_with_private_key_string(
-        self, mock_tempfile, mock_open_tunnel
+        self, mock_from_private_key, mock_open_tunnel
     ):
         ssh_tunnel_server_host = "example.com"
         ssh_tunnel_username = "user"
@@ -42,11 +42,8 @@ class TestOpenSSHTunnel(BaseTestCase):
         remote_port = 5432
         ssh_tunnel_private_key = "PRIVATE KEY DATA"
 
-        mock_tmp_file = mock.Mock()
-        mock_tmp_file.write = mock.Mock()
-        mock_tmp_file.flush = mock.Mock()
-        mock_tmp_file.close = mock.Mock()
-        mock_tempfile.return_value = mock_tmp_file
+        mock_key = mock.Mock()
+        mock_from_private_key.return_value = mock_key
 
         connections.open_ssh_tunnel(
             ssh_tunnel_server_host,
@@ -57,13 +54,10 @@ class TestOpenSSHTunnel(BaseTestCase):
             ssh_tunnel_private_key=ssh_tunnel_private_key,
         )
 
-        mock_tmp_file.write.assert_called_once_with(
-            ssh_tunnel_private_key.encode("utf-8")
-        )
         mock_open_tunnel.assert_called_once_with(
             (ssh_tunnel_server_host),
             ssh_username=ssh_tunnel_username,
-            ssh_pkey=mock_tmp_file,
+            ssh_pkey=mock_key,
             remote_bind_address=(remote_host, remote_port),
             local_bind_address=("0.0.0.0", 0),
         )
