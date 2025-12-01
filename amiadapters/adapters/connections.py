@@ -1,5 +1,6 @@
 import logging
 
+import paramiko
 import sshtunnel
 import tempfile
 
@@ -25,7 +26,8 @@ def open_ssh_tunnel(
         tmp.write(ssh_tunnel_private_key.encode("utf-8"))
         tmp.flush()
         tmp.close()
-        pkey = tmp
+        with open(tmp.name) as f:
+            pkey = paramiko.RSAKey.from_private_key(f)
     else:
         logger.info(
             f"Using SSH key from path {ssh_tunnel_key_path} for SSH tunnel connection."
