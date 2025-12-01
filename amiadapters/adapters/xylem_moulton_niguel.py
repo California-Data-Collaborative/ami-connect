@@ -133,6 +133,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         ssh_tunnel_server_host,
         ssh_tunnel_username,
         ssh_tunnel_key_path,
+        ssh_tunnel_private_key,
         database_host,
         database_port,
         database_db_name,
@@ -144,6 +145,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         ssh_tunnel_server_host = hostname or IP of intermediate server
         ssh_tunnel_username = SSH username for intermediate server
         ssh_tunnel_key_path = path to local SSH private key for authentication to intermediate server (the intermediate server must know your public key already!)
+        ssh_tunnel_private_key = SSH private key for authentication to intermediate server (the intermediate server must know your public key already!)
         database_host = hostname or IP of the Redshift database
         database_port = port of Redshift database
         database_db_name = database name of Redshift database
@@ -153,6 +155,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         self.ssh_tunnel_server_host = ssh_tunnel_server_host
         self.ssh_tunnel_username = ssh_tunnel_username
         self.ssh_tunnel_key_path = ssh_tunnel_key_path
+        self.ssh_tunnel_private_key = ssh_tunnel_private_key
         self.database_host = database_host
         self.database_port = database_port
         self.database_db_name = database_db_name
@@ -187,11 +190,11 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         extract_range_start: datetime,
         extract_range_end: datetime,
     ):
-
         with open_ssh_tunnel(
             ssh_tunnel_server_host=self.ssh_tunnel_server_host,
             ssh_tunnel_username=self.ssh_tunnel_username,
             ssh_tunnel_key_path=self.ssh_tunnel_key_path,
+            ssh_tunnel_private_key=self.ssh_tunnel_private_key,
             remote_host=self.database_host,
             remote_port=self.database_port,
         ) as ctx:

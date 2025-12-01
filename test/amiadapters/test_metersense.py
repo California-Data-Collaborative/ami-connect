@@ -33,6 +33,7 @@ class TestMetersenseAdapter(BaseTestCase):
             ssh_tunnel_server_host="tunnel-ip",
             ssh_tunnel_username="ubuntu",
             ssh_tunnel_key_path="/key",
+            ssh_tunnel_private_key="my-key",
             database_host="db-host",
             database_port=1521,
             database_db_name="db-name",

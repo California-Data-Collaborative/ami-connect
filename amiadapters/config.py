@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import List, Dict, Union
@@ -215,6 +214,7 @@ class AMIAdapterConfiguration:
                     )
                 case ConfiguredAMISourceType.METERSENSE.value.type:
                     secrets = MetersenseSecrets(
+                        this_source_secrets.get("ssh_tunnel_private_key"),
                         this_source_secrets.get("ssh_tunnel_username"),
                         this_source_secrets.get("database_db_name"),
                         this_source_secrets.get("database_user"),
@@ -237,6 +237,7 @@ class AMIAdapterConfiguration:
                     )
                 case ConfiguredAMISourceType.XYLEM_MOULTON_NIGUEL.value.type:
                     secrets = XylemMoultonNiguelSecrets(
+                        this_source_secrets.get("ssh_tunnel_private_key"),
                         this_source_secrets.get("ssh_tunnel_username"),
                         this_source_secrets.get("database_db_name"),
                         this_source_secrets.get("database_user"),
@@ -385,6 +386,7 @@ class AMIAdapterConfiguration:
                             ssh_tunnel_server_host=source.configured_ssh_tunnel_to_database.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
                             ssh_tunnel_key_path=source.configured_ssh_tunnel_to_database.ssh_tunnel_key_path,
+                            ssh_tunnel_private_key=source.secrets.ssh_tunnel_private_key,
                             database_host=source.configured_ssh_tunnel_to_database.database_host,
                             database_port=source.configured_ssh_tunnel_to_database.database_port,
                             database_db_name=source.secrets.database_db_name,
@@ -449,6 +451,7 @@ class AMIAdapterConfiguration:
                             ssh_tunnel_server_host=source.configured_ssh_tunnel_to_database.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
                             ssh_tunnel_key_path=source.configured_ssh_tunnel_to_database.ssh_tunnel_key_path,
+                            ssh_tunnel_private_key=source.secrets.ssh_tunnel_private_key,
                             database_host=source.configured_ssh_tunnel_to_database.database_host,
                             database_port=source.configured_ssh_tunnel_to_database.database_port,
                             database_db_name=source.secrets.database_db_name,

@@ -211,6 +211,7 @@ class MetersenseAdapter(BaseAMIAdapter):
         ssh_tunnel_server_host,
         ssh_tunnel_username,
         ssh_tunnel_key_path,
+        ssh_tunnel_private_key,
         database_host,
         database_port,
         database_db_name,
@@ -221,7 +222,8 @@ class MetersenseAdapter(BaseAMIAdapter):
         """
         ssh_tunnel_server_host = hostname or IP of intermediate server
         ssh_tunnel_username = SSH username for intermediate server
-        ssh_tunnel_key_path = path to local SSH private key for authentication to intermediate server (the intermediate server must know your public key already!)
+        ssh_tunnel_key_path = path to SSH private key for authentication to intermediate server. Used if no ssh_tunnel_private_key provided.
+        ssh_tunnel_private_key = SSH private key for authentication to intermediate server (the intermediate server must know your public key already!)
         database_host = hostname or IP of the Oracle database
         database_port = port of Oracle database
         database_db_name = database name of Oracle database
@@ -231,6 +233,7 @@ class MetersenseAdapter(BaseAMIAdapter):
         self.ssh_tunnel_server_host = ssh_tunnel_server_host
         self.ssh_tunnel_username = ssh_tunnel_username
         self.ssh_tunnel_key_path = ssh_tunnel_key_path
+        self.ssh_tunnel_private_key = ssh_tunnel_private_key
         self.database_host = database_host
         self.database_port = database_port
         self.database_db_name = database_db_name
@@ -269,6 +272,7 @@ class MetersenseAdapter(BaseAMIAdapter):
             ssh_tunnel_server_host=self.ssh_tunnel_server_host,
             ssh_tunnel_username=self.ssh_tunnel_username,
             ssh_tunnel_key_path=self.ssh_tunnel_key_path,
+            ssh_tunnel_private_key=self.ssh_tunnel_private_key,
             remote_host=self.database_host,
             remote_port=self.database_port,
         ) as ctx:

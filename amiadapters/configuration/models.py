@@ -108,6 +108,7 @@ class Beacon360Secrets(SecretsBase):
 
 @dataclass
 class MetersenseSecrets(SecretsBase):
+    ssh_tunnel_private_key: str
     ssh_tunnel_username: str
     database_db_name: str
     database_user: str
@@ -134,6 +135,7 @@ class SubecaSecrets(SecretsBase):
 
 @dataclass
 class XylemMoultonNiguelSecrets(SecretsBase):
+    ssh_tunnel_private_key: str
     ssh_tunnel_username: str
     database_db_name: str
     database_user: str
