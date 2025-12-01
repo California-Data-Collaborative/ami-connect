@@ -44,4 +44,5 @@ def open_ssh_tunnel(
         # Using port "0" will automatically choose a free port. Access
         # it with the local_bind_port property of this returned context.
         local_bind_address=("0.0.0.0", 0),
+        logger=logger,
     )
