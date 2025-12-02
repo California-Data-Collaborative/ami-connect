@@ -1,28 +1,74 @@
 #!/bin/bash
-# ENV=$1
-# TODO make env configurable
-TERRAFORM_OUTPUT_FILE="./amideploy/configuration/cadc-output.json"
-AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME=$(jq -r '.airflow_server_ip.value' $TERRAFORM_OUTPUT_FILE)
-AMI_CONNECT__AIRFLOW_SERVER_USERNAME=ec2-user
-AMI_CONNECT__AIRFLOW_SERVER_PEM=amideploy/configuration/cadc-airflow-key.pem
+set -euo pipefail
 
-AMI_CONNECT__AIRFLOW_METASTORE_HOST=$(jq -r '.airflow_db_host.value' $TERRAFORM_OUTPUT_FILE)
-AMI_CONNECT__AIRFLOW_METASTORE_PASSWORD=$(jq -r '.airflow_db_password.value' $TERRAFORM_OUTPUT_FILE)
-AMI_CONNECT__AIRFLOW_METASTORE_CONN=postgresql+psycopg2://airflow_user:$AMI_CONNECT__AIRFLOW_METASTORE_PASSWORD@$AMI_CONNECT__AIRFLOW_METASTORE_HOST/airflow_db
+########################################
+#  CONFIG
+########################################
 
-REMOTE_DIR="./build"
+if [[ $# -lt 1 ]]; then
+    echo "ERROR: Missing required argument: ENVIRONMENT"
+    echo "Usage: $0 <environment>" where <environment> matches the name of your terraform environment so the script can pull details from your terraform output files.
+    echo "Example: $0 prod"
+    exit 1
+fi
 
-echo "Deploying to Airflow server at $AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME:$REMOTE_DIR using PEM $AMI_CONNECT__AIRFLOW_SERVER_PEM"
+ENVIRONMENT="$1"
 
-echo "Copying deployment files to Airflow server..."
-ssh -i $AMI_CONNECT__AIRFLOW_SERVER_PEM $AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME "mkdir -p ${REMOTE_DIR}"
-scp -i $AMI_CONNECT__AIRFLOW_SERVER_PEM ./amideploy/deploy/Dockerfile "$AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME:$REMOTE_DIR/"
-scp -i $AMI_CONNECT__AIRFLOW_SERVER_PEM ./amideploy/deploy/docker-compose.yml "$AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME:$REMOTE_DIR/"
-scp -i $AMI_CONNECT__AIRFLOW_SERVER_PEM ./amideploy/deploy/remote-deploy.sh "$AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME:$REMOTE_DIR/"
-[ -f "./known-hosts" ] && scp -i $AMI_CONNECT__AIRFLOW_SERVER_PEM ./known-hosts "$AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME:$REMOTE_DIR/"
+TERRAFORM_OUTPUT_FILE="./amideploy/configuration/$ENVIRONMENT-output.json"
 
-# TODO make neptune crap configurable, make it pull from GitHub
-ssh -i $AMI_CONNECT__AIRFLOW_SERVER_PEM $AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME "cp -r /home/ec2-user/neptune ${REMOTE_DIR}/"
+REMOTE_USER="ec2-user"
+REMOTE_DIR="/home/ec2-user/build"
+SSH_KEY="./amideploy/configuration/$ENVIRONMENT-airflow-key.pem"
 
-echo "Executing deployment script on Airflow server..."
-ssh -i $AMI_CONNECT__AIRFLOW_SERVER_PEM $AMI_CONNECT__AIRFLOW_SERVER_USERNAME@$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME "AMI_CONNECT__AIRFLOW_METASTORE_CONN=$AMI_CONNECT__AIRFLOW_METASTORE_CONN bash $REMOTE_DIR/remote-deploy.sh"
+# Read Terraform outputs
+AIRFLOW_HOST=$(jq -r '.airflow_server_ip.value' $TERRAFORM_OUTPUT_FILE)
+DB_HOST=$(jq -r '.airflow_db_host.value' $TERRAFORM_OUTPUT_FILE)
+DB_PASSWORD=$(jq -r '.airflow_db_password.value' $TERRAFORM_OUTPUT_FILE)
+
+AIRFLOW_DB_CONN="postgresql+psycopg2://airflow_user:$DB_PASSWORD@$DB_HOST/airflow_db"
+
+########################################
+#  UTILITY FUNCTIONS
+########################################
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+run_ssh() {
+    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no \
+        "$REMOTE_USER@$AIRFLOW_HOST" "$1"
+}
+
+copy_tree() {
+    rsync -avz -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no" \
+        "$1/" "$REMOTE_USER@$AIRFLOW_HOST:$2/"
+}
+
+########################################
+#  DEPLOYMENT STEPS
+########################################
+
+log "===== AMI Connect Airflow Deploy ====="
+log "Environment: $ENVIRONMENT"
+log "Server: $REMOTE_USER@$AIRFLOW_HOST"
+log "Remote directory: $REMOTE_DIR"
+
+log "Ensuring remote directory exists..."
+run_ssh "mkdir -p $REMOTE_DIR"
+
+log "Syncing deployment files..."
+copy_tree "./amideploy/deploy" "$REMOTE_DIR"
+
+# Optional: if you need the neptune directory
+if [ -d "/home/ec2-user/neptune" ]; then
+    log "Copying local neptune folder..."
+    # copy_tree "/home/ec2-user/neptune" "$REMOTE_DIR/neptune"
+fi
+
+log "Running remote deployment script..."
+run_ssh "cd $REMOTE_DIR && \
+    AMI_CONNECT__AIRFLOW_METASTORE_CONN='$AIRFLOW_DB_CONN' \
+    bash remote-deploy.sh"
+
+log "===== Deployment complete ====="

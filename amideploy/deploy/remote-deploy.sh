@@ -28,7 +28,7 @@ echo "📦 Building Docker image"
 cd "$BUILD_DIR"
 sudo docker build -t airflow:$VERSION .
 
-echo "🔄 Restarting Docker Compose (no interruption to running tasks)"
+echo "🔄 Restarting Docker Compose"
 sudo docker compose up -d
 
 echo "🧹 Cleaning up old Docker images"

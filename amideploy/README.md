@@ -101,14 +101,6 @@ Go to the `./amideploy/configuration` directory:
 cd ../configuration
 ```
 
-### Copy files onto the EC2
-
-Find the public hostname of your EC2 server. Use it to SCP files with:
-
-```
-scp -i ./airflow-key.pem ../../requirements.txt ec2-user@<public hostname>:~
-```
-
 ### SSH into your EC2 server
 
 Find the public hostname of your EC2 server. SSH into it with:
@@ -125,11 +117,12 @@ sudo yum install git
 sudo yum install docker
 sudo systemctl start docker
 sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/libexec/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 ```
 
-Run the `deploy.sh` script to start Airflow and your pipeline.
+Back on your laptop, run the `deploy.sh` script to start Airflow and your pipeline.
 
-Now Airflow is running. You should see a response from Airflow if you run `curl localhost:8080`.
+Now Airflow is running inside Docker on the server. You should see a response from Airflow if you run `curl localhost:8080` on the server.
 
 Inside the docker container, you can create an admin user with the following:
 
@@ -169,4 +162,4 @@ Restart `nginx`:
 sudo systemctl restart nginx
 ```
 
-Now you should be able to access your Airflow site in your browser using the domain name you picked. Login with the username and password we created above.
+Now you should be able to access your Airflow site in your browser using the domain name you picked. Login with the username and password we created above. Use "http", not "https".
