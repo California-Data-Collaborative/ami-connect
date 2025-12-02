@@ -101,14 +101,6 @@ Go to the `./amideploy/configuration` directory:
 cd ../configuration
 ```
 
-### Copy files onto the EC2
-
-Find the public hostname of your EC2 server. Use it to SCP files with:
-
-```
-scp -i ./airflow-key.pem ../../requirements.txt ec2-user@<public hostname>:~
-```
-
 ### SSH into your EC2 server
 
 Find the public hostname of your EC2 server. SSH into it with:
@@ -119,59 +111,20 @@ ssh -i ./airflow-key.pem ec2-user@<public hostname>
 
 ### Install and run Airflow on the EC2
 
-On the EC2, install Python:
-
+On the EC2, install software we'll need to deploy the system:
 ```
-sudo yum install python3.12
-curl -O https://bootstrap.pypa.io/get-pip.py
-python3.12 get-pip.py --user
-```
-
-Create a virtual environment and install dependencies:
-```
-python3.12 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+sudo yum install git
+sudo yum install docker
+sudo systemctl start docker
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/libexec/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 ```
 
-Initialize the Airflow project
-```
-export AIRFLOW_HOME=$(pwd)
-airflow info
-mkdir dags
-```
+Back on your laptop, run the `deploy.sh` script to start Airflow and your pipeline.
 
-Gather the hostname and the airflow_user's password for your Postgres database.
+Now Airflow is running inside Docker on the server. You should see a response from Airflow if you run `curl localhost:8080` on the server.
 
-There should now be an `airflow.cfg` file in the `/home/ec2-user` directory. You should modify it with the following settings, some of which already exist in the config file and some which don't:
-
-```
-[webserver]
-authenticate = True
-auth_backend = airflow.www.security.auth_backend.password_auth
-warn_deployment_exposure = False
-
-[core]
-load_examples = False
-executor = LocalExecutor
-
-[database]
-sql_alchemy_conn = postgresql+psycopg2://airflow_user:<your airflow database password>@<your postgres hostname>:5432/airflow_db
-```
-
-Start the Airflow webserver and scheduler:
-```
-# Airflow will pick up our Python code here
-export PYTHONPATH=/home/ec2-user
-
-airflow db init
-nohup airflow webserver &
-nohup airflow scheduler &
-```
-
-Now Airflow is running. You should see a response from Airflow if you run `curl localhost:8080`.
-
-You can create an admin user with the following:
+Inside the docker container, you can create an admin user with the following:
 
 ```
 airflow users create   --username admin   --firstname Admin   --lastname User   --role Admin   --email <pick an email address>   --password <pick a password>
@@ -209,4 +162,4 @@ Restart `nginx`:
 sudo systemctl restart nginx
 ```
 
-Now you should be able to access your Airflow site in your browser using the domain name you picked. Login with the username and password we created above.
+Now you should be able to access your Airflow site in your browser using the domain name you picked. Login with the username and password we created above. Use "http", not "https".

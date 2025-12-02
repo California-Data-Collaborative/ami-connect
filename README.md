@@ -15,9 +15,10 @@ Here are the adapters in this project:
 | Aclara           | Complete               | Snowflake         | [Link](./docs/adapters/aclara.md)               |
 | Metersense       | Complete               | Snowflake         | [Link](./docs/adapters/metersense.md)           |
 | Sentryx          | Complete               | Snowflake         | [Link](./docs/adapters/sentryx.md)              |
-| Xylem for Moulton Niguel | Complete.      | Snowflake         | [Link](./docs/adapters/xylem_moulton_niguel.md) |
+| Xylem/Sensus for Moulton Niguel | Complete.      | Snowflake         | [Link](./docs/adapters/xylem_moulton_niguel.md) |
 | Subeca           | Complete               | Snowflake         | [Link](./docs/adapters/subeca.md)               |
 | Neptune 360      | Complete               | Snowflake         | [Link](./docs/adapters/neptune.md)              |
+| Xylem/Sensus     | Planned Q1 2026        | Snowflake         | n/a                                             |
 | Harmony          | Planned                | n/a               | n/a                                             |
 
 
@@ -118,15 +119,13 @@ It's common to comment out or modify lines in this script while testing.
 ### Deploying
 
 Use the `deploy.sh` script to deploy new code to your AMI Connect pipeline. As of this writing, the script
-simply copies new code to the Airflow server and updates python dependencies.
+bootstraps a deploy environment on the server, then remotely executes a script that builds a new Docker container with Airflow.
 
-You'll need to tell the script the hostname of your Airflow server. You can set the `AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME` environment variable to your hostname.
-
-The script assumes you've stored a key pair at `./amideploy/configuration/airflow-key.pem`.
+You'll need to tell the script the name of your environment, which should match the AWS profile name you used to run Terraform.
 
 Example deploy:
 ```
-export AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME=<my EC2 hostname> && sh deploy.sh
+sh deploy.sh <my profile name>
 ```
 
 ### Run Airflow application locally (rarely necessary)

@@ -1,49 +1,74 @@
 #!/bin/bash
+set -euo pipefail
 
-# Set these variables before running the script
-HOSTNAME=$AMI_CONNECT__AIRFLOW_SERVER_HOSTNAME
-PEM_PATH=$AMI_CONNECT__AIRFLOW_SERVER_PEM
+########################################
+#  CONFIG
+########################################
 
-# Check if required environment variables are set
-if [ -z "$HOSTNAME" ]; then
-    echo "Error: Airflow server hostname is not set"
+if [[ $# -lt 1 ]]; then
+    echo "ERROR: Missing required argument: ENVIRONMENT"
+    echo "Usage: $0 <environment>" where <environment> matches the name of your terraform environment so the script can pull details from your terraform output files.
+    echo "Example: $0 prod"
     exit 1
 fi
 
-if [ -z "$PEM_PATH" ]; then
-    echo "Error: Airflow server pem path is not set"
-    exit 1
+ENVIRONMENT="$1"
+
+TERRAFORM_OUTPUT_FILE="./amideploy/configuration/$ENVIRONMENT-output.json"
+
+REMOTE_USER="ec2-user"
+REMOTE_DIR="/home/ec2-user/build"
+SSH_KEY="./amideploy/configuration/$ENVIRONMENT-airflow-key.pem"
+
+# Read Terraform outputs
+AIRFLOW_HOST=$(jq -r '.airflow_server_ip.value' $TERRAFORM_OUTPUT_FILE)
+DB_HOST=$(jq -r '.airflow_db_host.value' $TERRAFORM_OUTPUT_FILE)
+DB_PASSWORD=$(jq -r '.airflow_db_password.value' $TERRAFORM_OUTPUT_FILE)
+
+AIRFLOW_DB_CONN="postgresql+psycopg2://airflow_user:$DB_PASSWORD@$DB_HOST/airflow_db"
+
+########################################
+#  UTILITY FUNCTIONS
+########################################
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+run_ssh() {
+    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no \
+        "$REMOTE_USER@$AIRFLOW_HOST" "$1"
+}
+
+copy_tree() {
+    rsync -avz -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no" \
+        "$1/" "$REMOTE_USER@$AIRFLOW_HOST:$2/"
+}
+
+########################################
+#  DEPLOYMENT STEPS
+########################################
+
+log "===== AMI Connect Airflow Deploy ====="
+log "Environment: $ENVIRONMENT"
+log "Server: $REMOTE_USER@$AIRFLOW_HOST"
+log "Remote directory: $REMOTE_DIR"
+
+log "Ensuring remote directory exists..."
+run_ssh "mkdir -p $REMOTE_DIR"
+
+log "Syncing deployment files..."
+copy_tree "./amideploy/deploy" "$REMOTE_DIR"
+
+# Optional: if you need the neptune directory
+if [ -d "/home/ec2-user/neptune" ]; then
+    log "Copying local neptune folder..."
+    # copy_tree "/home/ec2-user/neptune" "$REMOTE_DIR/neptune"
 fi
 
+log "Running remote deployment script..."
+run_ssh "cd $REMOTE_DIR && \
+    AMI_CONNECT__AIRFLOW_METASTORE_CONN='$AIRFLOW_DB_CONN' \
+    bash remote-deploy.sh"
 
-echo "Copying files to $HOSTNAME..."
-
-# Perform the SCP operations
-scp -i "$PEM_PATH" requirements.txt "ec2-user@$HOSTNAME:/home/ec2-user/"
-scp -i "$PEM_PATH" start-airflow.sh "ec2-user@$HOSTNAME:/home/ec2-user/"
-scp -i "$PEM_PATH" -r amiadapters "ec2-user@$HOSTNAME:/home/ec2-user/"
-scp -i "$PEM_PATH" -r amicontrol/dags "ec2-user@$HOSTNAME:/home/ec2-user/"
-
-# Check if the SCP command was successful
-echo
-if [ $? -eq 0 ]; then
-    echo "File copy successful!"
-    echo
-else
-    echo "File copy failed!"
-    exit 1
-fi
-
-echo "Activating virtual environment and installing requirements..."
-
-# SSH to the server and run the commands
-ssh -i "$PEM_PATH" "ec2-user@$HOSTNAME" "source venv/bin/activate && \
-    pip install -r requirements.txt"
-
-# Check if the SSH command was successful
-if [ $? -eq 0 ]; then
-    echo "Successful deploy! Virtual environment activated and requirements installed."
-else
-    echo "Error: Failed to activate virtual environment or install requirements."
-    exit 1
-fi
+log "===== Deployment complete ====="

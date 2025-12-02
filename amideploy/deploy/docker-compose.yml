@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+
+  scheduler:
+    image: airflow:${AIRFLOW_IMAGE_TAG}
+    container_name: airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - airflow
+    environment:
+      AIRFLOW__WEBSERVER__AUTHENTICATE: True
+      AIRFLOW__WEBSERVER__AUTH_BACKEND: airflow.www.security.auth_backend.password_auth
+      AIRFLOW__WEBSERVER__WARN_DEPLOYMENT_EXPOSURE: False
+      AIRFLOW__CORE__LOAD_EXAMPLES: False
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      PYTHONPATH: /opt/airflow
+    volumes:
+      - logs:/opt/airflow/logs
+
+  webserver:
+    image: airflow:${AIRFLOW_IMAGE_TAG}
+    container_name: airflow-webserver
+    command: webserver
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - 8080:8080
+    networks:
+      - airflow
+    environment:
+      AIRFLOW__WEBSERVER__AUTHENTICATE: True
+      AIRFLOW__WEBSERVER__AUTH_BACKEND: airflow.www.security.auth_backend.password_auth
+      AIRFLOW__WEBSERVER__WARN_DEPLOYMENT_EXPOSURE: False
+      AIRFLOW__CORE__LOAD_EXAMPLES: False
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      PYTHONPATH: /opt/airflow
+    volumes:
+      - logs:/opt/airflow/logs
+
+networks:
+  airflow:
+
+volumes:
+  logs:
