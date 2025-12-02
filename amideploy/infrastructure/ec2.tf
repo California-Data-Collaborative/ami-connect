@@ -16,6 +16,12 @@ resource "aws_instance" "ami_connect_airflow_server" {
 
   iam_instance_profile = aws_iam_instance_profile.ami_instance_profile.name
 
+  root_block_device {
+    volume_size = 200 # GB
+    volume_type = "gp3"
+    encrypted   = true
+  }
+
   user_data = <<-EOF
               #!/bin/bash
               sudo yum install -y amazon-cloudwatch-agent
