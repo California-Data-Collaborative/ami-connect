@@ -231,7 +231,7 @@ def update_source_configuration(connection, source_configuration: dict):
             del new_config[key]
     source["config"].update(new_config)
 
-    logger.info(f"Updating source with {org_id} with values {source}")
+    logger.info(f"Updating source in database with {org_id} with values {source}")
     cursor.execute(
         """
         UPDATE configuration_sources
@@ -261,7 +261,7 @@ def _create_source_configuration_object_for_type(
                 "sftp_host",
                 "sftp_remote_data_directory",
                 "sftp_local_download_directory",
-                "sftp_local_known_hosts_file",
+                "sftp_known_hosts_str",
             ]:
                 if not source_configuration.get(field) and require_all_fields:
                     raise ValueError(f"Source configuration is missing field: {field}")

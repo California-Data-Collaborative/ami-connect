@@ -665,7 +665,7 @@ class ConfiguredAMISource:
                 ]
             ):
                 raise ValueError(
-                    f"Invalid SFTP config for source with type {self.type}"
+                    f"Invalid SFTP config for source with type {self.type}. Missing field(s). Configured SFTP: {configured_sftp}"
                 )
         return configured_sftp
 
