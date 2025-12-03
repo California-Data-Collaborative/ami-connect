@@ -11,7 +11,7 @@ USER airflow
 COPY ./repo/requirements.txt .
 RUN pip install -r requirements.txt --no-cache-dir
 
-COPY ./repo/amiadapters ./amiadapters
-COPY ./repo/amicontrol/dags ./dags
-# TODO this should handle when neptune does not exist
-COPY ./neptune ./neptune
+# COPY ./repo/amiadapters ./amiadapters
+# COPY ./repo/amicontrol/dags ./dags
+# # TODO this should handle when neptune does not exist
+# COPY ./neptune ./neptune

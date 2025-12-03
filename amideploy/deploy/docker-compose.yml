@@ -26,6 +26,9 @@ services:
       PYTHONPATH: /opt/airflow
     volumes:
       - logs:/opt/airflow/logs
+      - ./repo/amicontrol/dags:/opt/airflow/dags:ro
+      - ./repo/amiadapters:/opt/airflow/amiadapters:ro
+      - ./neptune:/opt/airflow/neptune:ro
 
   webserver:
     image: airflow:${AIRFLOW_IMAGE_TAG}
@@ -49,6 +52,9 @@ services:
       PYTHONPATH: /opt/airflow
     volumes:
       - logs:/opt/airflow/logs
+      - ./repo/amicontrol/dags:/opt/airflow/dags:ro
+      - ./repo/amiadapters:/opt/airflow/amiadapters:ro
+      - ./neptune:/opt/airflow/neptune:ro
   
   worker:
     image: airflow:${AIRFLOW_IMAGE_TAG}
@@ -65,6 +71,9 @@ services:
       PYTHONPATH: /opt/airflow
     volumes:
       - logs:/opt/airflow/logs
+      - ./repo/amicontrol/dags:/opt/airflow/dags:ro
+      - ./repo/amiadapters:/opt/airflow/amiadapters:ro
+      - ./neptune:/opt/airflow/neptune:ro
   
   flower:
     image: airflow:${AIRFLOW_IMAGE_TAG}
