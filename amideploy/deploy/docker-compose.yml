@@ -52,22 +52,32 @@ services:
   
   worker:
     image: airflow:${AIRFLOW_IMAGE_TAG}
+    # entrypoint: ["celery"]
     command: celery worker
     restart: always
     networks:
       - airflow
     env_file:
       - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      PYTHONPATH: /opt/airflow
     volumes:
       - logs:/opt/airflow/logs
   
   flower:
     image: airflow:${AIRFLOW_IMAGE_TAG}
+    # entrypoint: ["celery"]
     command: celery flower
     networks:
       - airflow
     env_file:
       - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      PYTHONPATH: /opt/airflow
     ports:
       - 5555:5555
 
