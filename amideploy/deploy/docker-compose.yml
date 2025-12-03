@@ -1,6 +1,10 @@
-version: "3.9"
-
 services:
+
+  redis:
+    image: redis:7
+    restart: always
+    networks:
+      - airflow
 
   scheduler:
     image: airflow:${AIRFLOW_IMAGE_TAG}
@@ -16,7 +20,9 @@ services:
       AIRFLOW__WEBSERVER__AUTH_BACKEND: airflow.www.security.auth_backend.password_auth
       AIRFLOW__WEBSERVER__WARN_DEPLOYMENT_EXPOSURE: False
       AIRFLOW__CORE__LOAD_EXAMPLES: False
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      # AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
       PYTHONPATH: /opt/airflow
     volumes:
       - logs:/opt/airflow/logs
@@ -37,10 +43,33 @@ services:
       AIRFLOW__WEBSERVER__AUTH_BACKEND: airflow.www.security.auth_backend.password_auth
       AIRFLOW__WEBSERVER__WARN_DEPLOYMENT_EXPOSURE: False
       AIRFLOW__CORE__LOAD_EXAMPLES: False
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      # AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
       PYTHONPATH: /opt/airflow
     volumes:
       - logs:/opt/airflow/logs
+  
+  worker:
+    image: airflow:${AIRFLOW_IMAGE_TAG}
+    command: celery worker
+    restart: always
+    networks:
+      - airflow
+    env_file:
+      - .env
+    volumes:
+      - logs:/opt/airflow/logs
+  
+  flower:
+    image: airflow:${AIRFLOW_IMAGE_TAG}
+    command: celery flower
+    networks:
+      - airflow
+    env_file:
+      - .env
+    ports:
+      - 5555:5555
 
 networks:
   airflow:
