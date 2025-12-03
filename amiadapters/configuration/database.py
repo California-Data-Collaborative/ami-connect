@@ -64,8 +64,8 @@ def get_configuration(snowflake_connection) -> Tuple[
                 source["sftp_local_download_directory"] = type_specific_config.get(
                     "sftp_local_download_directory"
                 )
-                source["sftp_local_known_hosts_file"] = type_specific_config.get(
-                    "sftp_local_known_hosts_file"
+                source["sftp_known_hosts_str"] = type_specific_config.get(
+                    "sftp_known_hosts_str"
                 )
             case "metersense" | "xylem_moulton_niguel":
                 source["ssh_tunnel_server_host"] = type_specific_config.get(
@@ -231,7 +231,7 @@ def update_source_configuration(connection, source_configuration: dict):
             del new_config[key]
     source["config"].update(new_config)
 
-    logger.info(f"Updating source with {org_id} with values {source}")
+    logger.info(f"Updating source in database with {org_id} with values {source}")
     cursor.execute(
         """
         UPDATE configuration_sources
@@ -261,7 +261,7 @@ def _create_source_configuration_object_for_type(
                 "sftp_host",
                 "sftp_remote_data_directory",
                 "sftp_local_download_directory",
-                "sftp_local_known_hosts_file",
+                "sftp_known_hosts_str",
             ]:
                 if not source_configuration.get(field) and require_all_fields:
                     raise ValueError(f"Source configuration is missing field: {field}")

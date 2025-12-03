@@ -4,6 +4,7 @@ from datetime import datetime
 import logging
 import json
 import os
+import tempfile
 from typing import Generator, List, Tuple
 
 import paramiko
@@ -72,7 +73,7 @@ class AclaraAdapter(BaseAMIAdapter):
         self.sftp_password = sftp_password
         self.sftp_meter_and_reads_folder = configured_sftp.remote_data_directory
         self.local_download_directory = configured_sftp.local_download_directory
-        self.local_known_hosts_file = configured_sftp.local_known_hosts_file
+        self.known_hosts = configured_sftp.known_hosts_str
         super().__init__(
             org_id,
             org_timezone,
@@ -97,7 +98,13 @@ class AclaraAdapter(BaseAMIAdapter):
         downloaded_files = []
         try:
             with paramiko.SSHClient() as ssh:
-                ssh.load_host_keys(self.local_known_hosts_file)
+                # Prepare known hosts
+                tmp = tempfile.NamedTemporaryFile()
+                tmp.write(self.known_hosts.encode("utf-8"))
+                tmp.flush()
+                ssh.load_host_keys(tmp.name)
+
+                # Perform sftp
                 ssh.connect(
                     self.sftp_host,
                     username=self.sftp_user,

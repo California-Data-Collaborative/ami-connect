@@ -265,7 +265,7 @@ class AMIAdapterConfiguration:
                 source.get("sftp_host"),
                 source.get("sftp_remote_data_directory"),
                 source.get("sftp_local_download_directory"),
-                source.get("sftp_local_known_hosts_file"),
+                source.get("sftp_known_hosts_str"),
             )
 
             # Only certain source types, like METERSENSE
@@ -660,12 +660,12 @@ class ConfiguredAMISource:
                 for i in [
                     configured_sftp.host,
                     configured_sftp.local_download_directory,
-                    configured_sftp.local_known_hosts_file,
+                    configured_sftp.known_hosts_str,
                     configured_sftp.remote_data_directory,
                 ]
             ):
                 raise ValueError(
-                    f"Invalid SFTP config for source with type {self.type}"
+                    f"Invalid SFTP config for source with type {self.type}. Missing field(s). Configured SFTP: {configured_sftp}"
                 )
         return configured_sftp
 

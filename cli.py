@@ -385,7 +385,10 @@ def update_source(
         str, typer.Option(help="Applicable to types: [aclara]")
     ] = None,
     sftp_local_known_hosts_file: Annotated[
-        str, typer.Option(help="Applicable to types: [aclara]")
+        str,
+        typer.Option(
+            help="Applicable to types: [aclara]. Reads contents of file and stores as sftp_known_hosts_str."
+        ),
     ] = None,
     ssh_tunnel_server_host: Annotated[
         str,
@@ -443,9 +446,8 @@ def update_source(
             sftp_remote_data_directory
         )
     if sftp_local_known_hosts_file is not None:
-        new_sink_configuration["sftp_local_known_hosts_file"] = (
-            sftp_local_known_hosts_file
-        )
+        with open(sftp_local_known_hosts_file, "r") as f:
+            new_sink_configuration["sftp_known_hosts_str"] = f.read()
     if sftp_local_download_directory is not None:
         new_sink_configuration["sftp_local_download_directory"] = (
             sftp_local_download_directory
@@ -827,7 +829,7 @@ def update_secret(
     if ssh_tunnel_private_key:
         # Allow user to pass in path to private key file instead of raw key
         with open(ssh_tunnel_private_key, "r") as f:
-            type_specific_options["ssh_tunnel_private_key"] = f.read()
+            type_specific_options["ssh_tunnel_private_key"] = f.read().strip()
 
     missing_fields = [
         f.name for f in required_fields if type_specific_options.get(f.name) is None

@@ -53,7 +53,7 @@ class SftpConfiguration:
     host: str
     remote_data_directory: str
     local_download_directory: str
-    local_known_hosts_file: str
+    known_hosts_str: str
 
 
 @dataclass

@@ -93,7 +93,9 @@ class TestConfig(BaseTestCase):
         self.assertEqual("example.com", source.configured_sftp.host)
         self.assertEqual("./data", source.configured_sftp.remote_data_directory)
         self.assertEqual("./output", source.configured_sftp.local_download_directory)
-        self.assertEqual("./known-hosts", source.configured_sftp.local_known_hosts_file)
+        self.assertEqual(
+            "example.com ssh-rsa abc", source.configured_sftp.known_hosts_str
+        )
         self.assertEqual("my_user", source.secrets.sftp_user)
         self.assertEqual("my_password", source.secrets.sftp_password)
 

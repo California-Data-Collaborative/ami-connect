@@ -92,7 +92,7 @@ class XylemSensusAdapter(BaseAMIAdapter):
         self.sftp_password = sftp_password
         self.sftp_meter_and_reads_folder = configured_sftp.remote_data_directory
         self.local_download_directory = configured_sftp.local_download_directory
-        self.local_known_hosts_file = configured_sftp.local_known_hosts_file
+        self.known_hosts = configured_sftp.known_hosts_str
         super().__init__(
             org_id,
             org_timezone,

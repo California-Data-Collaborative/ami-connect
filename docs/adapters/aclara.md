@@ -14,7 +14,8 @@ Example:
 python cli.py config add-source my_utility aclara America/Los_Angeles --sftp-host my-sftp-host --sftp-remote-data-directory ./data --sftp-local-download-directory ./output --sftp-local-known-hosts-file ./known-hosts --sinks my_snowflake
 ```
 
-The `./known-hosts` file is a special SSH known hosts file that should contain info about the Aclara server at `sftp_host`.
+The `./known-hosts` file is a special SSH known hosts file that should contain info about the Aclara server at `sftp_host`. Its contents
+are read into the database as the "sftp_known_hosts_str" value.
 
 ## Secrets
 

@@ -121,12 +121,15 @@ It's common to comment out or modify lines in this script while testing.
 Use the `deploy.sh` script to deploy new code to your AMI Connect pipeline. As of this writing, the script
 bootstraps a deploy environment on the server, then remotely executes a script that builds a new Docker container with Airflow.
 
-You'll need to tell the script the name of your environment, which should match the AWS profile name you used to run Terraform.
+You'll need to tell the script the name of your environment, which should match the name of your environment in Terraform. (The script
+uses Terraform outputs to configure itself).
 
 Example deploy:
 ```
 sh deploy.sh <my profile name>
 ```
+
+You should see the script build a new Docker container and restart Airflow. Your Airflow site will be down momentarily and running DAGs will be killed. After 30s, the site should come back.
 
 ### Run Airflow application locally (rarely necessary)
 

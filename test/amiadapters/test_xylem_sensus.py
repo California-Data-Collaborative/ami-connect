@@ -49,7 +49,7 @@ class TestXylemSensusAdapter(BaseTestCase):
                 host="host",
                 remote_data_directory="./dir",
                 local_download_directory="./dir",
-                local_known_hosts_file=None,
+                known_hosts_str=None,
             ),
             sftp_user="user",
             sftp_password="pass",
