@@ -3,6 +3,7 @@ set -e
 
 # TODO should be configurable
 REPO="California-Data-Collaborative/ami-connect.git"
+BRANCH="deploy-refresh-dags"
 REPO_URL="https://github.com/$REPO"
 BUILD_DIR="/home/ec2-user/build"
 REPO_DIR="$BUILD_DIR/repo"
@@ -14,7 +15,7 @@ if [ ! -d "$REPO_DIR" ]; then
 else
     cd "$REPO_DIR"
     git fetch --all
-    git reset --hard origin/main
+    git reset --hard origin/$BRANCH
 fi
 
 echo "🚚 Setting up .env file"
