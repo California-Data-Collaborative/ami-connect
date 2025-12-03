@@ -29,7 +29,7 @@ class TestAclaraAdapter(BaseTestCase):
                 host="example.com",
                 remote_data_directory="/remote",
                 local_download_directory="/tmp/downloads",
-                local_known_hosts_file="/tmp/known",
+                known_hosts_str="my known hosts",
             ),
             sftp_user="user",
             sftp_password="pw",

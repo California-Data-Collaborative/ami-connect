@@ -68,7 +68,7 @@ class TestDatabase(BaseTestCase):
                             "sftp_host": "example.com",
                             "sftp_remote_data_directory": "./data",
                             "sftp_local_download_directory": "./output",
-                            "sftp_local_known_hosts_file": "./known-hosts",
+                            "sftp_known_hosts_str": "example.com ssh-rsa abc",
                         }
                     ),
                 },
@@ -110,7 +110,7 @@ class TestDatabase(BaseTestCase):
                             "sftp_host": "example.com",
                             "sftp_remote_data_directory": "./data",
                             "sftp_local_download_directory": "./output",
-                            "sftp_local_known_hosts_file": "./known-hosts",
+                            "sftp_known_hosts_str": None,
                         }
                     ),
                 },

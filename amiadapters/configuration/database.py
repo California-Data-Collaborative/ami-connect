@@ -64,8 +64,8 @@ def get_configuration(snowflake_connection) -> Tuple[
                 source["sftp_local_download_directory"] = type_specific_config.get(
                     "sftp_local_download_directory"
                 )
-                source["sftp_local_known_hosts_file"] = type_specific_config.get(
-                    "sftp_local_known_hosts_file"
+                source["sftp_known_hosts_str"] = type_specific_config.get(
+                    "sftp_known_hosts_str"
                 )
             case "metersense" | "xylem_moulton_niguel":
                 source["ssh_tunnel_server_host"] = type_specific_config.get(
