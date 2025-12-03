@@ -15,5 +15,3 @@ COPY ./repo/amiadapters ./amiadapters
 COPY ./repo/amicontrol/dags ./dags
 # TODO this should handle when neptune does not exist
 COPY ./neptune ./neptune
-# TODO this should handle when file does not exist
-COPY ./known-hosts ./known-hosts
