@@ -1,11 +1,5 @@
 services:
 
-  redis:
-    image: redis:7
-    restart: always
-    networks:
-      - airflow
-
   scheduler:
     image: airflow:${AIRFLOW_IMAGE_TAG}
     container_name: airflow-scheduler
@@ -20,9 +14,7 @@ services:
       AIRFLOW__WEBSERVER__AUTH_BACKEND: airflow.www.security.auth_backend.password_auth
       AIRFLOW__WEBSERVER__WARN_DEPLOYMENT_EXPOSURE: False
       AIRFLOW__CORE__LOAD_EXAMPLES: False
-      # AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
       PYTHONPATH: /opt/airflow
     volumes:
       - logs:/opt/airflow/logs
@@ -46,49 +38,13 @@ services:
       AIRFLOW__WEBSERVER__AUTH_BACKEND: airflow.www.security.auth_backend.password_auth
       AIRFLOW__WEBSERVER__WARN_DEPLOYMENT_EXPOSURE: False
       AIRFLOW__CORE__LOAD_EXAMPLES: False
-      # AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
       PYTHONPATH: /opt/airflow
     volumes:
       - logs:/opt/airflow/logs
       - ./repo/amicontrol/dags:/opt/airflow/dags:ro
       - ./repo/amiadapters:/opt/airflow/amiadapters:ro
       - ./neptune:/opt/airflow/neptune:ro
-  
-  worker:
-    image: airflow:${AIRFLOW_IMAGE_TAG}
-    # entrypoint: ["celery"]
-    command: celery worker
-    restart: always
-    networks:
-      - airflow
-    env_file:
-      - .env
-    environment:
-      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-      PYTHONPATH: /opt/airflow
-    volumes:
-      - logs:/opt/airflow/logs
-      - ./repo/amicontrol/dags:/opt/airflow/dags:ro
-      - ./repo/amiadapters:/opt/airflow/amiadapters:ro
-      - ./neptune:/opt/airflow/neptune:ro
-  
-  flower:
-    image: airflow:${AIRFLOW_IMAGE_TAG}
-    # entrypoint: ["celery"]
-    command: celery flower
-    networks:
-      - airflow
-    env_file:
-      - .env
-    environment:
-      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-      PYTHONPATH: /opt/airflow
-    ports:
-      - 5555:5555
 
 networks:
   airflow:

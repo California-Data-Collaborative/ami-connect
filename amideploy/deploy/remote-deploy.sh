@@ -3,7 +3,7 @@ set -e
 
 # TODO should be configurable
 REPO="California-Data-Collaborative/ami-connect.git"
-BRANCH="deploy-refresh-dags"
+BRANCH="main"
 REPO_URL="https://github.com/$REPO"
 BUILD_DIR="/home/ec2-user/build"
 REPO_DIR="$BUILD_DIR/repo"
@@ -24,7 +24,6 @@ cd $BUILD_DIR
 echo "AIRFLOW_IMAGE_TAG=$VERSION" >> .env
 # The AMI_CONNECT__AIRFLOW_METASTORE_CONN variable is passed from the deploy script on your laptop
 echo "AIRFLOW__CORE__SQL_ALCHEMY_CONN=$AMI_CONNECT__AIRFLOW_METASTORE_CONN" >> .env
-echo "AIRFLOW__CELERY__RESULT_BACKEND=db+$AMI_CONNECT__AIRFLOW_METASTORE_CONN" >> .env
 
 echo "📦 Building Docker image"
 cd "$BUILD_DIR"
