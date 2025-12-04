@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-# TODO should be configurable
-REPO="California-Data-Collaborative/ami-connect.git"
+REPO=$AMI_CONNECT_REPO
 BRANCH="main"
 REPO_URL="https://github.com/$REPO"
 BUILD_DIR="/home/ec2-user/build"
@@ -16,6 +15,26 @@ else
     cd "$REPO_DIR"
     git fetch --all
     git reset --hard origin/$BRANCH
+    cd $BUILD_DIR
+fi
+
+echo "hi"
+echo $AMI_CONNECT_NEPTUNE_REPO_URL
+if [ ! -d "$AMI_CONNECT_NEPTUNE_REPO_URL" ]; then
+    echo "🔧 Pulling latest neptune code from GitHub"
+    if [ ! -d "$BUILD_DIR/neptune" ]; then
+        # git clone "$AMI_CONNECT_NEPTUNE_REPO_URL" "$BUILD_DIR/neptune"
+        git clone "git@github.com:California-Data-Collaborative/ami-connect-neptune-adapter.git" "$BUILD_DIR/neptune"
+    else
+        cd "$BUILD_DIR/neptune"
+        git fetch --all
+        git reset --hard origin/main
+        cd $BUILD_DIR
+    fi
+else
+    echo "🔧 No neptune repo configured, creating empty neptune directory"
+    # Docker expects the folder to exist, so make an empty one
+    mkdir -p "$BUILD_DIR/neptune"
 fi
 
 if [[ "${FULL_RESTART,,}" == "true" ]]; then
