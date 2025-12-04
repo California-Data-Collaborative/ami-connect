@@ -18,21 +18,25 @@ else
     git reset --hard origin/$BRANCH
 fi
 
-echo "🚚 Setting up .env file"
-cd $BUILD_DIR
-[ -f .env ] && rm .env
-echo "AIRFLOW_IMAGE_TAG=$VERSION" >> .env
-# The AMI_CONNECT__AIRFLOW_METASTORE_CONN variable is passed from the deploy script on your laptop
-echo "AIRFLOW__CORE__SQL_ALCHEMY_CONN=$AMI_CONNECT__AIRFLOW_METASTORE_CONN" >> .env
+if [[ "${FULL_RESTART,,}" == "true" ]]; then
+    echo "🚚 Setting up .env file"
+    cd $BUILD_DIR
+    [ -f .env ] && rm .env
+    echo "AIRFLOW_IMAGE_TAG=$VERSION" >> .env
+    # The AMI_CONNECT__AIRFLOW_METASTORE_CONN variable is passed from the deploy script on your laptop
+    echo "AIRFLOW__CORE__SQL_ALCHEMY_CONN=$AMI_CONNECT__AIRFLOW_METASTORE_CONN" >> .env
 
-echo "📦 Building Docker image"
-cd "$BUILD_DIR"
-sudo docker build -t airflow:$VERSION .
+    echo "📦 Building Docker image"
+    cd "$BUILD_DIR"
+    sudo docker build -t airflow:$VERSION .
 
-echo "🔄 Restarting Docker Compose"
-sudo docker compose up -d
+    echo "🔄 Restarting Docker Compose"
+    sudo docker compose up -d
 
-echo "🧹 Cleaning up old Docker images"
-sudo docker image prune -f
+    echo "🧹 Cleaning up old Docker images"
+    sudo docker image prune -f
+else
+    echo "⚠️ FULL_RESTART is not set to true. Skipping Docker image build and restart."
+fi
 
 echo "✅ Deployment complete. Running version: $VERSION"

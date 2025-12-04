@@ -7,12 +7,21 @@ set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
     echo "ERROR: Missing required argument: ENVIRONMENT"
-    echo "Usage: $0 <environment>" where <environment> matches the name of your terraform environment so the script can pull details from your terraform output files.
-    echo "Example: $0 prod"
+    echo "Usage: $0 <environment> [restart] where <environment> matches the name of your terraform environment so the script can pull details from your terraform output files."
+    echo "Example: $0 cadc"
+    echo "Or for full restart: $0 cadc restart"
     exit 1
 fi
 
 ENVIRONMENT="$1"
+
+# Pass in value "restart" to do a full restart of Airflow services, whick kills running DAGs.
+FULL_RESTART_ARG="${2:-false}"
+if [[ $FULL_RESTART_ARG == "restart" ]]; then
+    FULL_RESTART="true"
+else
+    FULL_RESTART="false"
+fi
 
 TERRAFORM_OUTPUT_FILE="./amideploy/configuration/$ENVIRONMENT-output.json"
 
@@ -66,9 +75,10 @@ if [ -d "/home/ec2-user/neptune" ]; then
     # copy_tree "/home/ec2-user/neptune" "$REMOTE_DIR/neptune"
 fi
 
-log "Running remote deployment script..."
+log "Running remote deployment script with FULL_RESTART=$FULL_RESTART..."
 run_ssh "cd $REMOTE_DIR && \
     AMI_CONNECT__AIRFLOW_METASTORE_CONN='$AIRFLOW_DB_CONN' \
+    FULL_RESTART='$FULL_RESTART' \
     bash remote-deploy.sh"
 
 log "===== Deployment complete ====="
