@@ -3,7 +3,8 @@ set -e
 
 # TODO should be configurable
 REPO="California-Data-Collaborative/ami-connect.git"
-BRANCH="main"
+# TODO do not deploy
+BRANCH="failure-messages"
 REPO_URL="https://github.com/$REPO"
 BUILD_DIR="/home/ec2-user/build"
 REPO_DIR="$BUILD_DIR/repo"

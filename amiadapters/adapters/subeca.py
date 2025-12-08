@@ -94,6 +94,7 @@ class SubecaAdapter(BaseAMIAdapter):
         extract_range_start: datetime,
         extract_range_end: datetime,
     ) -> ExtractOutput:
+        raise Exception("test test")
         logger.info(
             f"Retrieving Subeca data between {extract_range_start} and {extract_range_end}"
         )
