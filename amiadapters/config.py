@@ -486,7 +486,7 @@ class AMIAdapterConfiguration:
         ):
             return SnsNotifier(
                 target_arn=self._notifications.on_failure_sns_arn,
-                message="The DAG {{ dag.dag_id }} failed",
+                message="The DAG {{ dag.dag_id }} failed for real",
                 aws_conn_id="aws_default",
                 subject="AMI Connect DAG Failure",
                 region_name="us-west-2",
