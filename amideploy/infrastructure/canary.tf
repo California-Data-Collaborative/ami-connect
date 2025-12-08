@@ -9,7 +9,7 @@ resource "aws_s3_bucket" "ami_connect_canaries_s3_bucket_name" {
 }
 
 locals {
-  # We will use the JS file's md5 to trigger canary/lambda changes when the script changes
+  # We will use the JS file's md5 to trigger a deploy to canary/lambda when the script changes
   canary_code_hash = filemd5("${path.module}/canary/airflow_canary.js")
 }
 
@@ -55,7 +55,7 @@ resource "aws_synthetics_canary" "airflow_healthcheck" {
 
 # Alarm when canary check fails
 resource "aws_cloudwatch_metric_alarm" "airflow_down_alarm" {
-  alarm_name          = "airflow-site-down"
+  alarm_name          = "ami-connect-airflow-site-down"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 2
   metric_name         = "SuccessPercent"
@@ -63,7 +63,7 @@ resource "aws_cloudwatch_metric_alarm" "airflow_down_alarm" {
   period              = 300
   statistic           = "Average"
   threshold           = 90
-  alarm_description   = "Alert when Airflow site is down"
+  alarm_description   = "Alert when AMI Connect Airflow site is down"
   alarm_actions       = [aws_sns_topic.ami_connect_airflow_alerts.arn]
   dimensions = {
     CanaryName = aws_synthetics_canary.airflow_healthcheck.name
