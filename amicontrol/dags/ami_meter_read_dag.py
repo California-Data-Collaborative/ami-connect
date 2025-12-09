@@ -127,6 +127,42 @@ utility_adapters = config.adapters()
 backfills = config.backfills()
 on_failure_sns_notifier = config.on_failure_sns_notifier()
 
+from airflow.utils.context import Context
+def notify_sns_on_failure(context: Context):
+    ti = context["task_instance"]
+    dag = context["dag"]
+
+    # Airflow UI links
+    log_url = ti.log_url
+    dag_url = f"{context['conf'].get('webserver', {}).get('BASE_URL', '')}/dags/{dag.dag_id}"
+
+    exception = context.get("exception")
+    exception_msg = str(exception) if exception else "Unknown error"
+
+    message = f"""
+🚨 Airflow DAG Failure 🚨
+
+DAG: {dag.dag_id}
+Task: {ti.task_id}
+Run ID: {ti.run_id}
+
+Error:
+{exception_msg}
+
+Logs:
+{log_url}
+
+DAG:
+{dag_url}
+""".strip()
+    import boto3
+    sns = boto3.client("sns")
+    sns.publish(
+        TopicArn=config._notifications.on_failure_sns_arn,
+        Subject=f"Airflow failure: {dag.dag_id}.{ti.task_id}",
+        Message=message,
+    )
+
 # Create DAGs for each configured utility
 for adapter in utility_adapters:
     # Manual runs
@@ -147,7 +183,7 @@ for adapter in utility_adapters:
         None,
         user_provided_params,
         adapter,
-        on_failure_sns_notifier,
+        notify_sns_on_failure,
     )
 
     # Scheduled runs
@@ -159,7 +195,7 @@ for adapter in utility_adapters:
             lag=scheduled_extract.lag,
             params={},
             adapter=adapter,
-            on_failure_sns_notifier=on_failure_sns_notifier,
+            on_failure_sns_notifier=notify_sns_on_failure,
         )
 
 # Create DAGs for configured backfill runs
@@ -172,7 +208,7 @@ for backfill in backfills:
         backfill.schedule,
         {},
         matching_adapters[0],
-        on_failure_sns_notifier,
+        notify_sns_on_failure,
         backfill_params=backfill,
     )
 
