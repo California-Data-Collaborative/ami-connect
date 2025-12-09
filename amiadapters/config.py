@@ -484,9 +484,20 @@ class AMIAdapterConfiguration:
             self._notifications is not None
             and self._notifications.on_failure_sns_arn is not None
         ):
+            BASE_URL = "http://current-ami-connect.com"  # Replace with your Airflow webserver URL
+            message = """
+The DAG {{ dag.dag_id }} failed
+dag_url = "http://current-ami-connect.com/dags/{{dag.dag_id}}"
+            Log URL: {{ task_instance.log_url }}
+
+            exception: {{ exception }}
+            reason: {{ reason }}
+            traceback: {{ traceback }}
+
+"""
             return SnsNotifier(
                 target_arn=self._notifications.on_failure_sns_arn,
-                message="The DAG {{ dag.dag_id }} failed for real",
+                message=message,
                 aws_conn_id="aws_default",
                 subject="AMI Connect DAG Failure",
                 region_name="us-west-2",
