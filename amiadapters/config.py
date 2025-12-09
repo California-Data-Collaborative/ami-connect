@@ -498,7 +498,7 @@ dag_url = "http://current-ami-connect.com/dags/{{dag.dag_id}}"
             return SnsNotifier(
                 target_arn=self._notifications.on_failure_sns_arn,
                 # message=message,
-                message="The DAG {{ dag.dag_id }} failed for exception: {{ exception }} Log URL: {{ task_instance.log_url }}\n with traceback {{ traceback }}",
+                message="The DAG {{ dag.dag_id }} failed for exception: {{ exception }} Log URL: {{ task_instance.log_url }}",
                 aws_conn_id="aws_default",
                 subject="AMI Connect DAG Failure",
                 region_name="us-west-2",
