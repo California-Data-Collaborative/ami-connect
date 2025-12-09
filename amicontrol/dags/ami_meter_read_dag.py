@@ -126,6 +126,14 @@ config = AMIAdapterConfiguration.from_database()
 utility_adapters = config.adapters()
 backfills = config.backfills()
 on_failure_sns_notifier = config.on_failure_sns_notifier()
+def notify_failure(context):
+    try:
+        on_failure_sns_notifier.notify(context)
+    except Exception:
+        import traceback
+        print("SNS NOTIFICATION FAILED")
+        print(traceback.format_exc())
+        raise
 
 # Create DAGs for each configured utility
 for adapter in utility_adapters:
@@ -147,7 +155,7 @@ for adapter in utility_adapters:
         None,
         user_provided_params,
         adapter,
-        on_failure_sns_notifier,
+        notify_failure,
     )
 
     # Scheduled runs
@@ -159,7 +167,7 @@ for adapter in utility_adapters:
             lag=scheduled_extract.lag,
             params={},
             adapter=adapter,
-            on_failure_sns_notifier=on_failure_sns_notifier,
+            on_failure_sns_notifier=notify_failure,
         )
 
 # Create DAGs for configured backfill runs
