@@ -9,9 +9,7 @@ import subprocess
 
 from airflow.configuration import conf
 from airflow.decorators import dag, task
-from airflow.models import DAG, Variable
 from airflow.models.param import Param
-from airflow.operators.bash import BashOperator
 
 from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.config import AMIAdapterConfiguration
@@ -45,7 +43,10 @@ def ami_control_dag_factory(
         catchup=False,
         start_date=datetime(2024, 1, 1),
         tags=["ami"],
-        on_failure_callback=on_failure_sns_notifier,
+        # on_failure_callback=on_failure_sns_notifier,
+        default_args={
+            "on_failure_callback": on_failure_sns_notifier,
+        },
     )
     def ami_control_dag():
 
@@ -127,42 +128,6 @@ utility_adapters = config.adapters()
 backfills = config.backfills()
 on_failure_sns_notifier = config.on_failure_sns_notifier()
 
-from airflow.utils.context import Context
-def notify_sns_on_failure(context: Context):
-    ti = context["task_instance"]
-    dag = context["dag"]
-
-    # Airflow UI links
-    log_url = ti.log_url
-    dag_url = f"{context['conf'].get('webserver', {}).get('BASE_URL', '')}/dags/{dag.dag_id}"
-
-    exception = context.get("exception")
-    exception_msg = str(exception) if exception else "Unknown error"
-
-    message = f"""
-🚨 Airflow DAG Failure 🚨
-
-DAG: {dag.dag_id}
-Task: {ti.task_id}
-Run ID: {ti.run_id}
-
-Error:
-{exception_msg}
-
-Logs:
-{log_url}
-
-DAG:
-{dag_url}
-""".strip()
-    import boto3
-    sns = boto3.client("sns")
-    sns.publish(
-        TopicArn=config._notifications.on_failure_sns_arn,
-        Subject=f"Airflow failure: {dag.dag_id}.{ti.task_id}",
-        Message=message,
-    )
-
 # Create DAGs for each configured utility
 for adapter in utility_adapters:
     # Manual runs
@@ -183,7 +148,7 @@ for adapter in utility_adapters:
         None,
         user_provided_params,
         adapter,
-        notify_sns_on_failure,
+        on_failure_sns_notifier,
     )
 
     # Scheduled runs
@@ -195,7 +160,7 @@ for adapter in utility_adapters:
             lag=scheduled_extract.lag,
             params={},
             adapter=adapter,
-            on_failure_sns_notifier=notify_sns_on_failure,
+            on_failure_sns_notifier=on_failure_sns_notifier,
         )
 
 # Create DAGs for configured backfill runs
@@ -208,7 +173,7 @@ for backfill in backfills:
         backfill.schedule,
         {},
         matching_adapters[0],
-        notify_sns_on_failure,
+        on_failure_sns_notifier,
         backfill_params=backfill,
     )
 
