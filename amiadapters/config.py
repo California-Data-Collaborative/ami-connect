@@ -3,7 +3,6 @@ from enum import Enum
 from typing import List, Dict, Union
 import pathlib
 
-from airflow.providers.amazon.aws.notifications.sns import SnsNotifier
 from pytz import timezone, UTC
 from pytz.tzinfo import DstTzInfo
 import yaml
@@ -16,6 +15,7 @@ from amiadapters.adapters.sentryx import SentryxAdapter
 from amiadapters.adapters.subeca import SubecaAdapter
 from amiadapters.adapters.xylem_moulton_niguel import XylemMoultonNiguelAdapter
 from amiadapters.adapters.xylem_sensus import XylemSensusAdapter
+from amiadapters.alerts.sns import AmiConnectDagFailureNotifier
 from amiadapters.configuration.base import create_snowflake_from_secrets
 from amiadapters.configuration.models import (
     AclaraSecrets,
@@ -41,6 +41,11 @@ from amiadapters.configuration.models import (
     XylemSensusSecrets,
 )
 from amiadapters.configuration.database import get_configuration
+from amiadapters.configuration.env import (
+    get_global_aws_profile,
+    get_global_aws_region,
+    get_global_airflow_site_url,
+)
 from amiadapters.configuration.secrets import get_secrets
 
 
@@ -61,6 +66,7 @@ class AMIAdapterConfiguration:
         self._backfills = backfills if backfills is not None else []
         self._notifications = notifications
         self._sinks = sinks if sinks is not None else []
+        self._airflow_site_url = get_global_airflow_site_url()
 
     @classmethod
     def from_yaml(cls, config_file: str, secrets_file: str):
@@ -484,12 +490,11 @@ class AMIAdapterConfiguration:
             self._notifications is not None
             and self._notifications.on_failure_sns_arn is not None
         ):
-            return SnsNotifier(
-                target_arn=self._notifications.on_failure_sns_arn,
-                message="The DAG {{ dag.dag_id }} failed",
-                aws_conn_id="aws_default",
-                subject="AMI Connect DAG Failure",
-                region_name="us-west-2",
+            return AmiConnectDagFailureNotifier(
+                sns_topic_arn=self._notifications.on_failure_sns_arn,
+                base_airflow_url=self._airflow_site_url or "localhost:8080",
+                aws_profile_name=get_global_aws_profile(),
+                aws_region=get_global_aws_region(),
             )
         return None
 

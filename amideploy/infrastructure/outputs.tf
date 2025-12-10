@@ -3,6 +3,12 @@ output "airflow_server_private_key_pem" {
   sensitive = true
 }
 
+output "airflow_site_url" {
+  description = "The URL for the Airflow webserver"
+  value       = var.airflow_hostname
+  sensitive   = true
+}
+
 output "airflow_alerts_sns_topic" {
   value     = aws_sns_topic.ami_connect_airflow_alerts.arn
   sensitive = false

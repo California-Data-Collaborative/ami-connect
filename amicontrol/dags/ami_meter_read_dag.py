@@ -9,9 +9,7 @@ import subprocess
 
 from airflow.configuration import conf
 from airflow.decorators import dag, task
-from airflow.models import DAG, Variable
 from airflow.models.param import Param
-from airflow.operators.bash import BashOperator
 
 from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.config import AMIAdapterConfiguration
@@ -45,7 +43,9 @@ def ami_control_dag_factory(
         catchup=False,
         start_date=datetime(2024, 1, 1),
         tags=["ami"],
-        on_failure_callback=on_failure_sns_notifier,
+        default_args={
+            "on_failure_callback": on_failure_sns_notifier,
+        },
     )
     def ami_control_dag():
 

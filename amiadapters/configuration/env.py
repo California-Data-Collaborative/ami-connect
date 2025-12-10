@@ -45,3 +45,10 @@ def get_global_aws_region() -> str | None:
     Returns the AWS region to use for the current process, or None if not set.
     """
     return os.environ.get(AWS_REGION_ENV_VAR_NAME)
+
+
+def get_global_airflow_site_url() -> str | None:
+    """
+    Returns the Airflow site URL to use for the current process, or None if not set.
+    """
+    return os.environ.get("AMI_CONNECT__AIRFLOW_SITE_URL")

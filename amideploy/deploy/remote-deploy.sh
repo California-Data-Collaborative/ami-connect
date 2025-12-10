@@ -23,8 +23,9 @@ if [[ "${FULL_RESTART,,}" == "true" ]]; then
     cd $BUILD_DIR
     [ -f .env ] && rm .env
     echo "AIRFLOW_IMAGE_TAG=$VERSION" >> .env
-    # The AMI_CONNECT__AIRFLOW_METASTORE_CONN variable is passed from the deploy script on your laptop
+    # The AMI_CONNECT__AIRFLOW_METASTORE_CONN and other variables are passed from the deploy script on your laptop
     echo "AIRFLOW__CORE__SQL_ALCHEMY_CONN=$AMI_CONNECT__AIRFLOW_METASTORE_CONN" >> .env
+    echo "AMI_CONNECT__AIRFLOW_SITE_URL=$AMI_CONNECT__AIRFLOW_SITE_URL" >> .env
 
     echo "📦 Building Docker image"
     cd "$BUILD_DIR"
