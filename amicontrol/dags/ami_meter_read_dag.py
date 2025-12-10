@@ -43,7 +43,6 @@ def ami_control_dag_factory(
         catchup=False,
         start_date=datetime(2024, 1, 1),
         tags=["ami"],
-        # on_failure_callback=on_failure_sns_notifier,
         default_args={
             "on_failure_callback": on_failure_sns_notifier,
         },
@@ -321,6 +320,5 @@ def log_cleanup_dag():
             raise subprocess.CalledProcessError(returncode, process.args)
 
     log_cleanup() >> scheduler_log_cleanup()
-
 
 log_cleanup_dag()
