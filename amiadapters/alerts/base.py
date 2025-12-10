@@ -23,7 +23,6 @@ class AmiConnectDagFailureNotifier(BaseNotifier):
         self.profile = aws_profile_name
         self.region = aws_region
 
-    # TODO unit tests
     def notify(self, context: Context) -> None:
         # Must create a new boto3 client each time to avoid serialization issues
         # (Airflow gives "TypeError: cannot pickle '_thread.lock' object" otherwise)
@@ -38,24 +37,23 @@ class AmiConnectDagFailureNotifier(BaseNotifier):
 
         # Airflow UI links
         log_url = task_instance.log_url
+        if log_url:
+            log_url = log_url.replace("localhost:8080", self.base_airflow_url)
         dag_url = f"http://{self.base_airflow_url}/dags/{dag.dag_id}"
 
         exception = context.get("exception")
         if exception:
-            # exception_type = type(exception).__name__
-            # exception_msg = str(exception)
-            # stack = "".join(
-            #     traceback.format_exception(
-            #         type(exception), exception, exception.__traceback__
-            #     )
-            # )
             exception_msg = "\n".join(
                 traceback.format_exception_only(type(exception), exception)
             )
+            stack = "".join(
+                traceback.format_exception(
+                    type(exception), exception, exception.__traceback__
+                )
+            )
         else:
-            # exception_type = "UnknownException"
             exception_msg = "Unknown exception"
-            # stack = ""
+            stack = ""
 
         message = f"""
 🚨 Airflow DAG Failure 🚨
@@ -67,6 +65,10 @@ Run ID: {task_instance.run_id}
 {exception_msg}
 
 Logs: {log_url}
+
+{stack[:1500]}
+...
+{stack[1500:]}
 
 """.strip()
 

@@ -6,7 +6,7 @@ import pytz
 
 from amiadapters.adapters.aclara import AclaraAdapter
 from amiadapters.adapters.beacon import Beacon360Adapter
-from amiadapters.alerts.sns import AmiConnectDagFailureNotifier
+from amiadapters.alerts.base import AmiConnectDagFailureNotifier
 from amiadapters.config import (
     AMIAdapterConfiguration,
     find_config_yaml,

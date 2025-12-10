@@ -15,7 +15,7 @@ from amiadapters.adapters.sentryx import SentryxAdapter
 from amiadapters.adapters.subeca import SubecaAdapter
 from amiadapters.adapters.xylem_moulton_niguel import XylemMoultonNiguelAdapter
 from amiadapters.adapters.xylem_sensus import XylemSensusAdapter
-from amiadapters.alerts.sns import AmiConnectDagFailureNotifier
+from amiadapters.alerts.base import AmiConnectDagFailureNotifier
 from amiadapters.configuration.base import create_snowflake_from_secrets
 from amiadapters.configuration.models import (
     AclaraSecrets,
