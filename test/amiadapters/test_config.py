@@ -2,11 +2,11 @@ from datetime import datetime
 import pathlib
 from unittest.mock import patch
 
-from airflow.providers.amazon.aws.notifications.sns import SnsNotifier
 import pytz
 
 from amiadapters.adapters.aclara import AclaraAdapter
 from amiadapters.adapters.beacon import Beacon360Adapter
+from amiadapters.alerts.sns import AmiConnectDagFailureNotifier
 from amiadapters.config import (
     AMIAdapterConfiguration,
     find_config_yaml,
@@ -207,8 +207,8 @@ class TestConfig(BaseTestCase):
             self.get_fixture_path("beacon-360-secrets.yaml"),
         )
         notifier = config.on_failure_sns_notifier()
-        self.assertIsInstance(notifier, SnsNotifier)
-        self.assertEqual("my-sns-arn", notifier.target_arn)
+        self.assertIsInstance(notifier, AmiConnectDagFailureNotifier)
+        self.assertEqual("my-sns-arn", notifier.sns_topic_arn)
 
     @patch("amiadapters.config.ConfiguredStorageSink.connection")
     def test_can_create_list_of_data_quality_checks(self, mock_connection):

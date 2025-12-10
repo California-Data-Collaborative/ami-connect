@@ -321,4 +321,5 @@ def log_cleanup_dag():
 
     log_cleanup() >> scheduler_log_cleanup()
 
+
 log_cleanup_dag()
