@@ -97,6 +97,7 @@ class SubecaAdapter(BaseAMIAdapter):
         logger.info(
             f"Retrieving Subeca data between {extract_range_start} and {extract_range_end}"
         )
+        logger.info("ANOTHER TEST!")
         account_ids = self._extract_all_account_ids()
 
         accounts = []
