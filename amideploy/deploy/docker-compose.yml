@@ -15,10 +15,11 @@ services:
       AIRFLOW__WEBSERVER__WARN_DEPLOYMENT_EXPOSURE: False
       AIRFLOW__CORE__LOAD_EXAMPLES: False
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      PYTHONPATH: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/amicontrol/dags
+      PYTHONPATH: /opt/airflow:/opt/airflow/amicontrol
     volumes:
       - logs:/opt/airflow/logs
-      - ./repo/amicontrol/dags:/opt/airflow/dags:ro
+      - ./repo/amicontrol/dags:/opt/airflow/amicontrol/dags:ro
       - ./repo/amiadapters:/opt/airflow/amiadapters:ro
       - ./neptune:/opt/airflow/neptune:ro
 
@@ -39,10 +40,11 @@ services:
       AIRFLOW__WEBSERVER__WARN_DEPLOYMENT_EXPOSURE: False
       AIRFLOW__CORE__LOAD_EXAMPLES: False
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      PYTHONPATH: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/amicontrol/dags
+      PYTHONPATH: /opt/airflow:/opt/airflow/amicontrol
     volumes:
       - logs:/opt/airflow/logs
-      - ./repo/amicontrol/dags:/opt/airflow/dags:ro
+      - ./repo/amicontrol/dags:/opt/airflow/amicontrol/dags:ro
       - ./repo/amiadapters:/opt/airflow/amiadapters:ro
       - ./neptune:/opt/airflow/neptune:ro
 
