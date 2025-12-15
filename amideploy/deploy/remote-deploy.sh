@@ -56,7 +56,7 @@ if [[ "${FULL_RESTART,,}" == "true" ]]; then
     echo "🧹 Cleaning up old Docker images"
     sudo docker image prune -f
 else
-    echo "⚠️ FULL_RESTART is not set to true. Skipping Docker image build and restart."
+    echo "🏃‍♀️ FULL_RESTART is not set to true. Skipping Docker image build and restart."
 fi
 
 echo "✅ Deployment complete. Running version: $VERSION"
