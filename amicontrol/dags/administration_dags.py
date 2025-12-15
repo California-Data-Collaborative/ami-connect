@@ -41,6 +41,7 @@ def log_cleanup_dag_factory(
         log_cleanup_str = (
             """
             echo "Getting Configurations..."
+            echo "THIS IS A TEST!"
             BASE_LOG_FOLDER='"""
             + BASE_LOG_FOLDER
             + """'
