@@ -24,6 +24,10 @@ else
 fi
 
 AMI_CONNECT_REPO="California-Data-Collaborative/ami-connect.git"
+# If you include a private neptune adapter in your deploy,
+# set the AMI_CONNECT_NEPTUNE_REPO_URL environment variable before running this script
+# Defaults to empty string if not set.
+AMI_CONNECT_NEPTUNE_REPO_URL="${AMI_CONNECT_NEPTUNE_REPO_URL:-}"
 
 TERRAFORM_OUTPUT_FILE="./amideploy/configuration/$ENVIRONMENT-output.json"
 
