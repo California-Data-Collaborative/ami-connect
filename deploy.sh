@@ -23,6 +23,12 @@ else
     FULL_RESTART="false"
 fi
 
+AMI_CONNECT_REPO="California-Data-Collaborative/ami-connect.git"
+# If you include a private neptune adapter in your deploy,
+# set the AMI_CONNECT_NEPTUNE_REPO_URL environment variable before running this script
+# Defaults to empty string if not set.
+AMI_CONNECT_NEPTUNE_REPO_URL="${AMI_CONNECT_NEPTUNE_REPO_URL:-}"
+
 TERRAFORM_OUTPUT_FILE="./amideploy/configuration/$ENVIRONMENT-output.json"
 
 REMOTE_USER="ec2-user"
@@ -75,6 +81,7 @@ run_ssh "cd $REMOTE_DIR && \
     AMI_CONNECT__AIRFLOW_METASTORE_CONN='$AIRFLOW_DB_CONN' \
     AMI_CONNECT__AIRFLOW_SITE_URL='$AIRFLOW_SITE_URL' \
     FULL_RESTART='$FULL_RESTART' \
+    AMI_CONNECT_NEPTUNE_REPO_URL='$AMI_CONNECT_NEPTUNE_REPO_URL' \
     bash remote-deploy.sh"
 
 log "===== Deployment complete ====="

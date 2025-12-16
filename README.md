@@ -124,12 +124,24 @@ bootstraps a deploy environment on the server, then remotely executes a script t
 You'll need to tell the script the name of your environment, which should match the name of your environment in Terraform. (The script
 uses Terraform outputs to configure itself).
 
-Example deploy:
+By default, the deploy will not restart Airflow. You can use this behavior to deploy new DAG code, which the Docker container should pick up.
+
+Example deploy without restarting Airflow:
 ```
 sh deploy.sh <my profile name>
 ```
 
-You should see the script build a new Docker container and restart Airflow. Your Airflow site will be down momentarily and running DAGs will be killed. After 30s, the site should come back.
+But if you do need to restart Airflow, you can pass in the `restart` argument, like so:
+```
+sh deploy.sh <my profile name> restart
+```
+Your Airflow site will be down momentarily and running DAGs will be killed. After about 30s, the site will come back up.
+
+Finally, for systems that rely on a privately hosted [Neptune adapter](./docs/adapters/neptune.md), the script accepts a
+`AMI_CONNECT_NEPTUNE_REPO_URL` environment variable that specifies where the Neptune code should be pulled from. Example:
+```
+AMI_CONNECT_NEPTUNE_REPO_URL=git@github.com:<my github org>/ami-connect-neptune-adapter.git sh deploy.sh <my profile name>
+```
 
 ### Run Airflow application locally (rarely necessary)
 
