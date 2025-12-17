@@ -74,7 +74,7 @@ class TestSubecaAdapter(BaseTestCase):
             org_id="this-utility",
             org_timezone=pytz.timezone("Africa/Algiers"),
             pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
-            api_url="my-url",
+            api_url="http://localhost/my-url",
             api_key="test-key",
             configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
             configured_sinks=[],
@@ -83,38 +83,37 @@ class TestSubecaAdapter(BaseTestCase):
         self.end_date = datetime.datetime(2024, 1, 3, 0, 0)
 
     def test_init(self):
-        self.assertEqual("my-url", self.adapter.api_url)
+        self.assertEqual("http://localhost/my-url", self.adapter.api_url)
         self.assertEqual("test-key", self.adapter.api_key)
         self.assertEqual("this-utility", self.adapter.org_id)
         self.assertEqual(pytz.timezone("Africa/Algiers"), self.adapter.org_timezone)
         self.assertEqual("subeca-this-utility", self.adapter.name())
 
-    @patch("amiadapters.adapters.subeca.requests.get")
-    @patch("amiadapters.adapters.subeca.requests.post")
-    def test_extract_success(self, mock_post, mock_get):
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_success(self, mock_request):
         # --- Mock GET /accounts response ---
         mock_accounts_response = create_mock_accounts_response()
-        mock_get.return_value = mock_accounts_response
-
         # --- Mock POST /usages response ---
         mock_usages_response = create_mock_usages_response()
-        mock_post.return_value = mock_usages_response
-
         # --- Mock GET /accounts/{id} metadata response ---
         mock_account_metadata_response = create_mock_account_metadata_response()
-        # The second GET call should return metadata response
-        mock_get.side_effect = [mock_accounts_response, mock_account_metadata_response]
+
+        mock_request.side_effect = [
+            mock_accounts_response,
+            mock_usages_response,
+            mock_account_metadata_response,
+        ]
 
         result = self.adapter._extract("run1", self.start_date, self.end_date)
 
         # Verify API calls
-        mock_get.assert_any_call(
+        mock_request.assert_any_call(
+            "get",
             f"{self.adapter.api_url}/v1/accounts",
             params={"pageSize": 100},
             headers={"accept": "application/json", "x-subeca-api-key": "test-key"},
         )
-        self.assertEqual(2, mock_get.call_count)
-        mock_post.assert_called_once()
+        self.assertEqual(3, mock_request.call_count)
 
         # Validate returned ExtractOutput
         accounts = result.load_from_file("accounts.json", SubecaAccount)
@@ -131,12 +130,10 @@ class TestSubecaAdapter(BaseTestCase):
         self.assertEqual(account.latestReading.value, "16685.9")
         self.assertEqual(usage.deviceId, "device1")
 
-    @patch("amiadapters.adapters.subeca.requests.get")
-    @patch("amiadapters.adapters.subeca.requests.post")
-    def test_extract_ignores_usage_with_no_device_id(self, mock_post, mock_get):
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_ignores_usage_with_no_device_id(self, mock_request):
         # --- Mock GET /accounts response ---
         mock_accounts_response = create_mock_accounts_response()
-        mock_get.return_value = mock_accounts_response
 
         # --- Mock POST /usages response ---
         mock_usages_response = create_mock_usages_response()
@@ -147,12 +144,15 @@ class TestSubecaAdapter(BaseTestCase):
             "unit": "",
             "value": "",
         }
-        mock_post.return_value = mock_usages_response
 
         # --- Mock GET /accounts/{id} metadata response ---
         mock_account_metadata_response = create_mock_account_metadata_response()
-        # The second GET call should return metadata response
-        mock_get.side_effect = [mock_accounts_response, mock_account_metadata_response]
+
+        mock_request.side_effect = [
+            mock_accounts_response,
+            mock_usages_response,
+            mock_account_metadata_response,
+        ]
 
         result = self.adapter._extract("run1", self.start_date, self.end_date)
 
@@ -165,9 +165,8 @@ class TestSubecaAdapter(BaseTestCase):
         self.assertEqual(len(accounts), 1)
         self.assertEqual(len(usages), 0)
 
-    @patch("amiadapters.adapters.subeca.requests.get")
-    @patch("amiadapters.adapters.subeca.requests.post")
-    def test_extract_can_paginate(self, mock_post, mock_get):
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_can_paginate(self, mock_request):
         # Mock accounts
         mock_accounts_response_1 = create_mock_accounts_response()
         mock_accounts_response_2 = create_mock_accounts_response()
@@ -176,21 +175,21 @@ class TestSubecaAdapter(BaseTestCase):
 
         # --- Mock POST /usages response ---
         mock_usages_response = create_mock_usages_response()
-        mock_post.return_value = mock_usages_response
 
         # Mock GET /accounts/{accountId}
         mock_account_metadata_response = create_mock_account_metadata_response()
 
         # The second GET call should return metadata response
-        mock_get.side_effect = [
+        mock_request.side_effect = [
             mock_accounts_response_1,
             mock_accounts_response_2,
+            mock_usages_response,
             mock_account_metadata_response,
         ]
 
         result = self.adapter._extract("run1", self.start_date, self.end_date)
 
-        self.assertEqual(3, mock_get.call_count)
+        self.assertEqual(4, mock_request.call_count)
 
         # Validate returned ExtractOutput
         accounts = result.load_from_file(
@@ -201,61 +200,149 @@ class TestSubecaAdapter(BaseTestCase):
         self.assertEqual(len(accounts), 1)
         self.assertEqual(len(usages), 1)
 
-    @patch("amiadapters.adapters.subeca.requests.get")
-    def test_extract_accounts_api_failure(self, mock_get):
-        mock_response = MagicMock()
-        mock_response.ok = False
-        mock_response.status_code = 500
-        mock_response.text = "Internal Server Error"
-        mock_get.return_value = mock_response
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_accounts_api_retries(self, mock_request):
+        # Mock accounts, first request fails, second succeeds
+        mock_accounts_response_1 = create_mock_accounts_response()
+        mock_accounts_response_1 = MagicMock()
+        mock_accounts_response_1.ok = False
+        mock_accounts_response_1.status_code = 500
+        mock_accounts_response_1.text = "Server Error"
 
-        with self.assertRaises(ValueError) as ctx:
-            self.adapter._extract("run1", self.start_date, self.end_date)
-
-        self.assertIn("Invalid response from accounts request", str(ctx.exception))
-
-    @patch("amiadapters.adapters.subeca.requests.get")
-    @patch("amiadapters.adapters.subeca.requests.post")
-    def test_extract_usage_api_failure(self, mock_post, mock_get):
-        mock_get.return_value = create_mock_accounts_response()
-
-        # Mock POST /usages to fail
-        mock_usage_response = MagicMock()
-        mock_usage_response.ok = False
-        mock_usage_response.status_code = 400
-        mock_usage_response.text = "Bad Request"
-        mock_post.return_value = mock_usage_response
-
-        with self.assertRaises(ValueError) as ctx:
-            self.adapter._extract("run1", self.start_date, self.end_date)
-
-        self.assertIn("Invalid response from usages endpoint", str(ctx.exception))
-
-    @patch("amiadapters.adapters.subeca.requests.get")
-    @patch("amiadapters.adapters.subeca.requests.post")
-    def test_extract_account_metadata_api_failure(self, mock_post, mock_get):
-        # Mock accounts to return 1 account
-        mock_accounts_response = create_mock_accounts_response()
+        mock_accounts_response_2 = create_mock_accounts_response()
 
         # --- Mock POST /usages response ---
         mock_usages_response = create_mock_usages_response()
-        mock_post.return_value = mock_usages_response
 
-        # Mock GET /accounts/{accountId} to fail
-        mock_account_metadata_response = MagicMock()
-        mock_account_metadata_response.ok = False
-        mock_account_metadata_response.status_code = 400
-        mock_account_metadata_response.text = "Bad Request"
+        # Mock GET /accounts/{accountId}
+        mock_account_metadata_response = create_mock_account_metadata_response()
 
         # The second GET call should return metadata response
-        mock_get.side_effect = [mock_accounts_response, mock_account_metadata_response]
+        mock_request.side_effect = [
+            mock_accounts_response_1,
+            mock_accounts_response_2,
+            mock_usages_response,
+            mock_account_metadata_response,
+        ]
+
+        self.adapter._extract("run1", self.start_date, self.end_date)
+
+        self.assertEqual(4, mock_request.call_count)
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_accounts_api_non_retriable_failure(self, mock_request):
+        mock_response = MagicMock()
+        mock_response.ok = False
+        mock_response.status_code = 400
+        mock_response.text = "Bad Request"
+        mock_request.return_value = mock_response
 
         with self.assertRaises(ValueError) as ctx:
             self.adapter._extract("run1", self.start_date, self.end_date)
 
         self.assertIn(
-            "Invalid response from account metadata endpoint", str(ctx.exception)
+            "Request to http://localhost/my-url/v1/accounts failed: 400 Bad Request",
+            str(ctx.exception),
         )
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_usage_api_failure_non_retriable_failure(self, mock_request):
+        mock_accounts_response = create_mock_accounts_response()
+
+        # Mock POST /usages to fail in a non-retriable way
+        mock_usage_response = MagicMock()
+        mock_usage_response.ok = False
+        mock_usage_response.status_code = 400
+        mock_usage_response.text = "Bad Request"
+
+        mock_request.side_effect = [
+            mock_accounts_response,
+            mock_usage_response,
+        ]
+
+        with self.assertRaises(ValueError) as ctx:
+            self.adapter._extract("run1", self.start_date, self.end_date)
+
+        self.assertIn(
+            "Request to http://localhost/my-url/v1/accounts/acct1/usages failed: 400 Bad Request",
+            str(ctx.exception),
+        )
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_usage_api_failure_retries(self, mock_request):
+        mock_accounts_response = create_mock_accounts_response()
+
+        # Mock POST /usages to fail
+        failed_usage_request = MagicMock()
+        failed_usage_request.ok = False
+        failed_usage_request.status_code = 500
+        failed_usage_request.text = "Bad Request"
+
+        mock_usages_response = create_mock_usages_response()
+        mock_metadata_response = create_mock_account_metadata_response()
+        mock_request.side_effect = [
+            mock_accounts_response,
+            failed_usage_request,
+            mock_usages_response,
+            mock_metadata_response,
+        ]
+
+        self.adapter._extract("run1", self.start_date, self.end_date)
+
+        # Includes one retry
+        self.assertEqual(4, mock_request.call_count)
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_account_metadata_non_retriable_failure(self, mock_request):
+        # Mock accounts to return 1 account
+        mock_accounts_response = create_mock_accounts_response()
+        # --- Mock POST /usages response ---
+        mock_usages_response = create_mock_usages_response()
+
+        # Mock GET /accounts/{accountId} to fail in a non-retriable way
+        mock_account_metadata_response = MagicMock()
+        mock_account_metadata_response.ok = False
+        mock_account_metadata_response.status_code = 400
+        mock_account_metadata_response.text = "Bad Request"
+
+        mock_request.side_effect = [
+            mock_accounts_response,
+            mock_usages_response,
+            mock_account_metadata_response,
+        ]
+
+        with self.assertRaises(ValueError) as ctx:
+            self.adapter._extract("run1", self.start_date, self.end_date)
+
+        self.assertIn(
+            "Request to http://localhost/my-url/v1/accounts/acct1 failed: 400 Bad Request",
+            str(ctx.exception),
+        )
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_account_metadata_api_failure_retries(self, mock_request):
+        mock_accounts_response = create_mock_accounts_response()
+
+        mock_usages_response = create_mock_usages_response()
+
+        # Mock GET /accounts/{accountId} to fail in retriable way
+        mock_metadata_response = MagicMock()
+        mock_metadata_response.ok = False
+        mock_metadata_response.status_code = 500
+        mock_metadata_response.text = "Bad Request"
+        mock_metadata_response_2 = create_mock_account_metadata_response()
+
+        mock_request.side_effect = [
+            mock_accounts_response,
+            mock_usages_response,
+            mock_metadata_response,
+            mock_metadata_response_2,
+        ]
+
+        self.adapter._extract("run1", self.start_date, self.end_date)
+
+        # Includes one retry
+        self.assertEqual(4, mock_request.call_count)
 
     def make_extract_output(self, accounts, usages):
         return ExtractOutput(
