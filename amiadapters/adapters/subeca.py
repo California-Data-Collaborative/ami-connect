@@ -2,6 +2,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 import logging
 import json
+import time
 from typing import Dict, Generator, List, Set, Tuple
 
 import requests
@@ -142,20 +143,15 @@ class SubecaAdapter(BaseAMIAdapter):
         finished = False
         next_token = None
         account_ids = set()
-        num_requests = 1
-        while not finished and num_requests < 10_000:
+        num_pages = 1
+        while not finished and num_pages < 10_000:
             if next_token is not None:
                 params["nextToken"] = next_token
 
-            logger.info(f"Requesting Subeca accounts. Request {num_requests}")
-
-            result = requests.get(
-                f"{self.api_url}/v1/accounts", params=params, headers=headers
+            logger.info(f"Requesting Subeca accounts. Page {num_pages}")
+            result = self._make_request_with_retries(
+                "get", f"{self.api_url}/v1/accounts", params=params, headers=headers
             )
-            if not result.ok:
-                raise ValueError(
-                    f"Invalid response from accounts request: {result} {result.text}"
-                )
 
             response_json = result.json()
             data = response_json["data"]
@@ -163,7 +159,7 @@ class SubecaAdapter(BaseAMIAdapter):
             for d in data:
                 account_ids.add(d["accountId"])
 
-            num_requests += 1
+            num_pages += 1
 
             next_token = response_json.get("nextToken")
             if next_token is None:
@@ -191,20 +187,18 @@ class SubecaAdapter(BaseAMIAdapter):
                 "utcOffset": "+00:00",
             },
         }
-        result = requests.post(
+
+        headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "x-subeca-api-key": self.api_key,
+        }
+        result = self._make_request_with_retries(
+            "post",
             f"{self.api_url}/v1/accounts/{account_id}/usages",
             json=body,
-            headers={
-                "accept": "application/json",
-                "content-type": "application/json",
-                "x-subeca-api-key": self.api_key,
-            },
+            headers=headers,
         )
-
-        if not result.ok:
-            raise ValueError(
-                f"Invalid response from usages endpoint for account {account_id}: {result.status_code} {result.text}"
-            )
 
         for usage_time, usage in (
             result.json().get("data", {}).get("hourly", {}).items()
@@ -250,22 +244,17 @@ class SubecaAdapter(BaseAMIAdapter):
                 "createdAt": "2025-05-30T02:37:52+00:00"
             }
         """
-        result = requests.get(
+        headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "x-subeca-api-key": self.api_key,
+        }
+        result = self._make_request_with_retries(
+            "get",
             f"{self.api_url}/v1/accounts/{account_id}",
-            params={
-                "readUnit": self.READ_UNIT,
-            },
-            headers={
-                "accept": "application/json",
-                "content-type": "application/json",
-                "x-subeca-api-key": self.api_key,
-            },
+            params={"readUnit": self.READ_UNIT},
+            headers=headers,
         )
-
-        if not result.ok:
-            raise ValueError(
-                f"Invalid response from account metadata endpoint for account {account_id}: {result.status_code} {result.text}"
-            )
 
         raw_account = result.json()
         raw_device = raw_account.get("device") or {}
@@ -288,6 +277,38 @@ class SubecaAdapter(BaseAMIAdapter):
             installationDate=raw_device.get("installationDate"),
             latestCommunicationDate=raw_device.get("latestCommunicationDate"),
             latestReading=latest_reading,
+        )
+
+    def _make_request_with_retries(
+        self, method: str, url: str, **kwargs
+    ) -> requests.Response:
+        """
+        The Subeca API occasionally returns 5xx errors that we can skip over with a retry.
+        Make an HTTP request with retries for retriable status codes.
+        """
+        max_retries = 3
+        backoff_factor = 2
+        retriable_statuses = {500, 502, 503, 504}
+
+        for attempt in range(1, max_retries + 1):
+            response = requests.request(method, url, **kwargs)
+            if response.ok:
+                return response
+            elif response.status_code in retriable_statuses:
+                logger.warning(
+                    f"Request to {url} failed with status {response.status_code}. "
+                    f"Attempt {attempt} of {max_retries}."
+                )
+                if attempt < max_retries:
+                    sleep_time = backoff_factor ** (attempt - 1)
+                    logger.info(f"Retrying after {sleep_time} seconds...")
+                    time.sleep(sleep_time)
+            else:
+                # Non-retriable failure, raise immediately
+                break
+
+        raise ValueError(
+            f"Request to {url} failed: " f"{response.status_code} {response.text}"
         )
 
     def _transform(
@@ -486,7 +507,8 @@ SUBECA_RAW_SNOWFLAKE_LOADER = RawSnowflakeLoader.with_table_loaders(
 
 def _read_accounts_file(extract_outputs: ExtractOutput) -> List[SubecaAccount]:
     """
-    Read accounts file from extract stage output, return list of SubecaAccount
+    Read accounts file from extract stage output, return list of SubecaAccount with
+    properly parsed nested lastReading.
     """
     accounts = extract_outputs.load_from_file(
         "accounts.json", SubecaAccount, allow_empty=True
