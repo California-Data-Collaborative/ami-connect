@@ -88,11 +88,11 @@ class SnowflakeSecrets(SecretsBase):
     account: str
     user: str
     password: str
-    ssh_key: str
     role: str
     warehouse: str
     database: str
     schema: str
+    ssh_key: str = None
 
 
 @dataclass
