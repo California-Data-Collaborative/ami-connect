@@ -1,5 +1,6 @@
 from datetime import datetime
 import logging
+import tempfile
 
 import snowflake.connector
 
@@ -123,21 +124,34 @@ def create_snowflake_connection(
     account: str = None,
     user: str = None,
     password: str = None,
+    ssh_key: str = None,
     warehouse: str = None,
     database: str = None,
     schema: str = None,
     role: str = None,
 ):
-    return snowflake.connector.connect(
+    if not password and not ssh_key:
+        raise ValueError("Either password or ssh_key must be provided for Snowflake.")
+
+    conn_params = dict(
         account=account,
         user=user,
-        password=password,
         warehouse=warehouse,
         database=database,
         schema=schema,
         role=role,
         paramstyle="qmark",
     )
+    if ssh_key is not None:
+        tmp = tempfile.NamedTemporaryFile()
+        tmp.write(ssh_key.encode("utf-8"))
+        tmp.flush()
+        conn_params["private_key_file"] = tmp.name
+        conn_params["authenticator"] = "SNOWFLAKE_JWT"
+    else:
+        conn_params["password"] = password
+
+    return snowflake.connector.connect(**conn_params)
 
 
 def create_snowflake_from_secrets(secrets: dict):
@@ -147,7 +161,8 @@ def create_snowflake_from_secrets(secrets: dict):
     return create_snowflake_connection(
         account=snowflake_credentials["account"],
         user=snowflake_credentials["user"],
-        password=snowflake_credentials["password"],
+        password=snowflake_credentials.get("password"),
+        ssh_key=snowflake_credentials.get("ssh_key"),
         warehouse=snowflake_credentials["warehouse"],
         database=snowflake_credentials["database"],
         schema=snowflake_credentials["schema"],

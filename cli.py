@@ -740,6 +740,12 @@ def update_secret(
     password: Annotated[
         str, typer.Option(help="Snowflake password or other password.")
     ] = None,
+    ssh_key: Annotated[
+        str,
+        typer.Option(
+            help="Path to private SSH key used for Snowflake or other authentication."
+        ),
+    ] = None,
     role: Annotated[str, typer.Option(help="Snowflake role name.")] = None,
     warehouse: Annotated[str, typer.Option(help="Snowflake warehouse name.")] = None,
     database: Annotated[str, typer.Option(help="Snowflake database name.")] = None,
@@ -818,7 +824,6 @@ def update_secret(
         "sftp_user": sftp_user,
         "sftp_password": sftp_password,
         "ssh_tunnel_username": ssh_tunnel_username,
-        "ssh_tunnel_private_key": ssh_tunnel_private_key,
         "database_db_name": database_db_name,
         "database_user": database_user,
         "database_password": database_password,
@@ -830,6 +835,10 @@ def update_secret(
         # Allow user to pass in path to private key file instead of raw key
         with open(ssh_tunnel_private_key, "r") as f:
             type_specific_options["ssh_tunnel_private_key"] = f.read().strip()
+    if ssh_key:
+        # Allow user to pass in path to Snowflake ssh key file instead of raw key
+        with open(ssh_key, "r") as f:
+            type_specific_options["ssh_key"] = f.read().strip()
 
     missing_fields = [
         f.name for f in required_fields if type_specific_options.get(f.name) is None
@@ -850,7 +859,7 @@ def update_secret(
 def remove_secret(
     secret_type: Annotated[
         str,
-        typer.Argument(help="Type of secret. Choices: source, sink"),
+        typer.Argument(help="Type of secret. Choices: sources, sinks"),
     ],
     secret_name: Annotated[
         str,
@@ -863,8 +872,8 @@ def remove_secret(
     """
     Removes a secret. Matches on secret_type+secret_name.
     """
-    if secret_type not in ["source", "sink"]:
-        raise ValueError('secret_type must be one of ["source", "sink"]')
+    if secret_type not in [SecretType.SOURCES.value, SecretType.SINKS.value]:
+        raise ValueError('secret_type must be one of ["sources", "sinks"]')
     remove_secret_configuration(secret_type, secret_name)
 
 

@@ -92,6 +92,7 @@ class SnowflakeSecrets(SecretsBase):
     warehouse: str
     database: str
     schema: str
+    ssh_key: str = None
 
 
 @dataclass

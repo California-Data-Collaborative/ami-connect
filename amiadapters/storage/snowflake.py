@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from datetime import datetime, time
 import logging
-from typing import Callable, List, Set
+from typing import List, Set
 
 import pytz
 from pytz.tzinfo import DstTzInfo
