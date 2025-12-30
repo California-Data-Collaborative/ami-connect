@@ -113,8 +113,6 @@ class AMIAdapterConfiguration:
         """
         # Get all secrets, including Snowflake creds used to get non-secret configuration
         secrets = get_secrets()
-
-        # When we have better secrets management, find a better way of accessing this information
         connection = create_snowflake_from_secrets(secrets)
         sources, sinks, pipeline_configuration, notifications, backfills = (
             get_configuration(connection)
@@ -160,6 +158,7 @@ class AMIAdapterConfiguration:
                         account=sink_secrets_yaml.get("account"),
                         user=sink_secrets_yaml.get("user"),
                         password=sink_secrets_yaml.get("password"),
+                        ssh_key=sink_secrets_yaml.get("ssh_key"),
                         role=sink_secrets_yaml.get("role"),
                         warehouse=sink_secrets_yaml.get("warehouse"),
                         database=sink_secrets_yaml.get("database"),

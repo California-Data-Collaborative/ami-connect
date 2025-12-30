@@ -207,6 +207,7 @@ class ConfiguredStorageSink:
                     account=self.secrets.account,
                     user=self.secrets.user,
                     password=self.secrets.password,
+                    ssh_key=self.secrets.ssh_key,
                     warehouse=self.secrets.warehouse,
                     database=self.secrets.database,
                     schema=self.secrets.schema,
