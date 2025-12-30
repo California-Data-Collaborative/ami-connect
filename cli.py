@@ -716,7 +716,7 @@ def update_secret(
     secret_name: Annotated[
         str,
         typer.Argument(
-            help="Name of source or sink that uses these secrets as specified in the configuration."
+            help="Name of source or sink that uses these secrets as specified in the configuration.",
         ),
     ],
     sink_type: Annotated[
@@ -782,10 +782,12 @@ def update_secret(
     """
     Creates or updates a secret. Matches on secret_type+secret_name for update, else adds new secret.
     """
+    if not secret_name:
+        raise typer.BadParameter("secret_name is required")
     if sink_type and source_type:
-        raise ValueError("Can only specify one of sink_type or source_type, not both.")
+        raise typer.BadParameter("Can only specify one of sink_type or source_type, not both.")
     if not sink_type and not source_type:
-        raise ValueError("Must specify one of sink_type or source_type.")
+        raise typer.BadParameter("Must specify one of sink_type or source_type.")
 
     secret_type = SecretType.SOURCES.value if source_type else SecretType.SINKS.value
 
@@ -798,11 +800,11 @@ def update_secret(
         "xylem_moulton_niguel",
         "neptune",
     ]:
-        raise ValueError(
+        raise typer.BadParameter(
             "source_type must be specified as one of ['subeca', 'aclara', 'beacon_360', 'sentryx', 'metersense', 'xylem_moulton_niguel', 'neptune'] if secret_type is 'source'"
         )
     if secret_type == SecretType.SINKS.value and sink_type not in ["snowflake"]:
-        raise ValueError(
+        raise typer.BadParameter(
             "sink_type must be specified as 'snowflake' if secret_type is 'sink'"
         )
 
@@ -844,7 +846,7 @@ def update_secret(
         f.name for f in required_fields if type_specific_options.get(f.name) is None
     ]
     if missing_fields:
-        raise ValueError(f"Missing values for: {', '.join(missing_fields)}")
+        raise typer.BadParameter(f"Missing values for: {', '.join(missing_fields)}")
 
     # Instantiate the dataclass with the type-specific fields that are required
     secrets = secrets_dataclass(
@@ -873,7 +875,7 @@ def remove_secret(
     Removes a secret. Matches on secret_type+secret_name.
     """
     if secret_type not in [SecretType.SOURCES.value, SecretType.SINKS.value]:
-        raise ValueError('secret_type must be one of ["sources", "sinks"]')
+        raise typer.BadParameter('secret_type must be one of ["sources", "sinks"]')
     remove_secret_configuration(secret_type, secret_name)
 
 
