@@ -785,7 +785,9 @@ def update_secret(
     if not secret_name:
         raise typer.BadParameter("secret_name is required")
     if sink_type and source_type:
-        raise typer.BadParameter("Can only specify one of sink_type or source_type, not both.")
+        raise typer.BadParameter(
+            "Can only specify one of sink_type or source_type, not both."
+        )
     if not sink_type and not source_type:
         raise typer.BadParameter("Must specify one of sink_type or source_type.")
 
