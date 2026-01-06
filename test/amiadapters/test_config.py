@@ -36,8 +36,8 @@ class TestConfig(BaseTestCase):
         self.assertEqual("outputs", source.task_output_controller.output_folder)
         self.assertEqual("key", source.secrets.api_key)
 
-        self.assertEqual(1, len(source.storage_sinks))
-        sink = source.storage_sinks[0]
+        self.assertEqual(1, len(source.sinks))
+        sink = source.sinks[0]
         self.assertEqual("snowflake", sink.type)
         self.assertEqual("my_snowflake_instance", sink.id)
         self.assertEqual("my_account", sink.secrets.account)
@@ -67,8 +67,8 @@ class TestConfig(BaseTestCase):
         self.assertEqual("my_user", source.secrets.user)
         self.assertEqual("my_password", source.secrets.password)
 
-        self.assertEqual(1, len(source.storage_sinks))
-        sink = source.storage_sinks[0]
+        self.assertEqual(1, len(source.sinks))
+        sink = source.sinks[0]
         self.assertEqual("snowflake", sink.type)
         self.assertEqual("my_snowflake_instance", sink.id)
         self.assertEqual("my_account", sink.secrets.account)
@@ -90,12 +90,10 @@ class TestConfig(BaseTestCase):
         self.assertEqual("my_utility", source.org_id)
         self.assertEqual("America/Los_Angeles", str(source.timezone))
         self.assertEqual("my-bucket", source.task_output_controller.s3_bucket_name)
-        self.assertEqual("example.com", source.configured_sftp.host)
-        self.assertEqual("./data", source.configured_sftp.remote_data_directory)
-        self.assertEqual("./output", source.configured_sftp.local_download_directory)
-        self.assertEqual(
-            "example.com ssh-rsa abc", source.configured_sftp.known_hosts_str
-        )
+        self.assertEqual("example.com", source.sftp_host)
+        self.assertEqual("./data", source.sftp_remote_data_directory)
+        self.assertEqual("./output", source.sftp_local_download_directory)
+        self.assertEqual("example.com ssh-rsa abc", source.sftp_known_hosts_str)
         self.assertEqual("my_user", source.secrets.sftp_user)
         self.assertEqual("my_password", source.secrets.sftp_password)
 
@@ -109,17 +107,11 @@ class TestConfig(BaseTestCase):
         self.assertEqual("metersense", source.type)
         self.assertEqual("my_utility", source.org_id)
         self.assertEqual("America/Los_Angeles", str(source.timezone))
-        self.assertEqual(
-            "tunnel-ip", source.configured_ssh_tunnel_to_database.ssh_tunnel_server_host
-        )
+        self.assertEqual("tunnel-ip", source.ssh_tunnel_server_host)
         self.assertEqual("ubuntu", source.secrets.ssh_tunnel_username)
-        self.assertEqual(
-            "/key", source.configured_ssh_tunnel_to_database.ssh_tunnel_key_path
-        )
-        self.assertEqual(
-            "db-host", source.configured_ssh_tunnel_to_database.database_host
-        )
-        self.assertEqual(1521, source.configured_ssh_tunnel_to_database.database_port)
+        self.assertEqual("/key", source.ssh_tunnel_key_path)
+        self.assertEqual("db-host", source.database_host)
+        self.assertEqual(1521, source.database_port)
         self.assertEqual("db-name", source.secrets.database_db_name)
         self.assertEqual("dbu", source.secrets.database_user)
         self.assertEqual("dbp", source.secrets.database_password)
@@ -134,17 +126,11 @@ class TestConfig(BaseTestCase):
         self.assertEqual("xylem_moulton_niguel", source.type)
         self.assertEqual("my_utility", source.org_id)
         self.assertEqual("America/Los_Angeles", str(source.timezone))
-        self.assertEqual(
-            "tunnel-ip", source.configured_ssh_tunnel_to_database.ssh_tunnel_server_host
-        )
+        self.assertEqual("tunnel-ip", source.ssh_tunnel_server_host)
         self.assertEqual("ubuntu", source.secrets.ssh_tunnel_username)
-        self.assertEqual(
-            "/key", source.configured_ssh_tunnel_to_database.ssh_tunnel_key_path
-        )
-        self.assertEqual(
-            "db-host", source.configured_ssh_tunnel_to_database.database_host
-        )
-        self.assertEqual(1521, source.configured_ssh_tunnel_to_database.database_port)
+        self.assertEqual("/key", source.ssh_tunnel_key_path)
+        self.assertEqual("db-host", source.database_host)
+        self.assertEqual(1521, source.database_port)
         self.assertEqual("db-name", source.secrets.database_db_name)
         self.assertEqual("dbu", source.secrets.database_user)
         self.assertEqual("dbp", source.secrets.database_password)
@@ -162,7 +148,7 @@ class TestConfig(BaseTestCase):
         self.assertEqual("outputs", source.task_output_controller.output_folder)
         self.assertEqual("my_url", source.api_url)
         self.assertEqual("key", source.secrets.api_key)
-        self.assertEqual(1, len(source.storage_sinks))
+        self.assertEqual(1, len(source.sinks))
         self.assertEqual([], config._backfills)
         self.assertIsNone(config.on_failure_sns_notifier())
 
