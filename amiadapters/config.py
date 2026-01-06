@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Dict, Union
+from typing import List, Dict
 import pathlib
 
 from pytz import timezone, UTC
@@ -613,7 +613,7 @@ class ConfiguredAMISource:
         api_url: str,
         configured_sftp: SftpConfiguration,
         configured_ssh_tunnel_to_database: SSHTunnelToDatabaseConfiguration,
-        secrets: Union[Beacon360Secrets, SentryxSecrets],
+        secrets: SecretsBase,
         sinks: List[ConfiguredStorageSink],
         external_adapter_location: str,
     ):
