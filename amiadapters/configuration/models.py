@@ -5,6 +5,8 @@ from enum import Enum
 import json
 from typing import List, Union
 
+from pytz.tzinfo import DstTzInfo
+
 
 class IntermediateOutputType(str, Enum):
     LOCAL = "local"  # Extract and Transform outputs go to local filesystem
@@ -294,3 +296,238 @@ class S3IntermediateOutputControllerConfiguration(
                 "ConfiguredS3TaskOutputController must have s3_bucket_name"
             )
         return s3_bucket_name
+
+
+##############################################################################
+# Sources
+##############################################################################
+@dataclass(frozen=True)
+class SourceConfigBase:
+    org_id: str
+    type: str
+    timezone: DstTzInfo
+    secrets: SecretsBase
+    sinks: List[ConfiguredStorageSink]
+    task_output_controller: IntermediateOutputControllerConfiguration
+
+    def validate(self) -> None:
+        """
+        Validate that required fields are present and valid. Subclasses should implement
+        this method with their own validation logic and call super().validate() to
+        ensure base validation is performed.
+        """
+        self._require(
+            "org_id", "type", "timezone", "secrets", "sinks", "task_output_controller"
+        )
+
+        if not ConfiguredAMISourceType.is_valid_type(self.type):
+            raise ValueError(f"Unrecognized AMI source type: {self.type}")
+
+        if not ConfiguredAMISourceType.is_valid_secret_for_type(
+            self.type, type(self.secrets)
+        ):
+            raise ValueError(f"Invalid secrets type for source type {self.type}")
+
+        if not ConfiguredAMISourceType.are_valid_storage_sinks_for_type(
+            self.type, self.sinks
+        ):
+            raise ValueError(f"Invalid sink type(s) for source type {self.type}")
+
+    def _require(self, *fields: str) -> None:
+        missing = [f for f in fields if getattr(self, f) is None]
+        if missing:
+            raise ValueError(
+                f"{self.org_id} ({self.type}) missing required fields: {missing}"
+            )
+
+
+class AclaraSourceConfig(SourceConfigBase):
+    sftp_host: str
+    sftp_known_hosts_str: str
+    sftp_remote_data_directory: str
+    sftp_local_download_directory: str
+
+    def validate(self):
+        super().validate()
+        self._require(
+            "sftp_host",
+            "sftp_known_hosts_str",
+            "sftp_remote_data_directory",
+        )
+
+
+class Beacon360SourceConfig(SourceConfigBase):
+    use_raw_data_cache: bool
+
+    def validate(self):
+        super().validate()
+        if self.use_raw_data_cache is None:
+            raise ValueError(
+                f"{self.org_id}: use_raw_data_cache must be explicitly set"
+            )
+
+
+class MetersenseSourceConfig(SourceConfigBase):
+    database_host: str
+    database_port: int
+    ssh_tunnel_server_host: str
+    ssh_tunnel_key_path: str
+
+    def validate(self):
+        super().validate()
+        self._require(
+            "database_host",
+            "database_port",
+            "ssh_tunnel_server_host",
+            "ssh_tunnel_key_path",
+        )
+
+
+class XylemMoultonNiguelSourceConfig(SourceConfigBase):
+    database_host: str
+    database_port: int
+    ssh_tunnel_server_host: str
+    ssh_tunnel_key_path: str
+
+    def validate(self):
+        super().validate()
+        self._require(
+            "database_host",
+            "database_port",
+            "ssh_tunnel_server_host",
+            "ssh_tunnel_key_path",
+        )
+
+
+class NeptuneSourceConfig(SourceConfigBase):
+    external_adapter_location: str
+
+    def validate(self):
+        super().validate()
+        self._require(
+            "external_adapter_location",
+        )
+
+
+class SentryxSourceConfig(SourceConfigBase):
+    utility_name: str
+    use_raw_data_cache: bool
+
+
+class SubecaSourceConfig(SourceConfigBase):
+    api_url: str
+
+
+class XylemSensusSourceConfig(SourceConfigBase):
+    sftp_host: str
+    sftp_known_hosts_str: str
+    sftp_remote_data_directory: str
+    sftp_local_download_directory: str
+
+
+class SourceSchema:
+    """
+    Definition of a source, its secrets configuration and which types of storage
+    sink can be used with it.
+    """
+
+    def __init__(
+        self,
+        type: str,
+        config_type: SourceConfigBase,
+        secret_type: SecretsBase,
+        valid_sink_types: List[ConfiguredStorageSinkType],
+    ):
+        self.type = type
+        self.config_type = config_type
+        self.secret_type = secret_type
+        self.valid_sink_types = valid_sink_types
+
+
+class ConfiguredAMISourceType(Enum):
+    """
+    Define a source type for your adapter here. Tell the pipeline the name of your source type
+    so that it can match it to your configuration. Also tell it which secrets type to expect
+    and which storage sinks can be used. The pipeline will use this to validate configuration.
+    """
+
+    ACLARA = SourceSchema(
+        "aclara",
+        AclaraSourceConfig,
+        AclaraSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    BEACON_360 = SourceSchema(
+        "beacon_360",
+        Beacon360SourceConfig,
+        Beacon360Secrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    METERSENSE = SourceSchema(
+        "metersense",
+        MetersenseSourceConfig,
+        MetersenseSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    NEPTUNE = SourceSchema(
+        "neptune",
+        NeptuneSourceConfig,
+        NeptuneSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    SENTRYX = SourceSchema(
+        "sentryx",
+        SentryxSourceConfig,
+        SentryxSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    SUBECA = SourceSchema(
+        "subeca",
+        SubecaSourceConfig,
+        SubecaSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    XYLEM_MOULTON_NIGUEL = SourceSchema(
+        "xylem_moulton_niguel",
+        XylemMoultonNiguelSourceConfig,
+        XylemMoultonNiguelSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    XYLEM_SENSUS = SourceSchema(
+        "xylem_sensus",
+        XylemSensusSourceConfig,
+        XylemSensusSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+
+    @classmethod
+    def is_valid_type(cls, the_type: str) -> bool:
+        schemas = cls.__members__.values()
+        return the_type in set(s.value.type for s in schemas)
+
+    @classmethod
+    def is_valid_secret_for_type(
+        cls,
+        the_type: str,
+        secret_type: SecretsBase,
+    ) -> bool:
+        matching_schema = cls._matching_schema_for_type(the_type)
+        return matching_schema.secret_type == secret_type
+
+    @classmethod
+    def are_valid_storage_sinks_for_type(
+        cls, the_type: str, sinks: List[ConfiguredStorageSink]
+    ) -> bool:
+        matching_schema = cls._matching_schema_for_type(the_type)
+        return all(s.type in matching_schema.valid_sink_types for s in sinks)
+
+    @classmethod
+    def _matching_schema_for_type(cls, the_type: str) -> SourceSchema:
+        matching_schemas = [
+            v.value for v in cls.__members__.values() if v.value.type == the_type
+        ]
+        if len(matching_schemas) != 1:
+            raise ValueError(
+                f"Invalid number of matching schemas for type {the_type}: {matching_schemas}"
+            )
+        return matching_schemas[0]

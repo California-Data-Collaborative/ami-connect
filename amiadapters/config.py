@@ -1,5 +1,4 @@
 from datetime import datetime
-from enum import Enum
 from typing import List, Dict
 import pathlib
 
@@ -46,6 +45,7 @@ from amiadapters.configuration.env import (
     get_global_aws_region,
     get_global_airflow_site_url,
 )
+from amiadapters.configuration.models import ConfiguredAMISourceType
 from amiadapters.configuration.secrets import get_secrets
 
 
@@ -505,90 +505,6 @@ class AMIAdapterConfiguration:
 
     def __repr__(self):
         return f"sources=[{", ".join(str(s) for s in self._sources)}]"
-
-
-class SourceSchema:
-    """
-    Definition of a source, its secrets configuration and which types of storage
-    sink can be used with it.
-    """
-
-    def __init__(
-        self,
-        type: str,
-        secret_type: SecretsBase,
-        valid_sink_types: List[ConfiguredStorageSinkType],
-    ):
-        self.type = type
-        self.secret_type = secret_type
-        self.valid_sink_types = valid_sink_types
-
-
-class ConfiguredAMISourceType(Enum):
-    """
-    Define a source type for your adapter here. Tell the pipeline the name of your source type
-    so that it can match it to your configuration. Also tell it which secrets type to expect
-    and which storage sinks can be used. The pipeline will use this to validate configuration.
-    """
-
-    ACLARA = SourceSchema(
-        "aclara", AclaraSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    BEACON_360 = SourceSchema(
-        "beacon_360", Beacon360Secrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    METERSENSE = SourceSchema(
-        "metersense", MetersenseSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    NEPTUNE = SourceSchema(
-        "neptune", NeptuneSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    SENTRYX = SourceSchema(
-        "sentryx", SentryxSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    SUBECA = SourceSchema(
-        "subeca", SubecaSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    XYLEM_MOULTON_NIGUEL = SourceSchema(
-        "xylem_moulton_niguel",
-        XylemMoultonNiguelSecrets,
-        [ConfiguredStorageSinkType.SNOWFLAKE],
-    )
-    XYLEM_SENSUS = SourceSchema(
-        "xylem_sensus", XylemSensusSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-
-    @classmethod
-    def is_valid_type(cls, the_type: str) -> bool:
-        schemas = cls.__members__.values()
-        return the_type in set(s.value.type for s in schemas)
-
-    @classmethod
-    def is_valid_secret_for_type(
-        cls,
-        the_type: str,
-        secret_type: SecretsBase,
-    ) -> bool:
-        matching_schema = cls._matching_schema_for_type(the_type)
-        return matching_schema.secret_type == secret_type
-
-    @classmethod
-    def are_valid_storage_sinks_for_type(
-        cls, the_type: str, sinks: List[ConfiguredStorageSink]
-    ) -> bool:
-        matching_schema = cls._matching_schema_for_type(the_type)
-        return all(s.type in matching_schema.valid_sink_types for s in sinks)
-
-    @classmethod
-    def _matching_schema_for_type(cls, the_type: str) -> SourceSchema:
-        matching_schemas = [
-            v.value for v in cls.__members__.values() if v.value.type == the_type
-        ]
-        if len(matching_schemas) != 1:
-            raise ValueError(
-                f"Invalid number of matching schemas for type {the_type}: {matching_schemas}"
-            )
-        return matching_schemas[0]
 
 
 class ConfiguredAMISource:

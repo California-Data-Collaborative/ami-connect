@@ -17,8 +17,6 @@ class SecretType(Enum):
     SINKS = "sinks"
 
 
-#TODO check the chatgpt output, create the new models, follow the "from_dict" and "validate" patterns in there by moving incrementally to them
-
 def get_secrets() -> dict[str, dict]:
     client = _create_aws_secrets_manager_client()
     prefix = SECRET_ID_PREFIX
