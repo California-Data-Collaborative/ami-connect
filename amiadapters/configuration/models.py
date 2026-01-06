@@ -3,7 +3,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
 import json
-from typing import List, Union
+from typing import List, Optional, Union
+
+import pytz
+from pytz.tzinfo import DstTzInfo
 
 
 class IntermediateOutputType(str, Enum):
@@ -150,27 +153,28 @@ class XylemSensusSecrets(SecretsBase):
 
 
 def get_secrets_class_type(secret_type: str):
-    match secret_type:
-        case "aclara":
-            return AclaraSecrets
-        case "beacon_360":
-            return Beacon360Secrets
-        case "metersense":
-            return MetersenseSecrets
-        case "neptune":
-            return NeptuneSecrets
-        case "sentryx":
-            return SentryxSecrets
-        case "subeca":
-            return SubecaSecrets
-        case "xylem_moulton_niguel":
-            return XylemMoultonNiguelSecrets
-        case "xylem_sensus":
-            return XylemSensusSecrets
-        case "snowflake":
-            return SnowflakeSecrets
-        case _:
-            raise ValueError(f"Unrecognized secrets class name: {secret_type}")
+    return ConfiguredAMISourceTypes.get_secret_type_for_source_type(secret_type)
+    # match secret_type:
+    #     case "aclara":
+    #         return AclaraSecrets
+    #     case "beacon_360":
+    #         return Beacon360Secrets
+    #     case "metersense":
+    #         return MetersenseSecrets
+    #     case "neptune":
+    #         return NeptuneSecrets
+    #     case "sentryx":
+    #         return SentryxSecrets
+    #     case "subeca":
+    #         return SubecaSecrets
+    #     case "xylem_moulton_niguel":
+    #         return XylemMoultonNiguelSecrets
+    #     case "xylem_sensus":
+    #         return XylemSensusSecrets
+    #     case "snowflake":
+    #         return SnowflakeSecrets
+    #     case _:
+    #         raise ValueError(f"Unrecognized secrets class name: {secret_type}")
 
 
 ###############################################################################
@@ -294,3 +298,283 @@ class S3IntermediateOutputControllerConfiguration(
                 "ConfiguredS3TaskOutputController must have s3_bucket_name"
             )
         return s3_bucket_name
+
+
+##############################################################################
+# Sources
+##############################################################################
+@dataclass(frozen=True)
+class SourceConfigBase:
+    org_id: str
+    type: str
+    timezone: DstTzInfo
+    secrets: SecretsBase
+    sinks: List[ConfiguredStorageSink]
+    task_output_controller: IntermediateOutputControllerConfiguration
+
+    def validate(self) -> None:
+        """
+        Validate that required fields are present and valid. Subclasses should implement
+        this method with their own validation logic and call super().validate() to
+        ensure base validation is performed.
+        """
+        self._require(
+            "org_id", "type", "timezone", "secrets", "sinks", "task_output_controller"
+        )
+
+        if not ConfiguredAMISourceTypes.is_valid_type(self.type):
+            raise ValueError(f"Unrecognized AMI source type: {self.type}")
+
+        if not ConfiguredAMISourceTypes.is_valid_secret_for_type(
+            self.type, type(self.secrets)
+        ):
+            raise ValueError(f"Invalid secrets type for source type {self.type}")
+
+        if not ConfiguredAMISourceTypes.are_valid_storage_sinks_for_type(
+            self.type, self.sinks
+        ):
+            raise ValueError(f"Invalid sink type(s) for source type {self.type}")
+
+    def _require(self, *fields: str) -> None:
+        missing = [
+            f for f in fields if not hasattr(self, f) or getattr(self, f) is None
+        ]
+        if missing:
+            raise ValueError(
+                f"{self.org_id} ({self.type}) missing required fields: {missing}"
+            )
+
+    @classmethod
+    def from_dict(cls, raw_source_config: dict):
+        if not (source_type := raw_source_config.get("type")):
+            raise ValueError("Source config missing required field: type")
+        cls = ConfiguredAMISourceTypes.get_config_type_for_source_type(source_type)
+
+        # Copy so we don't mutate caller data
+        kwargs = dict(raw_source_config)
+
+        # ---- transforms ----
+        kwargs["timezone"] = pytz.timezone(kwargs.get("timezone", "America/LosAngeles"))
+        if "use_raw_data_cache" in kwargs and kwargs["use_raw_data_cache"] is None:
+            kwargs["use_raw_data_cache"] = False
+
+        config = cls(**kwargs)
+        config.validate()
+
+        return config
+
+
+@dataclass(frozen=True)
+class AclaraSourceConfig(SourceConfigBase):
+    sftp_host: str
+    sftp_known_hosts_str: str
+    sftp_remote_data_directory: str
+    sftp_local_download_directory: str
+
+    def validate(self):
+        super().validate()
+        self._require(
+            "sftp_host",
+            "sftp_known_hosts_str",
+            "sftp_remote_data_directory",
+        )
+
+
+@dataclass(frozen=True)
+class Beacon360SourceConfig(SourceConfigBase):
+    use_raw_data_cache: Optional[bool] = False
+
+    def validate(self):
+        super().validate()
+        if self.use_raw_data_cache is None:
+            raise ValueError(
+                f"{self.org_id}: use_raw_data_cache must be explicitly set"
+            )
+
+
+@dataclass(frozen=True)
+class MetersenseSourceConfig(SourceConfigBase):
+    database_host: str
+    database_port: int
+    ssh_tunnel_server_host: str
+    ssh_tunnel_key_path: str
+
+    def validate(self):
+        super().validate()
+        self._require(
+            "database_host",
+            "database_port",
+            "ssh_tunnel_server_host",
+            "ssh_tunnel_key_path",
+        )
+
+
+@dataclass(frozen=True)
+class XylemMoultonNiguelSourceConfig(SourceConfigBase):
+    database_host: str
+    database_port: int
+    ssh_tunnel_server_host: str
+    ssh_tunnel_key_path: str
+
+    def validate(self):
+        super().validate()
+        self._require(
+            "database_host",
+            "database_port",
+            "ssh_tunnel_server_host",
+            "ssh_tunnel_key_path",
+        )
+
+
+@dataclass(frozen=True)
+class NeptuneSourceConfig(SourceConfigBase):
+    external_adapter_location: str
+
+    def validate(self):
+        super().validate()
+        self._require(
+            "external_adapter_location",
+        )
+
+
+@dataclass(frozen=True)
+class SentryxSourceConfig(SourceConfigBase):
+    utility_name: str
+    use_raw_data_cache: Optional[bool] = False
+
+
+@dataclass(frozen=True)
+class SubecaSourceConfig(SourceConfigBase):
+    api_url: str
+
+
+@dataclass(frozen=True)
+class XylemSensusSourceConfig(SourceConfigBase):
+    sftp_host: str
+    sftp_known_hosts_str: str
+    sftp_remote_data_directory: str
+    sftp_local_download_directory: str
+
+
+class SourceSchema:
+    """
+    Definition of a source, its secrets configuration and which types of storage
+    sink can be used with it.
+    """
+
+    def __init__(
+        self,
+        type: str,
+        config_type: SourceConfigBase,
+        secret_type: SecretsBase,
+        valid_sink_types: List[ConfiguredStorageSinkType],
+    ):
+        self.type = type
+        self.config_type = config_type
+        self.secret_type = secret_type
+        self.valid_sink_types = valid_sink_types
+
+
+class ConfiguredAMISourceTypes(Enum):
+    """
+    Define a source type for your adapter here. Tell the pipeline the name of your source type
+    so that it can match it to your configuration. Also tell it which secrets type to expect
+    and which storage sinks can be used. The pipeline will use this to validate configuration.
+    """
+
+    ACLARA = SourceSchema(
+        "aclara",
+        AclaraSourceConfig,
+        AclaraSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    BEACON_360 = SourceSchema(
+        "beacon_360",
+        Beacon360SourceConfig,
+        Beacon360Secrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    METERSENSE = SourceSchema(
+        "metersense",
+        MetersenseSourceConfig,
+        MetersenseSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    NEPTUNE = SourceSchema(
+        "neptune",
+        NeptuneSourceConfig,
+        NeptuneSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    SENTRYX = SourceSchema(
+        "sentryx",
+        SentryxSourceConfig,
+        SentryxSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    SUBECA = SourceSchema(
+        "subeca",
+        SubecaSourceConfig,
+        SubecaSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    XYLEM_MOULTON_NIGUEL = SourceSchema(
+        "xylem_moulton_niguel",
+        XylemMoultonNiguelSourceConfig,
+        XylemMoultonNiguelSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    XYLEM_SENSUS = SourceSchema(
+        "xylem_sensus",
+        XylemSensusSourceConfig,
+        XylemSensusSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+
+    @classmethod
+    def is_valid_type(cls, the_type: str) -> bool:
+        schemas = cls.__members__.values()
+        return the_type in set(s.value.type for s in schemas)
+
+    @classmethod
+    def is_valid_secret_for_type(
+        cls,
+        the_type: str,
+        secret_type: SecretsBase,
+    ) -> bool:
+        matching_schema = cls._matching_schema_for_type(the_type)
+        return matching_schema.secret_type == secret_type
+
+    @classmethod
+    def are_valid_storage_sinks_for_type(
+        cls, the_type: str, sinks: List[ConfiguredStorageSink]
+    ) -> bool:
+        matching_schema = cls._matching_schema_for_type(the_type)
+        return all(s.type in matching_schema.valid_sink_types for s in sinks)
+
+    @classmethod
+    def get_config_type_for_source_type(
+        cls,
+        the_type: str,
+    ) -> SourceConfigBase:
+        matching_schema = cls._matching_schema_for_type(the_type)
+        return matching_schema.config_type
+
+    @classmethod
+    def get_secret_type_for_source_type(
+        cls,
+        the_type: str,
+    ) -> SecretsBase:
+        matching_schema = cls._matching_schema_for_type(the_type)
+        return matching_schema.secret_type
+
+    @classmethod
+    def _matching_schema_for_type(cls, the_type: str) -> SourceSchema:
+        matching_schemas = [
+            v.value for v in cls.__members__.values() if v.value.type == the_type
+        ]
+        if len(matching_schemas) != 1:
+            raise ValueError(
+                f"Invalid number of matching schemas for type {the_type}: {matching_schemas}"
+            )
+        return matching_schemas[0]

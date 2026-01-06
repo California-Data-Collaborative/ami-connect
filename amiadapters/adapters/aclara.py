@@ -62,18 +62,21 @@ class AclaraAdapter(BaseAMIAdapter):
         org_id,
         org_timezone,
         pipeline_configuration,
-        configured_sftp: SftpConfiguration,
+        sftp_host,
+        sftp_remote_data_directory,
+        sftp_local_download_directory,
+        sftp_known_hosts_str,
         sftp_user,
         sftp_password,
         configured_task_output_controller,
         configured_sinks,
     ):
-        self.sftp_host = configured_sftp.host
+        self.sftp_host = sftp_host
         self.sftp_user = sftp_user
         self.sftp_password = sftp_password
-        self.sftp_meter_and_reads_folder = configured_sftp.remote_data_directory
-        self.local_download_directory = configured_sftp.local_download_directory
-        self.known_hosts = configured_sftp.known_hosts_str
+        self.sftp_meter_and_reads_folder = sftp_remote_data_directory
+        self.local_download_directory = sftp_local_download_directory
+        self.known_hosts = sftp_known_hosts_str
         super().__init__(
             org_id,
             org_timezone,

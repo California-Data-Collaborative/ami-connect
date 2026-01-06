@@ -1,6 +1,5 @@
 from datetime import datetime
-from enum import Enum
-from typing import List, Dict, Union
+from typing import List, Dict
 import pathlib
 
 from pytz import timezone, UTC
@@ -36,6 +35,7 @@ from amiadapters.configuration.models import (
     SentryxSecrets,
     SftpConfiguration,
     SnowflakeSecrets,
+    SourceConfigBase,
     SubecaSecrets,
     XylemMoultonNiguelSecrets,
     XylemSensusSecrets,
@@ -46,6 +46,7 @@ from amiadapters.configuration.env import (
     get_global_aws_region,
     get_global_airflow_site_url,
 )
+from amiadapters.configuration.models import ConfiguredAMISourceTypes
 from amiadapters.configuration.secrets import get_secrets
 
 
@@ -199,25 +200,22 @@ class AMIAdapterConfiguration:
             org_id = source.get("org_id")
             type = source.get("type")
 
-            if any(s.org_id == org_id for s in sources):
-                raise ValueError(f"Cannot have duplicate org_id: {org_id}")
-
             # Parse secrets for data source
             this_source_secrets = configured_secrets.get("sources", {}).get(org_id)
             if this_source_secrets is None:
                 raise ValueError(f"No secrets found for org_id: {org_id}")
             match type:
-                case ConfiguredAMISourceType.ACLARA.value.type:
+                case ConfiguredAMISourceTypes.ACLARA.value.type:
                     secrets = AclaraSecrets(
                         this_source_secrets.get("sftp_user"),
                         this_source_secrets.get("sftp_password"),
                     )
-                case ConfiguredAMISourceType.BEACON_360.value.type:
+                case ConfiguredAMISourceTypes.BEACON_360.value.type:
                     secrets = Beacon360Secrets(
                         this_source_secrets.get("user"),
                         this_source_secrets.get("password"),
                     )
-                case ConfiguredAMISourceType.METERSENSE.value.type:
+                case ConfiguredAMISourceTypes.METERSENSE.value.type:
                     secrets = MetersenseSecrets(
                         this_source_secrets.get("ssh_tunnel_private_key"),
                         this_source_secrets.get("ssh_tunnel_username"),
@@ -225,22 +223,22 @@ class AMIAdapterConfiguration:
                         this_source_secrets.get("database_user"),
                         this_source_secrets.get("database_password"),
                     )
-                case ConfiguredAMISourceType.NEPTUNE.value.type:
+                case ConfiguredAMISourceTypes.NEPTUNE.value.type:
                     secrets = NeptuneSecrets(
                         this_source_secrets.get("site_id"),
                         this_source_secrets.get("api_key"),
                         this_source_secrets.get("client_id"),
                         this_source_secrets.get("client_secret"),
                     )
-                case ConfiguredAMISourceType.SENTRYX.value.type:
+                case ConfiguredAMISourceTypes.SENTRYX.value.type:
                     secrets = SentryxSecrets(
                         this_source_secrets.get("api_key"),
                     )
-                case ConfiguredAMISourceType.SUBECA.value.type:
+                case ConfiguredAMISourceTypes.SUBECA.value.type:
                     secrets = SubecaSecrets(
                         this_source_secrets.get("api_key"),
                     )
-                case ConfiguredAMISourceType.XYLEM_MOULTON_NIGUEL.value.type:
+                case ConfiguredAMISourceTypes.XYLEM_MOULTON_NIGUEL.value.type:
                     secrets = XylemMoultonNiguelSecrets(
                         this_source_secrets.get("ssh_tunnel_private_key"),
                         this_source_secrets.get("ssh_tunnel_username"),
@@ -248,7 +246,7 @@ class AMIAdapterConfiguration:
                         this_source_secrets.get("database_user"),
                         this_source_secrets.get("database_password"),
                     )
-                case ConfiguredAMISourceType.XYLEM_SENSUS.value.type:
+                case ConfiguredAMISourceTypes.XYLEM_SENSUS.value.type:
                     secrets = XylemSensusSecrets(
                         this_source_secrets.get("sftp_user"),
                         this_source_secrets.get("sftp_password"),
@@ -265,36 +263,16 @@ class AMIAdapterConfiguration:
                     raise ValueError(f"Unrecognized sink {sink_id} for source {org_id}")
                 sinks.append(sink)
 
-            # Only certain source types, like ACLARA
-            configured_sftp = SftpConfiguration(
-                source.get("sftp_host"),
-                source.get("sftp_remote_data_directory"),
-                source.get("sftp_local_download_directory"),
-                source.get("sftp_known_hosts_str"),
-            )
+            raw_source_config = source.copy()
+            raw_source_config["secrets"] = secrets
+            raw_source_config["sinks"] = sinks
+            raw_source_config["task_output_controller"] = task_output_controller
+            configured_source = SourceConfigBase.from_dict(raw_source_config)
 
-            # Only certain source types, like METERSENSE
-            configured_ssh_tunnel_to_database = SSHTunnelToDatabaseConfiguration(
-                ssh_tunnel_server_host=source.get("ssh_tunnel_server_host"),
-                ssh_tunnel_key_path=source.get("ssh_tunnel_key_path"),
-                database_host=source.get("database_host"),
-                database_port=source.get("database_port"),
-            )
-
-            configured_source = ConfiguredAMISource(
-                type,
-                org_id,
-                source.get("timezone"),
-                source.get("use_raw_data_cache"),
-                task_output_controller,
-                source.get("utility_name"),
-                source.get("api_url"),
-                configured_sftp,
-                configured_ssh_tunnel_to_database,
-                secrets,
-                sinks,
-                source.get("external_adapter_location"),
-            )
+            if any(s.org_id == configured_source.org_id for s in sources):
+                raise ValueError(
+                    f"Cannot have duplicate org_id: {configured_source.org_id}"
+                )
 
             sources.append(configured_source)
 
@@ -355,20 +333,23 @@ class AMIAdapterConfiguration:
         adapters = []
         for source in self._sources:
             match source.type:
-                case ConfiguredAMISourceType.ACLARA.value.type:
+                case ConfiguredAMISourceTypes.ACLARA.value.type:
                     adapters.append(
                         AclaraAdapter(
                             source.org_id,
                             source.timezone,
                             self._pipeline_configuration,
-                            source.configured_sftp,
+                            source.sftp_host,
+                            source.sftp_remote_data_directory,
+                            source.sftp_local_download_directory,
+                            source.sftp_known_hosts_str,
                             source.secrets.sftp_user,
                             source.secrets.sftp_password,
                             source.task_output_controller,
-                            source.storage_sinks,
+                            source.sinks,
                         )
                     )
-                case ConfiguredAMISourceType.BEACON_360.value.type:
+                case ConfiguredAMISourceTypes.BEACON_360.value.type:
                     adapters.append(
                         Beacon360Adapter(
                             source.secrets.user,
@@ -378,29 +359,29 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
-                            source.storage_sinks,
+                            source.sinks,
                         )
                     )
-                case ConfiguredAMISourceType.METERSENSE.value.type:
+                case ConfiguredAMISourceTypes.METERSENSE.value.type:
                     adapters.append(
                         MetersenseAdapter(
                             source.org_id,
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
-                            ssh_tunnel_server_host=source.configured_ssh_tunnel_to_database.ssh_tunnel_server_host,
+                            ssh_tunnel_server_host=source.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
-                            ssh_tunnel_key_path=source.configured_ssh_tunnel_to_database.ssh_tunnel_key_path,
+                            ssh_tunnel_key_path=source.ssh_tunnel_key_path,
                             ssh_tunnel_private_key=source.secrets.ssh_tunnel_private_key,
-                            database_host=source.configured_ssh_tunnel_to_database.database_host,
-                            database_port=source.configured_ssh_tunnel_to_database.database_port,
+                            database_host=source.database_host,
+                            database_port=source.database_port,
                             database_db_name=source.secrets.database_db_name,
                             database_user=source.secrets.database_user,
                             database_password=source.secrets.database_password,
-                            configured_sinks=source.storage_sinks,
+                            configured_sinks=source.sinks,
                         )
                     )
-                case ConfiguredAMISourceType.NEPTUNE.value.type:
+                case ConfiguredAMISourceTypes.NEPTUNE.value.type:
                     # Neptune code is not in this project because of open source limitations
                     # This code assumes Neptune's code is available at the external_adapter_location
                     # which we append to the python path
@@ -419,10 +400,10 @@ class AMIAdapterConfiguration:
                             source.secrets.client_id,
                             source.secrets.client_secret,
                             source.task_output_controller,
-                            source.storage_sinks,
+                            source.sinks,
                         )
                     )
-                case ConfiguredAMISourceType.SENTRYX.value.type:
+                case ConfiguredAMISourceTypes.SENTRYX.value.type:
                     adapters.append(
                         SentryxAdapter(
                             source.secrets.api_key,
@@ -430,11 +411,11 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
-                            source.storage_sinks,
+                            source.sinks,
                             utility_name=source.utility_name,
                         )
                     )
-                case ConfiguredAMISourceType.SUBECA.value.type:
+                case ConfiguredAMISourceTypes.SUBECA.value.type:
                     adapters.append(
                         SubecaAdapter(
                             source.org_id,
@@ -443,39 +424,42 @@ class AMIAdapterConfiguration:
                             source.api_url,
                             source.secrets.api_key,
                             source.task_output_controller,
-                            source.storage_sinks,
+                            source.sinks,
                         )
                     )
-                case ConfiguredAMISourceType.XYLEM_MOULTON_NIGUEL.value.type:
+                case ConfiguredAMISourceTypes.XYLEM_MOULTON_NIGUEL.value.type:
                     adapters.append(
                         XylemMoultonNiguelAdapter(
                             source.org_id,
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
-                            ssh_tunnel_server_host=source.configured_ssh_tunnel_to_database.ssh_tunnel_server_host,
+                            ssh_tunnel_server_host=source.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
-                            ssh_tunnel_key_path=source.configured_ssh_tunnel_to_database.ssh_tunnel_key_path,
+                            ssh_tunnel_key_path=source.ssh_tunnel_key_path,
                             ssh_tunnel_private_key=source.secrets.ssh_tunnel_private_key,
-                            database_host=source.configured_ssh_tunnel_to_database.database_host,
-                            database_port=source.configured_ssh_tunnel_to_database.database_port,
+                            database_host=source.database_host,
+                            database_port=source.database_port,
                             database_db_name=source.secrets.database_db_name,
                             database_user=source.secrets.database_user,
                             database_password=source.secrets.database_password,
-                            configured_sinks=source.storage_sinks,
+                            configured_sinks=source.sinks,
                         )
                     )
-                case ConfiguredAMISourceType.XYLEM_SENSUS.value.type:
+                case ConfiguredAMISourceTypes.XYLEM_SENSUS.value.type:
                     adapters.append(
                         XylemSensusAdapter(
                             source.org_id,
                             source.timezone,
                             self._pipeline_configuration,
-                            source.configured_sftp,
+                            source.sftp_host,
+                            source.sftp_remote_data_directory,
+                            source.sftp_local_download_directory,
+                            source.sftp_known_hosts_str,
                             source.secrets.sftp_user,
                             source.secrets.sftp_password,
                             source.task_output_controller,
-                            source.storage_sinks,
+                            source.sinks,
                         )
                     )
 
@@ -505,211 +489,6 @@ class AMIAdapterConfiguration:
 
     def __repr__(self):
         return f"sources=[{", ".join(str(s) for s in self._sources)}]"
-
-
-class SourceSchema:
-    """
-    Definition of a source, its secrets configuration and which types of storage
-    sink can be used with it.
-    """
-
-    def __init__(
-        self,
-        type: str,
-        secret_type: SecretsBase,
-        valid_sink_types: List[ConfiguredStorageSinkType],
-    ):
-        self.type = type
-        self.secret_type = secret_type
-        self.valid_sink_types = valid_sink_types
-
-
-class ConfiguredAMISourceType(Enum):
-    """
-    Define a source type for your adapter here. Tell the pipeline the name of your source type
-    so that it can match it to your configuration. Also tell it which secrets type to expect
-    and which storage sinks can be used. The pipeline will use this to validate configuration.
-    """
-
-    ACLARA = SourceSchema(
-        "aclara", AclaraSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    BEACON_360 = SourceSchema(
-        "beacon_360", Beacon360Secrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    METERSENSE = SourceSchema(
-        "metersense", MetersenseSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    NEPTUNE = SourceSchema(
-        "neptune", NeptuneSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    SENTRYX = SourceSchema(
-        "sentryx", SentryxSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    SUBECA = SourceSchema(
-        "subeca", SubecaSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-    XYLEM_MOULTON_NIGUEL = SourceSchema(
-        "xylem_moulton_niguel",
-        XylemMoultonNiguelSecrets,
-        [ConfiguredStorageSinkType.SNOWFLAKE],
-    )
-    XYLEM_SENSUS = SourceSchema(
-        "xylem_sensus", XylemSensusSecrets, [ConfiguredStorageSinkType.SNOWFLAKE]
-    )
-
-    @classmethod
-    def is_valid_type(cls, the_type: str) -> bool:
-        schemas = cls.__members__.values()
-        return the_type in set(s.value.type for s in schemas)
-
-    @classmethod
-    def is_valid_secret_for_type(
-        cls,
-        the_type: str,
-        secret_type: SecretsBase,
-    ) -> bool:
-        matching_schema = cls._matching_schema_for_type(the_type)
-        return matching_schema.secret_type == secret_type
-
-    @classmethod
-    def are_valid_storage_sinks_for_type(
-        cls, the_type: str, sinks: List[ConfiguredStorageSink]
-    ) -> bool:
-        matching_schema = cls._matching_schema_for_type(the_type)
-        return all(s.type in matching_schema.valid_sink_types for s in sinks)
-
-    @classmethod
-    def _matching_schema_for_type(cls, the_type: str) -> SourceSchema:
-        matching_schemas = [
-            v.value for v in cls.__members__.values() if v.value.type == the_type
-        ]
-        if len(matching_schemas) != 1:
-            raise ValueError(
-                f"Invalid number of matching schemas for type {the_type}: {matching_schemas}"
-            )
-        return matching_schemas[0]
-
-
-class ConfiguredAMISource:
-    """
-    Configures a single utility's AMI data source and its storage sinks.
-
-    As of this writing, instead of doing a polymorphic type for each source,
-    we're just dumping all source-specific configuration into this class. E.g. "utility_name"
-    is only used by one source type, but we throw it in here with the rest of the kitchen sink.
-    """
-
-    DEFAULT_TIMEZONE = "America/LosAngeles"
-
-    def __init__(
-        self,
-        type: str,
-        org_id: str,
-        timezone: str,
-        use_raw_data_cache: bool,
-        task_output_controller: IntermediateOutputControllerConfiguration,
-        utility_name: str,
-        api_url: str,
-        configured_sftp: SftpConfiguration,
-        configured_ssh_tunnel_to_database: SSHTunnelToDatabaseConfiguration,
-        secrets: Union[Beacon360Secrets, SentryxSecrets],
-        sinks: List[ConfiguredStorageSink],
-        external_adapter_location: str,
-    ):
-        self.type = self._type(type)
-        self.org_id = self._org_id(org_id)
-        self.timezone = self._timezone(timezone)
-        self.use_raw_data_cache = bool(use_raw_data_cache)
-        self.task_output_controller = self._task_output_controller(
-            task_output_controller
-        )
-        self.utility_name = utility_name
-        self.api_url = api_url
-        self.configured_sftp = self._configured_sftp(configured_sftp)
-        self.configured_ssh_tunnel_to_database = (
-            self._configured_ssh_tunnel_to_database(configured_ssh_tunnel_to_database)
-        )
-        self.secrets = self._secrets(secrets)
-        self.storage_sinks = self._sinks(sinks)
-        self.external_adapter_location = external_adapter_location
-
-    def _type(self, type: str) -> str:
-        if ConfiguredAMISourceType.is_valid_type(type):
-            return type
-        raise ValueError(f"Unrecognized AMI source type: {type}")
-
-    def _org_id(self, org_id: str) -> str:
-        if org_id is None:
-            raise ValueError("AMI Source must have org_id")
-        return org_id
-
-    def _timezone(self, this_timezone: str) -> DstTzInfo:
-        if this_timezone is None:
-            return timezone(DEFAULT_TIMEZONE)
-        return timezone(this_timezone)
-
-    def _task_output_controller(
-        self,
-        task_output_controller: IntermediateOutputControllerConfiguration,
-    ) -> IntermediateOutputControllerConfiguration:
-        if task_output_controller is None:
-            raise ValueError("AMI Source must have task_output_controller")
-        return task_output_controller
-
-    def _configured_sftp(self, configured_sftp: SftpConfiguration) -> SftpConfiguration:
-        if self.type == ConfiguredAMISourceType.ACLARA.value.type:
-            if any(
-                i is None
-                for i in [
-                    configured_sftp.host,
-                    configured_sftp.local_download_directory,
-                    configured_sftp.known_hosts_str,
-                    configured_sftp.remote_data_directory,
-                ]
-            ):
-                raise ValueError(
-                    f"Invalid SFTP config for source with type {self.type}. Missing field(s). Configured SFTP: {configured_sftp}"
-                )
-        return configured_sftp
-
-    def _configured_ssh_tunnel_to_database(
-        self, configured_ssh_tunnel_to_database: SSHTunnelToDatabaseConfiguration
-    ) -> SSHTunnelToDatabaseConfiguration:
-        if self.type == ConfiguredAMISourceType.METERSENSE.value.type:
-            if any(
-                i is None
-                for i in [
-                    configured_ssh_tunnel_to_database.ssh_tunnel_server_host,
-                    configured_ssh_tunnel_to_database.ssh_tunnel_key_path,
-                    configured_ssh_tunnel_to_database.database_host,
-                    configured_ssh_tunnel_to_database.database_port,
-                ]
-            ):
-                raise ValueError(
-                    f"Invalid SSHTunnelToDatabase config for source with type {self.type}"
-                )
-        return configured_ssh_tunnel_to_database
-
-    def _secrets(self, secrets: str):
-        if secrets is None:
-            return None
-
-        if ConfiguredAMISourceType.is_valid_secret_for_type(self.type, type(secrets)):
-            return secrets
-
-        raise ValueError(f"Invalid secrets type for source type {self.type}")
-
-    def _sinks(self, sinks: List[ConfiguredStorageSink]) -> List[ConfiguredStorageSink]:
-        """
-        Validate that this type of sink is compatible with this data source type.
-        """
-        if ConfiguredAMISourceType.are_valid_storage_sinks_for_type(self.type, sinks):
-            return sinks
-        raise ValueError(f"Invalid sink type(s) for source type {self.type}")
-
-    def __repr__(self):
-        return f"ConfiguredAMISource[type={self.type}, org_id={self.org_id}, timezone={self.timezone}, use_cache={self.use_raw_data_cache}, task_output_controller={self.task_output_controller} storage_sinks=[{", ".join(s.id for s in self.storage_sinks)}]]"
 
 
 def find_config_yaml() -> str:
