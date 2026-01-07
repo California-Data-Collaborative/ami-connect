@@ -260,90 +260,39 @@ def add_source(
             help="Timezone in which meter read timestamps and other timestamps are represented for this source."
         ),
     ],
-    # Type-specific configurations
-    use_raw_data_cache: Annotated[
-        bool,
-        typer.Option(
-            help="If pipeline should use raw data cache. Applicable to types: [beacon_360, sentryx]"
-        ),
-    ] = None,
-    utility_name: Annotated[
-        str,
-        typer.Option(
-            help="Name of utility as it appears in the Sentryx API URL. Applicable to types: [sentryx]"
-        ),
-    ] = None,
-    sftp_host: Annotated[
-        str, typer.Option(help="Applicable to types: [aclara]")
-    ] = None,
-    sftp_remote_data_directory: Annotated[
-        str, typer.Option(help="Applicable to types: [aclara]")
-    ] = None,
-    sftp_local_download_directory: Annotated[
-        str, typer.Option(help="Applicable to types: [aclara]")
-    ] = None,
-    sftp_local_known_hosts_file: Annotated[
-        str, typer.Option(help="Applicable to types: [aclara]")
-    ] = None,
-    ssh_tunnel_server_host: Annotated[
-        str,
-        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
-    ] = None,
-    ssh_tunnel_key_path: Annotated[
-        str,
-        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
-    ] = None,
-    database_host: Annotated[
-        str,
-        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
-    ] = None,
-    database_port: Annotated[
-        str,
-        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
-    ] = None,
-    api_url: Annotated[
-        str,
-        typer.Option(
-            help='Subeca API URL for this org, e.g. "https://my-utility.api.subeca.online". Applicable to types: [subeca]'
-        ),
-    ] = None,
-    external_adapter_location: Annotated[
-        str,
-        typer.Option(
-            help="Path on Airflow server to Neptune adapter module. Applicable to types: [neptune]"
-        ),
-    ] = None,
     sinks: Annotated[
         List[str],
         typer.Option(
             help="Collection of sink IDs where data from this source should be stored."
         ),
     ] = None,
+    # Type-specific configurations
+    config: Annotated[
+        List[str],
+        typer.Option(
+            "--config",
+            help="Type-specific config as key=value (repeatable)",
+        ),
+    ] = [],
     profile: ANNOTATION__PROFILE = None,
 ):
     """
     Adds a new source with provided configuration. Different adapter types require specific configuration
-    which you can provide as optional arguments to this command.
+    which you can provide as optional arguments to this command with the repeated "--config my_key=my_value".
     """
-    new_sink_configuration = {
-        "org_id": org_id,
-        "type": type,
-        "timezone": timezone,
-        "use_raw_data_cache": use_raw_data_cache,
-        "utility_name": utility_name,
-        "sftp_host": sftp_host,
-        "sftp_remote_data_directory": sftp_remote_data_directory,
-        "sftp_local_known_hosts_file": sftp_local_known_hosts_file,
-        "sftp_local_download_directory": sftp_local_download_directory,
-        "ssh_tunnel_server_host": ssh_tunnel_server_host,
-        "ssh_tunnel_key_path": ssh_tunnel_key_path,
-        "database_host": database_host,
-        "database_port": database_port,
-        "api_url": api_url,
-        "external_adapter_location": external_adapter_location,
-        "sinks": sinks or [],
-    }
-    add_source_configuration(new_sink_configuration)
+    new_source = {}
+
+    if org_id:
+        new_source["org_id"] = org_id
+    if type:
+        new_source["type"] = type
+    if timezone:
+        new_source["timezone"] = timezone
+    new_source["sinks"] = sinks or []
+
+    new_source.update(parse_kv_pairs(config))
+
+    add_source_configuration(new_source)
 
 
 @config_app.command()
@@ -879,6 +828,20 @@ def remove_secret(
     if secret_type not in [SecretType.SOURCES.value, SecretType.SINKS.value]:
         raise typer.BadParameter('secret_type must be one of ["sources", "sinks"]')
     remove_secret_configuration(secret_type, secret_name)
+
+
+def parse_kv_pairs(pairs: List[str]) -> dict:
+    """
+    Parse a list of key=value pairs into a dictionary, e.g.
+        ["key1=value1", "key2=value2"] -> {"key1": "value1", "key2": "value2"}
+    """
+    result = {}
+    for pair in pairs:
+        if "=" not in pair:
+            raise typer.BadParameter(f"Invalid format '{pair}'. Use key=value.")
+        k, v = pair.split("=", 1)
+        result[k] = v
+    return result
 
 
 if __name__ == "__main__":

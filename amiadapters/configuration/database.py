@@ -124,7 +124,10 @@ def _parse_pipeline_configuration(all_config: dict) -> PipelineConfiguration:
 
 
 def add_source_configuration(connection, source_configuration: dict):
-    # Validate
+    """
+    Add a new source configuration to the database. Ensure that the source does not already exist.
+    Validate using the source configuration models.
+    """
     if not source_configuration.get("org_id"):
         raise ValueError(f"Source configuration is missing field: org_id")
     org_id = source_configuration["org_id"].lower()
@@ -134,32 +137,41 @@ def add_source_configuration(connection, source_configuration: dict):
     if len(existing) != 0:
         raise Exception(f"Source with org_id {org_id} already exists")
 
-    # Insert new source
     if not source_configuration.get("type"):
         raise ValueError(f"Source configuration is missing field: type")
-    if not source_configuration.get("timezone"):
-        raise ValueError(f"Source configuration is missing field: timezone")
-    if not source_configuration["timezone"] in pytz.all_timezones:
-        raise ValueError(f"Invalid timezone: {source_configuration["timezone"]}")
-
     source_type = source_configuration["type"].lower()
-    config = _create_source_configuration_object_for_type(
-        source_type, source_configuration
-    )
 
-    logger.info(
-        f"Adding new source with type={source_type} org_id={org_id} timezone={source_configuration["timezone"]} config={config}"
-    )
+    if not source_configuration.get("sinks"):
+        source_configuration["sinks"] = []
+
+    # Validate full source configuration by creating and validating config object for this type of source
+    cls = ConfiguredAMISourceTypes.get_config_type_for_source_type(source_type)
+    c = source_configuration.copy()
+    # The following are not configured using this function, so spoof them to satisfy the constructor
+    c["secrets"] = None
+    c["task_output_controller"] = None
+    c["sinks"] = []
+    new_source = cls.from_dict(c)
+    new_source.validate()
+
+    config = new_source.type_specific_config_dict()
+
+    logger.info(f"Adding new source {new_source}")
     cursor.execute(
         """
         INSERT INTO configuration_sources (type, org_id, timezone, config)
         SELECT ?, ?, ?, PARSE_JSON(?);
     """,
-        (source_type, org_id, source_configuration["timezone"], json.dumps(config)),
+        (
+            new_source.type,
+            new_source.org_id,
+            new_source.timezone.zone,
+            json.dumps(config),
+        ),
     )
 
     if sink_ids := source_configuration.get("sinks"):
-        _associate_sinks_with_source(cursor, org_id, sink_ids)
+        _associate_sinks_with_source(cursor, new_source.org_id, sink_ids)
 
 
 def update_source_configuration(connection, source_configuration: dict):
@@ -191,7 +203,7 @@ def update_source_configuration(connection, source_configuration: dict):
         source["type"], source_configuration, require_all_fields=False
     )
     for key, value in [x for x in new_config.items()]:
-        # Remove any None's unless they were explicitly set in the source_configuration argument
+        # Remove any None values unless they were explicitly set in the source_configuration argument
         if value is None and key not in source_configuration:
             del new_config[key]
     source["config"].update(new_config)

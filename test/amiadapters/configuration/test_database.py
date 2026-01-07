@@ -1,7 +1,8 @@
 from datetime import date
 import json
-from unittest.mock import call, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
+from pytz.exceptions import UnknownTimeZoneError
 import yaml
 
 from amiadapters.configuration.database import (
@@ -357,23 +358,13 @@ class TestDatabase(BaseTestCase):
         self.assertIn("type", str(context.exception))
 
     @patch("amiadapters.configuration.database._get_source_by_org_id")
-    def test_add_source_configuration_raises_if_missing_timezone(self, mock_get_source):
-        mock_get_source.return_value = []
-        with self.assertRaises(ValueError) as context:
-            add_source_configuration(
-                self.mock_connection, {"org_id": "CADC", "type": "beacon_360"}
-            )
-        self.assertIn("timezone", str(context.exception))
-
-    @patch("amiadapters.configuration.database._get_source_by_org_id")
     def test_add_source_configuration_raises_if_invalid_timezone(self, mock_get_source):
         mock_get_source.return_value = []
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(UnknownTimeZoneError) as context:
             add_source_configuration(
                 self.mock_connection,
                 {"org_id": "CADC", "type": "beacon_360", "timezone": "Invalid/Zone"},
             )
-        self.assertIn("Invalid timezone", str(context.exception))
 
     @patch("amiadapters.configuration.database._get_source_by_org_id")
     def test_add_source_configuration_executes_insert(self, mock_get_source):
