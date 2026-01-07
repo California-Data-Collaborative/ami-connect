@@ -301,10 +301,16 @@ class S3IntermediateOutputControllerConfiguration(
 
 
 ##############################################################################
-# Sources
+# Sources (Add your adapter's non-secret configuration schema here)
 ##############################################################################
 @dataclass(frozen=True)
 class SourceConfigBase:
+    """
+    Base class for source configuration. This is how we represent the
+    non-secret configuration schema for a source. Each source type is different
+    and will have its own subclass of this base class, implementing its own validation logic.
+    """
+
     org_id: str
     type: str
     timezone: DstTzInfo
@@ -343,6 +349,10 @@ class SourceConfigBase:
 
     @classmethod
     def from_dict(cls, raw_source_config: dict) -> "SourceConfigBase":
+        """
+        Construct a SourceConfigBase subclass instance from a raw dictionary
+        of configuration data.
+        """
         if not (source_type := raw_source_config.get("type")):
             raise ValueError("Source config missing required field: type")
         cls = ConfiguredAMISourceTypes.get_config_type_for_source_type(source_type)
