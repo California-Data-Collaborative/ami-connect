@@ -5,7 +5,10 @@ from typing import Dict, List, Tuple
 
 import pytz
 
-from amiadapters.configuration.models import PipelineConfiguration
+from amiadapters.configuration.models import (
+    PipelineConfiguration,
+    ConfiguredAMISourceTypes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,45 +53,7 @@ def get_configuration(snowflake_connection) -> Tuple[
         source["org_id"] = row["org_id"]
         source["timezone"] = row["timezone"]
         source["sinks"] = sinks_by_source_id.get(row["id"], [])
-        type_specific_config = json.loads(row["config"]) if row["config"] else {}
-        match row["type"]:
-            case "beacon_360":
-                source["use_raw_data_cache"] = type_specific_config.get(
-                    "use_raw_data_cache", False
-                )
-            case "aclara" | "xylem_sensus":
-                source["sftp_host"] = type_specific_config.get("sftp_host")
-                source["sftp_remote_data_directory"] = type_specific_config.get(
-                    "sftp_remote_data_directory"
-                )
-                source["sftp_local_download_directory"] = type_specific_config.get(
-                    "sftp_local_download_directory"
-                )
-                source["sftp_known_hosts_str"] = type_specific_config.get(
-                    "sftp_known_hosts_str"
-                )
-            case "metersense" | "xylem_moulton_niguel":
-                source["ssh_tunnel_server_host"] = type_specific_config.get(
-                    "ssh_tunnel_server_host"
-                )
-                source["ssh_tunnel_key_path"] = type_specific_config.get(
-                    "ssh_tunnel_key_path"
-                )
-                source["database_host"] = type_specific_config.get("database_host")
-                source["database_port"] = int(type_specific_config.get("database_port"))
-            case "neptune":
-                source["external_adapter_location"] = type_specific_config.get(
-                    "external_adapter_location"
-                )
-            case "sentryx":
-                source["utility_name"] = type_specific_config.get("utility_name")
-                source["use_raw_data_cache"] = type_specific_config.get(
-                    "use_raw_data_cache", False
-                )
-            case "subeca":
-                source["api_url"] = type_specific_config.get("api_url")
-            case _:
-                pass
+        source.update(json.loads(row["config"]) if row["config"] else {})
         sources.append(source)
 
     checks_by_sink_id = {}
