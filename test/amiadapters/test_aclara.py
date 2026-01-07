@@ -6,10 +6,6 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytz
 
 from amiadapters.models import DataclassJSONEncoder
-from amiadapters.configuration.models import (
-    LocalIntermediateOutputControllerConfiguration,
-    SftpConfiguration,
-)
 from amiadapters.adapters.aclara import (
     AclaraAdapter,
     AclaraMeterAndRead,

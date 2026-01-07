@@ -1,9 +1,9 @@
 from abc import ABC
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from enum import Enum
 import json
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import pytz
 from pytz.tzinfo import DstTzInfo
@@ -301,10 +301,16 @@ class S3IntermediateOutputControllerConfiguration(
 
 
 ##############################################################################
-# Sources
+# Sources (Add your adapter's non-secret configuration schema here)
 ##############################################################################
 @dataclass(frozen=True)
 class SourceConfigBase:
+    """
+    Base class for source configuration. This is how we represent the
+    non-secret configuration schema for a source. Each source type is different
+    and will have its own subclass of this base class, implementing its own validation logic.
+    """
+
     org_id: str
     type: str
     timezone: DstTzInfo
@@ -319,16 +325,13 @@ class SourceConfigBase:
         ensure base validation is performed.
         """
         self._require(
-            "org_id", "type", "timezone", "secrets", "sinks", "task_output_controller"
+            "org_id",
+            "type",
+            "timezone",
         )
 
         if not ConfiguredAMISourceTypes.is_valid_type(self.type):
             raise ValueError(f"Unrecognized AMI source type: {self.type}")
-
-        if not ConfiguredAMISourceTypes.is_valid_secret_for_type(
-            self.type, type(self.secrets)
-        ):
-            raise ValueError(f"Invalid secrets type for source type {self.type}")
 
         if not ConfiguredAMISourceTypes.are_valid_storage_sinks_for_type(
             self.type, self.sinks
@@ -345,7 +348,11 @@ class SourceConfigBase:
             )
 
     @classmethod
-    def from_dict(cls, raw_source_config: dict):
+    def from_dict(cls, raw_source_config: dict) -> "SourceConfigBase":
+        """
+        Construct a SourceConfigBase subclass instance from a raw dictionary
+        of configuration data.
+        """
         if not (source_type := raw_source_config.get("type")):
             raise ValueError("Source config missing required field: type")
         cls = ConfiguredAMISourceTypes.get_config_type_for_source_type(source_type)
@@ -354,7 +361,9 @@ class SourceConfigBase:
         kwargs = dict(raw_source_config)
 
         # ---- transforms ----
-        kwargs["timezone"] = pytz.timezone(kwargs.get("timezone", "America/LosAngeles"))
+        kwargs["timezone"] = pytz.timezone(
+            kwargs.get("timezone", "America/Los_Angeles")
+        )
         if "use_raw_data_cache" in kwargs and kwargs["use_raw_data_cache"] is None:
             kwargs["use_raw_data_cache"] = False
 
@@ -362,6 +371,14 @@ class SourceConfigBase:
         config.validate()
 
         return config
+
+    def type_specific_config_dict(self) -> Dict[str, Any]:
+        base_field_names = {f.name for f in fields(SourceConfigBase)}
+        return {
+            f.name: getattr(self, f.name)
+            for f in fields(type(self))
+            if f.name not in base_field_names
+        }
 
 
 @dataclass(frozen=True)

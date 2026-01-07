@@ -3,9 +3,11 @@ import logging
 import json
 from typing import Dict, List, Tuple
 
-import pytz
-
-from amiadapters.configuration.models import PipelineConfiguration
+from amiadapters.configuration.models import (
+    ConfiguredAMISourceTypes,
+    PipelineConfiguration,
+    SourceConfigBase,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,45 +52,7 @@ def get_configuration(snowflake_connection) -> Tuple[
         source["org_id"] = row["org_id"]
         source["timezone"] = row["timezone"]
         source["sinks"] = sinks_by_source_id.get(row["id"], [])
-        type_specific_config = json.loads(row["config"]) if row["config"] else {}
-        match row["type"]:
-            case "beacon_360":
-                source["use_raw_data_cache"] = type_specific_config.get(
-                    "use_raw_data_cache", False
-                )
-            case "aclara" | "xylem_sensus":
-                source["sftp_host"] = type_specific_config.get("sftp_host")
-                source["sftp_remote_data_directory"] = type_specific_config.get(
-                    "sftp_remote_data_directory"
-                )
-                source["sftp_local_download_directory"] = type_specific_config.get(
-                    "sftp_local_download_directory"
-                )
-                source["sftp_known_hosts_str"] = type_specific_config.get(
-                    "sftp_known_hosts_str"
-                )
-            case "metersense" | "xylem_moulton_niguel":
-                source["ssh_tunnel_server_host"] = type_specific_config.get(
-                    "ssh_tunnel_server_host"
-                )
-                source["ssh_tunnel_key_path"] = type_specific_config.get(
-                    "ssh_tunnel_key_path"
-                )
-                source["database_host"] = type_specific_config.get("database_host")
-                source["database_port"] = int(type_specific_config.get("database_port"))
-            case "neptune":
-                source["external_adapter_location"] = type_specific_config.get(
-                    "external_adapter_location"
-                )
-            case "sentryx":
-                source["utility_name"] = type_specific_config.get("utility_name")
-                source["use_raw_data_cache"] = type_specific_config.get(
-                    "use_raw_data_cache", False
-                )
-            case "subeca":
-                source["api_url"] = type_specific_config.get("api_url")
-            case _:
-                pass
+        source.update(json.loads(row["config"]) if row["config"] else {})
         sources.append(source)
 
     checks_by_sink_id = {}
@@ -159,7 +123,10 @@ def _parse_pipeline_configuration(all_config: dict) -> PipelineConfiguration:
 
 
 def add_source_configuration(connection, source_configuration: dict):
-    # Validate
+    """
+    Add a new source configuration to the database. Ensure that the source does not already exist.
+    Validate using the source configuration models.
+    """
     if not source_configuration.get("org_id"):
         raise ValueError(f"Source configuration is missing field: org_id")
     org_id = source_configuration["org_id"].lower()
@@ -169,40 +136,45 @@ def add_source_configuration(connection, source_configuration: dict):
     if len(existing) != 0:
         raise Exception(f"Source with org_id {org_id} already exists")
 
-    # Insert new source
     if not source_configuration.get("type"):
         raise ValueError(f"Source configuration is missing field: type")
-    if not source_configuration.get("timezone"):
-        raise ValueError(f"Source configuration is missing field: timezone")
-    if not source_configuration["timezone"] in pytz.all_timezones:
-        raise ValueError(f"Invalid timezone: {source_configuration["timezone"]}")
+    source_configuration["type"] = source_configuration["type"].lower()
 
-    source_type = source_configuration["type"].lower()
-    config = _create_source_configuration_object_for_type(
-        source_type, source_configuration
-    )
+    if not source_configuration.get("sinks"):
+        source_configuration["sinks"] = []
 
-    logger.info(
-        f"Adding new source with type={source_type} org_id={org_id} timezone={source_configuration["timezone"]} config={config}"
-    )
+    # Validate
+    new_source = _create_and_validate_source_config_from_dict(source_configuration)
+    new_source.validate()
+
+    config = new_source.type_specific_config_dict()
+
+    logger.info(f"Adding new source {new_source}")
     cursor.execute(
         """
         INSERT INTO configuration_sources (type, org_id, timezone, config)
         SELECT ?, ?, ?, PARSE_JSON(?);
     """,
-        (source_type, org_id, source_configuration["timezone"], json.dumps(config)),
+        (
+            new_source.type,
+            new_source.org_id,
+            new_source.timezone.zone,
+            json.dumps(config),
+        ),
     )
 
+    # Add sink associations
     if sink_ids := source_configuration.get("sinks"):
-        _associate_sinks_with_source(cursor, org_id, sink_ids)
+        _associate_sinks_with_source(cursor, new_source.org_id, sink_ids)
 
 
-def update_source_configuration(connection, source_configuration: dict):
-    # Validate
-    if not source_configuration.get("org_id"):
+def update_source_configuration(connection, new_values: dict):
+    if not new_values.get("org_id"):
         raise ValueError(f"Source configuration is missing field: org_id")
-    org_id = source_configuration["org_id"].lower()
+    org_id = new_values["org_id"].lower()
 
+    # Retrieve existing so that we can preserve previous values that aren't
+    # being updated
     cursor = connection.cursor()
     existing = _get_source_by_org_id(cursor, org_id)
     if len(existing) != 1:
@@ -210,110 +182,68 @@ def update_source_configuration(connection, source_configuration: dict):
             f"Expected to find one source with org_id {org_id}, got {len(existing)}"
         )
 
-    # Update with new source
-    source = {
-        "id": existing[0][0],
+    # Start with existing values
+    updated_source_config = {
         "type": existing[0][1],
         "org_id": existing[0][2],
         "timezone": existing[0][3],
-        "config": json.loads(existing[0][4]),
     }
-    if source_type := source_configuration.get("type"):
-        source["type"] = source_type.lower()
-    if timezone := source_configuration.get("timezone"):
-        source["timezone"] = timezone
-    new_config = _create_source_configuration_object_for_type(
-        source["type"], source_configuration, require_all_fields=False
-    )
-    for key, value in [x for x in new_config.items()]:
-        # Remove any None's unless they were explicitly set in the source_configuration argument
-        if value is None and key not in source_configuration:
-            del new_config[key]
-    source["config"].update(new_config)
+    updated_source_config.update(json.loads(existing[0][4]))
 
-    logger.info(f"Updating source in database with {org_id} with values {source}")
+    if updated_source_config["type"] != new_values.get(
+        "type", updated_source_config["type"]
+    ):
+        raise ValueError(
+            "Changing source type is not supported. Create a new source or manually update in database."
+        )
+
+    # Overwrite with any provided new values, preserving the existing values
+    updated_source_config.update(new_values)
+
+    # Validate
+    new_source = _create_and_validate_source_config_from_dict(updated_source_config)
+    new_config = new_source.type_specific_config_dict()
+
+    for key, value in [x for x in new_config.items()]:
+        # Remove any None values unless they were explicitly set in the source_configuration argument
+        if value is None and key not in new_values:
+            del new_config[key]
+
+    logger.info(f"Updating source in database with {org_id} with values {new_source}")
     cursor.execute(
         """
         UPDATE configuration_sources
         SET 
-            type = ?,
             timezone = ?,
             config = PARSE_JSON(?)
         WHERE org_id = ?;
         """,
-        (source["type"], source["timezone"], json.dumps(source["config"]), org_id),
+        (new_source.timezone.zone, json.dumps(new_config), org_id),
     )
-    if sink_ids := source_configuration.get("sinks"):
+
+    # Handle sink associations
+    if sink_ids := new_values.get("sinks"):
         _associate_sinks_with_source(cursor, org_id, sink_ids)
 
 
-def _create_source_configuration_object_for_type(
-    source_type: str, source_configuration: str, require_all_fields=True
-) -> dict:
+def _create_and_validate_source_config_from_dict(
+    source_configuration: dict,
+) -> SourceConfigBase:
     """
-    Each adapter type has special configuration that we represent as an object in the database.
-    This function parses the source_configuration argument into that object.
+    Validate new source configuration by creating and validating config object for this type of source
+    This automagically ensures that all and only valid fields are present
     """
-    match source_type:
-        case "aclara":
-            config = {}
-            for field in [
-                "sftp_host",
-                "sftp_remote_data_directory",
-                "sftp_local_download_directory",
-                "sftp_known_hosts_str",
-            ]:
-                if not source_configuration.get(field) and require_all_fields:
-                    raise ValueError(f"Source configuration is missing field: {field}")
-                config[field] = source_configuration.get(field)
-        case "beacon_360":
-            config = {
-                "use_raw_data_cache": source_configuration.get(
-                    "use_raw_data_cache", False
-                )
-            }
-        case "metersense" | "xylem_moulton_niguel":
-            config = {}
-            for field in [
-                "ssh_tunnel_server_host",
-                "ssh_tunnel_key_path",
-                "database_host",
-                "database_port",
-            ]:
-                if not source_configuration.get(field) and require_all_fields:
-                    raise ValueError(f"Source configuration is missing field: {field}")
-                config[field] = source_configuration.get(field)
-        case "neptune":
-            config = {}
-            for field in [
-                "external_adapter_location",
-            ]:
-                if not source_configuration.get(field) and require_all_fields:
-                    raise ValueError(f"Source configuration is missing field: {field}")
-                config[field] = source_configuration.get(field)
-
-        case "subeca":
-            config = {}
-            for field in [
-                "api_url",
-            ]:
-                if not source_configuration.get(field) and require_all_fields:
-                    raise ValueError(f"Source configuration is missing field: {field}")
-                config[field] = source_configuration.get(field)
-        case "sentryx":
-            config = {}
-            for field in [
-                "utility_name",
-            ]:
-                if not source_configuration.get(field) and require_all_fields:
-                    raise ValueError(f"Source configuration is missing field: {field}")
-                config[field] = source_configuration.get(field)
-            config["use_raw_data_cache"] = source_configuration.get(
-                "use_raw_data_cache", False
-            )
-        case _:
-            config = {}
-    return config
+    cls = ConfiguredAMISourceTypes.get_config_type_for_source_type(
+        source_configuration["type"]
+    )
+    c = source_configuration.copy()
+    # The following are not configured using this function, so spoof them to satisfy the constructor
+    c["secrets"] = None
+    c["task_output_controller"] = None
+    c["sinks"] = []
+    new_source = cls.from_dict(c)
+    new_source.validate()
+    return new_source
 
 
 def remove_source_configuration(connection, org_id: str):

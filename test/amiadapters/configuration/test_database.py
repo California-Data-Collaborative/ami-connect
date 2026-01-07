@@ -1,7 +1,8 @@
 from datetime import date
 import json
-from unittest.mock import call, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
+from pytz.exceptions import UnknownTimeZoneError
 import yaml
 
 from amiadapters.configuration.database import (
@@ -357,23 +358,13 @@ class TestDatabase(BaseTestCase):
         self.assertIn("type", str(context.exception))
 
     @patch("amiadapters.configuration.database._get_source_by_org_id")
-    def test_add_source_configuration_raises_if_missing_timezone(self, mock_get_source):
-        mock_get_source.return_value = []
-        with self.assertRaises(ValueError) as context:
-            add_source_configuration(
-                self.mock_connection, {"org_id": "CADC", "type": "beacon_360"}
-            )
-        self.assertIn("timezone", str(context.exception))
-
-    @patch("amiadapters.configuration.database._get_source_by_org_id")
     def test_add_source_configuration_raises_if_invalid_timezone(self, mock_get_source):
         mock_get_source.return_value = []
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(UnknownTimeZoneError) as context:
             add_source_configuration(
                 self.mock_connection,
                 {"org_id": "CADC", "type": "beacon_360", "timezone": "Invalid/Zone"},
             )
-        self.assertIn("Invalid timezone", str(context.exception))
 
     @patch("amiadapters.configuration.database._get_source_by_org_id")
     def test_add_source_configuration_executes_insert(self, mock_get_source):
@@ -434,18 +425,21 @@ class TestDatabase(BaseTestCase):
         ]
         update_source_configuration(
             self.mock_connection,
-            {"org_id": "org1", "timezone": "PST", "use_raw_data_cache": True},
+            {
+                "org_id": "org1",
+                "timezone": "America/Chicago",
+                "use_raw_data_cache": True,
+            },
         )
 
         # Ensure UPDATE executed with correct parameters
         update_call = self.mock_cursor.execute.call_args_list[-1]
         query, params = update_call[0]
         self.assertIn("UPDATE configuration_sources", query)
-        self.assertEqual(params[0], "beacon_360")  # type unchanged
-        self.assertEqual(params[1], "PST")  # timezone updated
-        updated_config = json.loads(params[2])
+        self.assertEqual(params[0], "America/Chicago")  # timezone updated
+        updated_config = json.loads(params[1])
         self.assertEqual(updated_config["use_raw_data_cache"], True)
-        self.assertEqual(params[3], "org1")  # org_id lowercased
+        self.assertEqual(params[2], "org1")  # org_id lowercased
 
     @patch("amiadapters.configuration.database._get_source_by_org_id")
     @patch("amiadapters.configuration.database._get_sink_by_id")
@@ -468,7 +462,7 @@ class TestDatabase(BaseTestCase):
         update_call = self.mock_cursor.execute.call_args_list[0]
         query, params = update_call[0]
         self.assertIn("UPDATE configuration_sources", query)
-        self.assertEqual(params[3], "org1")
+        self.assertEqual(params[2], "org1")
 
         # Check that _associate_sinks_with_source query was executed
         all_queries = [c[0][0] for c in self.mock_cursor.execute.call_args_list]
@@ -495,7 +489,7 @@ class TestDatabase(BaseTestCase):
 
         update_call = self.mock_cursor.execute.call_args_list[-1]
         query, params = update_call[0]
-        updated_config = json.loads(params[2])
+        updated_config = json.loads(params[1])
         self.assertIn("use_raw_data_cache", updated_config)  # None explicitly set
 
     @patch("amiadapters.configuration.database._get_source_by_org_id")
