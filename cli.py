@@ -311,68 +311,20 @@ def update_source(
             help="Timezone in which meter read timestamps and other timestamps are represented for this source."
         ),
     ] = None,
-    # Type-specific configurations
-    use_raw_data_cache: Annotated[
-        bool,
-        typer.Option(
-            help="If pipeline should use raw data cache. Applicable to types: [beacon_360, sentryx]"
-        ),
-    ] = None,
-    utility_name: Annotated[
-        str,
-        typer.Option(
-            help="Name of utility as it appears in the Sentryx API URL. Applicable to types: [sentryx]"
-        ),
-    ] = None,
-    sftp_host: Annotated[
-        str, typer.Option(help="Applicable to types: [aclara]")
-    ] = None,
-    sftp_remote_data_directory: Annotated[
-        str, typer.Option(help="Applicable to types: [aclara]")
-    ] = None,
-    sftp_local_download_directory: Annotated[
-        str, typer.Option(help="Applicable to types: [aclara]")
-    ] = None,
-    sftp_local_known_hosts_file: Annotated[
-        str,
-        typer.Option(
-            help="Applicable to types: [aclara]. Reads contents of file and stores as sftp_known_hosts_str."
-        ),
-    ] = None,
-    ssh_tunnel_server_host: Annotated[
-        str,
-        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
-    ] = None,
-    ssh_tunnel_key_path: Annotated[
-        str,
-        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
-    ] = None,
-    database_host: Annotated[
-        str,
-        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
-    ] = None,
-    database_port: Annotated[
-        str,
-        typer.Option(help="Applicable to types: [metersense, xylem_moulton_niguel]"),
-    ] = None,
-    api_url: Annotated[
-        str,
-        typer.Option(
-            help='Subeca API URL for this org, e.g. "https://my-utility.api.subeca.online". Applicable to types: [subeca]'
-        ),
-    ] = None,
-    external_adapter_location: Annotated[
-        str,
-        typer.Option(
-            help="Path on Airflow server to Neptune adapter module. Applicable to types: [neptune]"
-        ),
-    ] = None,
     sinks: Annotated[
         List[str],
         typer.Option(
             help="Collection of sink IDs where data from this source should be stored."
         ),
     ] = None,
+    # Type-specific configurations
+    config: Annotated[
+        List[str],
+        typer.Option(
+            "--config",
+            help="Type-specific config as key=value (repeatable)",
+        ),
+    ] = [],
     profile: ANNOTATION__PROFILE = None,
 ):
     """
@@ -384,37 +336,11 @@ def update_source(
         new_sink_configuration["type"] = type
     if timezone is not None:
         new_sink_configuration["timezone"] = timezone
-    if use_raw_data_cache is not None:
-        new_sink_configuration["use_raw_data_cache"] = use_raw_data_cache
-    if utility_name is not None:
-        new_sink_configuration["utility_name"] = utility_name
-    if sftp_host is not None:
-        new_sink_configuration["sftp_host"] = sftp_host
-    if sftp_remote_data_directory is not None:
-        new_sink_configuration["sftp_remote_data_directory"] = (
-            sftp_remote_data_directory
-        )
-    if sftp_local_known_hosts_file is not None:
-        with open(sftp_local_known_hosts_file, "r") as f:
-            new_sink_configuration["sftp_known_hosts_str"] = f.read()
-    if sftp_local_download_directory is not None:
-        new_sink_configuration["sftp_local_download_directory"] = (
-            sftp_local_download_directory
-        )
-    if ssh_tunnel_server_host is not None:
-        new_sink_configuration["ssh_tunnel_server_host"] = ssh_tunnel_server_host
-    if ssh_tunnel_key_path is not None:
-        new_sink_configuration["ssh_tunnel_key_path"] = ssh_tunnel_key_path
-    if database_host is not None:
-        new_sink_configuration["database_host"] = database_host
-    if database_port is not None:
-        new_sink_configuration["database_port"] = database_port
-    if api_url is not None:
-        new_sink_configuration["api_url"] = api_url
-    if external_adapter_location is not None:
-        new_sink_configuration["external_adapter_location"] = external_adapter_location
     if sinks is not None:
         new_sink_configuration["sinks"] = sinks
+
+    new_sink_configuration.update(parse_kv_pairs(config))
+
     update_source_configuration(new_sink_configuration)
 
 
