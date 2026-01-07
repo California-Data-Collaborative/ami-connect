@@ -384,15 +384,18 @@ class SourceConfigBase:
 @dataclass(frozen=True)
 class AclaraSourceConfig(SourceConfigBase):
     sftp_host: str
-    sftp_known_hosts_str: str
     sftp_remote_data_directory: str
     sftp_local_download_directory: str
+    sftp_known_hosts_str: str
+    # Deprecated - use sftp_known_hosts_str instead
+    sftp_local_known_hosts_file: Optional[str] = None
 
     def validate(self):
         super().validate()
         self._require(
             "sftp_host",
             "sftp_known_hosts_str",
+            "sftp_local_download_directory",
             "sftp_remote_data_directory",
         )
 
@@ -468,9 +471,9 @@ class SubecaSourceConfig(SourceConfigBase):
 @dataclass(frozen=True)
 class XylemSensusSourceConfig(SourceConfigBase):
     sftp_host: str
-    sftp_known_hosts_str: str
     sftp_remote_data_directory: str
     sftp_local_download_directory: str
+    sftp_known_hosts_str: str
 
 
 class SourceSchema:
