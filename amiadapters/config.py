@@ -2,8 +2,7 @@ from datetime import datetime
 from typing import List, Dict
 import pathlib
 
-from pytz import timezone, UTC
-from pytz.tzinfo import DstTzInfo
+from pytz import UTC
 import yaml
 
 from amiadapters.adapters.aclara import AclaraAdapter
@@ -23,17 +22,13 @@ from amiadapters.configuration.models import (
     ConfiguredStorageSink,
     ConfiguredStorageSinkType,
     IntermediateOutputType,
-    IntermediateOutputControllerConfiguration,
     LocalIntermediateOutputControllerConfiguration,
     MetersenseSecrets,
     NeptuneSecrets,
     NotificationsConfiguration,
     PipelineConfiguration,
     S3IntermediateOutputControllerConfiguration,
-    SSHTunnelToDatabaseConfiguration,
-    SecretsBase,
     SentryxSecrets,
-    SftpConfiguration,
     SnowflakeSecrets,
     SourceConfigBase,
     SubecaSecrets,
@@ -385,24 +380,24 @@ class AMIAdapterConfiguration:
                     # Neptune code is not in this project because of open source limitations
                     # This code assumes Neptune's code is available at the external_adapter_location
                     # which we append to the python path
-                    # import sys
+                    import sys
 
-                    # sys.path.append(source.external_adapter_location)
-                    # from neptune import NeptuneAdapter
+                    sys.path.append(source.external_adapter_location)
+                    from neptune import NeptuneAdapter
 
-                    # adapters.append(
-                    #     NeptuneAdapter(
-                    #         source.org_id,
-                    #         source.timezone,
-                    #         self._pipeline_configuration,
-                    #         source.secrets.site_id,
-                    #         source.secrets.api_key,
-                    #         source.secrets.client_id,
-                    #         source.secrets.client_secret,
-                    #         source.task_output_controller,
-                    #         source.sinks,
-                    #     )
-                    # )
+                    adapters.append(
+                        NeptuneAdapter(
+                            source.org_id,
+                            source.timezone,
+                            self._pipeline_configuration,
+                            source.secrets.site_id,
+                            source.secrets.api_key,
+                            source.secrets.client_id,
+                            source.secrets.client_secret,
+                            source.task_output_controller,
+                            source.sinks,
+                        )
+                    )
                     pass
                 case ConfiguredAMISourceTypes.SENTRYX.value.type:
                     adapters.append(
