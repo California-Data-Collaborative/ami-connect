@@ -2,8 +2,7 @@ from datetime import datetime
 from typing import List, Dict
 import pathlib
 
-from pytz import timezone, UTC
-from pytz.tzinfo import DstTzInfo
+from pytz import UTC
 import yaml
 
 from amiadapters.adapters.aclara import AclaraAdapter
@@ -23,17 +22,13 @@ from amiadapters.configuration.models import (
     ConfiguredStorageSink,
     ConfiguredStorageSinkType,
     IntermediateOutputType,
-    IntermediateOutputControllerConfiguration,
     LocalIntermediateOutputControllerConfiguration,
     MetersenseSecrets,
     NeptuneSecrets,
     NotificationsConfiguration,
     PipelineConfiguration,
     S3IntermediateOutputControllerConfiguration,
-    SSHTunnelToDatabaseConfiguration,
-    SecretsBase,
     SentryxSecrets,
-    SftpConfiguration,
     SnowflakeSecrets,
     SourceConfigBase,
     SubecaSecrets,
@@ -403,6 +398,7 @@ class AMIAdapterConfiguration:
                             source.sinks,
                         )
                     )
+                    pass
                 case ConfiguredAMISourceTypes.SENTRYX.value.type:
                     adapters.append(
                         SentryxAdapter(
