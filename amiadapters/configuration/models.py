@@ -1,5 +1,5 @@
 from abc import ABC
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from enum import Enum
 import json
@@ -154,27 +154,6 @@ class XylemSensusSecrets(SecretsBase):
 
 def get_secrets_class_type(secret_type: str):
     return ConfiguredAMISourceTypes.get_secret_type_for_source_type(secret_type)
-    # match secret_type:
-    #     case "aclara":
-    #         return AclaraSecrets
-    #     case "beacon_360":
-    #         return Beacon360Secrets
-    #     case "metersense":
-    #         return MetersenseSecrets
-    #     case "neptune":
-    #         return NeptuneSecrets
-    #     case "sentryx":
-    #         return SentryxSecrets
-    #     case "subeca":
-    #         return SubecaSecrets
-    #     case "xylem_moulton_niguel":
-    #         return XylemMoultonNiguelSecrets
-    #     case "xylem_sensus":
-    #         return XylemSensusSecrets
-    #     case "snowflake":
-    #         return SnowflakeSecrets
-    #     case _:
-    #         raise ValueError(f"Unrecognized secrets class name: {secret_type}")
 
 
 ###############################################################################
@@ -366,6 +345,10 @@ class SourceConfigBase:
         )
         if "use_raw_data_cache" in kwargs and kwargs["use_raw_data_cache"] is None:
             kwargs["use_raw_data_cache"] = False
+        # Python dataclasses don't coerce types automatically, so we need to do it here for non-str fields
+        if "database_port" in kwargs:
+            kwargs["database_port"] = int(kwargs["database_port"])
+        # ---- end transforms ----
 
         config = cls(**kwargs)
         config.validate()
