@@ -404,7 +404,7 @@ class BaseAMIAdapter(ABC):
         result = []
         configured_sinks = configured_sinks if configured_sinks else []
         for sink in configured_sinks:
-            if sink.type == ConfiguredStorageSinkType.SNOWFLAKE:
+            if sink.type == ConfiguredStorageSinkType.SNOWFLAKE.value:
                 result.append(
                     SnowflakeStorageSink(
                         org_id,
