@@ -85,33 +85,88 @@ class SecretsBase:
     def to_json(self) -> str:
         return json.dumps(asdict(self))
 
+    def validate(self) -> None:
+        return
+
+    def _require(self, *fields: str) -> None:
+        missing = [
+            f for f in fields if not hasattr(self, f) or getattr(self, f) is None
+        ]
+        if missing:
+            raise ValueError(
+                f"{self.__class__.__name__} missing required fields: {missing}"
+            )
+
+
+class SinkSecretsBase(SecretsBase):
+    """
+    Base class for storage sink secrets dataclasses.
+    """
+
+    @classmethod
+    def from_dict(cls, sink_type: str, raw_secret_config: dict) -> "SinkSecretsBase":
+        if not raw_secret_config:
+            raise ValueError(f"Found no secrets for sink type {sink_type}")
+
+        match sink_type:
+            case ConfiguredStorageSinkType.SNOWFLAKE:
+                secret_cls = SnowflakeSecrets
+            case _:
+                raise ValueError(f"Unrecognized sink type {sink_type}")
+
+        # Copy so we don't mutate caller data
+        kwargs = dict(raw_secret_config)
+        config = secret_cls(**kwargs)
+        config.validate()
+
+        return config
+
 
 @dataclass
-class SnowflakeSecrets(SecretsBase):
+class SnowflakeSecrets(SinkSecretsBase):
     account: str
     user: str
-    password: str
     role: str
     warehouse: str
     database: str
     schema: str
+    password: str = None  # Deprecated - use ssh_key instead
     ssh_key: str = None
+
+    def validate(self) -> None:
+        self._require(
+            "account",
+            "user",
+            "ssh_key",
+            "role",
+            "warehouse",
+            "database",
+            "schema",
+        )
+
+
+class SourceSecretsBase(SecretsBase):
+    """
+    Base class for AMI source secrets dataclasses.
+    """
+
+    pass
 
 
 @dataclass
-class AclaraSecrets(SecretsBase):
+class AclaraSecrets(SourceSecretsBase):
     sftp_user: str
     sftp_password: str
 
 
 @dataclass
-class Beacon360Secrets(SecretsBase):
+class Beacon360Secrets(SourceSecretsBase):
     user: str
     password: str
 
 
 @dataclass
-class MetersenseSecrets(SecretsBase):
+class MetersenseSecrets(SourceSecretsBase):
     ssh_tunnel_private_key: str
     ssh_tunnel_username: str
     database_db_name: str
@@ -120,7 +175,7 @@ class MetersenseSecrets(SecretsBase):
 
 
 @dataclass
-class NeptuneSecrets(SecretsBase):
+class NeptuneSecrets(SourceSecretsBase):
     site_id: str
     api_key: str
     client_id: str
@@ -128,17 +183,17 @@ class NeptuneSecrets(SecretsBase):
 
 
 @dataclass
-class SentryxSecrets(SecretsBase):
+class SentryxSecrets(SourceSecretsBase):
     api_key: str
 
 
 @dataclass
-class SubecaSecrets(SecretsBase):
+class SubecaSecrets(SourceSecretsBase):
     api_key: str
 
 
 @dataclass
-class XylemMoultonNiguelSecrets(SecretsBase):
+class XylemMoultonNiguelSecrets(SourceSecretsBase):
     ssh_tunnel_private_key: str
     ssh_tunnel_username: str
     database_db_name: str
@@ -147,7 +202,7 @@ class XylemMoultonNiguelSecrets(SecretsBase):
 
 
 @dataclass
-class XylemSensusSecrets(SecretsBase):
+class XylemSensusSecrets(SourceSecretsBase):
     sftp_user: str
     sftp_password: str
 
@@ -334,7 +389,9 @@ class SourceConfigBase:
         """
         if not (source_type := raw_source_config.get("type")):
             raise ValueError("Source config missing required field: type")
-        cls = ConfiguredAMISourceTypes.get_config_type_for_source_type(source_type)
+        config_cls = ConfiguredAMISourceTypes.get_config_type_for_source_type(
+            source_type
+        )
 
         # Copy so we don't mutate caller data
         kwargs = dict(raw_source_config)
@@ -350,7 +407,7 @@ class SourceConfigBase:
             kwargs["database_port"] = int(kwargs["database_port"])
         # ---- end transforms ----
 
-        config = cls(**kwargs)
+        config = config_cls(**kwargs)
         config.validate()
 
         return config

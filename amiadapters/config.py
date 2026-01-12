@@ -29,7 +29,7 @@ from amiadapters.configuration.models import (
     PipelineConfiguration,
     S3IntermediateOutputControllerConfiguration,
     SentryxSecrets,
-    SnowflakeSecrets,
+    SinkSecretsBase,
     SourceConfigBase,
     SubecaSecrets,
     XylemMoultonNiguelSecrets,
@@ -143,23 +143,11 @@ class AMIAdapterConfiguration:
             sink_id = sink.get("id")
             sink_type = sink.get("type")
             checks = sink.get("checks")
+            sink_secrets = SinkSecretsBase.from_dict(
+                sink_type, configured_secrets.get("sinks", {}).get(sink_id, {})
+            )
             match sink_type:
                 case ConfiguredStorageSinkType.SNOWFLAKE:
-                    sink_secrets_yaml = configured_secrets.get("sinks", {}).get(
-                        sink_id, {}
-                    )
-                    if not sink_secrets_yaml:
-                        raise ValueError(f"Found no secrets for sink {sink_id}")
-                    sink_secrets = SnowflakeSecrets(
-                        account=sink_secrets_yaml.get("account"),
-                        user=sink_secrets_yaml.get("user"),
-                        password=sink_secrets_yaml.get("password"),
-                        ssh_key=sink_secrets_yaml.get("ssh_key"),
-                        role=sink_secrets_yaml.get("role"),
-                        warehouse=sink_secrets_yaml.get("warehouse"),
-                        database=sink_secrets_yaml.get("database"),
-                        schema=sink_secrets_yaml.get("schema"),
-                    )
                     sink = ConfiguredStorageSink(
                         ConfiguredStorageSinkType.SNOWFLAKE,
                         sink_id,
