@@ -7,7 +7,7 @@ Run from root directory with:
 
 """
 
-from dataclasses import asdict, fields
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from functools import wraps
 import logging
@@ -38,7 +38,8 @@ from amiadapters.configuration.base import (
 from amiadapters.configuration.env import set_global_aws_profile, set_global_aws_region
 from amiadapters.configuration.models import (
     IntermediateOutputType,
-    get_secrets_class_type,
+    SinkSecretsBase,
+    SourceSecretsBase,
 )
 from amiadapters.configuration.secrets import get_secrets, SecretType
 from amiadapters.events.base import EventSubscriber
@@ -607,52 +608,14 @@ def update_secret(
         ),
     ] = None,
     profile: ANNOTATION__PROFILE = None,
-    # Type-specific options
-    account: Annotated[str, typer.Option(help="Snowflake account name.")] = None,
-    user: Annotated[
-        str, typer.Option(help="Snowflake user name or other user name.")
-    ] = None,
-    password: Annotated[
-        str, typer.Option(help="Snowflake password or other password.")
-    ] = None,
-    ssh_key: Annotated[
-        str,
+    # Type-specific secrets
+    secrets: Annotated[
+        List[str],
         typer.Option(
-            help="Path to private SSH key used for Snowflake or other authentication."
+            "--secret",
+            help="Type-specific secret as key=value (repeatable)",
         ),
-    ] = None,
-    role: Annotated[str, typer.Option(help="Snowflake role name.")] = None,
-    warehouse: Annotated[str, typer.Option(help="Snowflake warehouse name.")] = None,
-    database: Annotated[str, typer.Option(help="Snowflake database name.")] = None,
-    schema: Annotated[str, typer.Option(help="Snowflake schema name.")] = None,
-    api_key: Annotated[str, typer.Option(help="API key, e.g. for Subeca.")] = None,
-    sftp_user: Annotated[str, typer.Option(help="SFTP user, e.g. for Aclara.")] = None,
-    sftp_password: Annotated[
-        str, typer.Option(help="SFTP password, e.g. for Aclara.")
-    ] = None,
-    ssh_tunnel_username: Annotated[
-        str, typer.Option(help="SSH tunnel username, e.g. for Metersense.")
-    ] = None,
-    ssh_tunnel_private_key: Annotated[
-        str,
-        typer.Option(
-            help="Path to file with SSH tunnel private key, e.g. for Metersense. We read the file's contents and store the contents in the secrets system."
-        ),
-    ] = None,
-    database_db_name: Annotated[
-        str, typer.Option(help="Name of database, e.g. for Metersense.")
-    ] = None,
-    database_user: Annotated[
-        str, typer.Option(help="Database username, e.g. for Metersense.")
-    ] = None,
-    database_password: Annotated[
-        str, typer.Option(help="Database password, e.g. for Metersense.")
-    ] = None,
-    site_id: Annotated[str, typer.Option(help="Site ID, e.g. for Neptune.")] = None,
-    client_id: Annotated[str, typer.Option(help="Client ID, e.g. for Neptune.")] = None,
-    client_secret: Annotated[
-        str, typer.Option(help="Client secret, e.g. for Neptune.")
-    ] = None,
+    ] = [],
 ):
     """
     Creates or updates a secret. Matches on secret_type+secret_name for update, else adds new secret.
@@ -666,69 +629,30 @@ def update_secret(
     if not sink_type and not source_type:
         raise typer.BadParameter("Must specify one of sink_type or source_type.")
 
+    # Set secret type based on which type argument is provided
     secret_type = SecretType.SOURCES.value if source_type else SecretType.SINKS.value
 
-    if secret_type == SecretType.SOURCES.value and source_type not in [
-        "subeca",
-        "aclara",
-        "beacon_360",
-        "sentryx",
-        "metersense",
-        "xylem_moulton_niguel",
-        "neptune",
-    ]:
-        raise typer.BadParameter(
-            "source_type must be specified as one of ['subeca', 'aclara', 'beacon_360', 'sentryx', 'metersense', 'xylem_moulton_niguel', 'neptune'] if secret_type is 'source'"
-        )
-    if secret_type == SecretType.SINKS.value and sink_type not in ["snowflake"]:
-        raise typer.BadParameter(
-            "sink_type must be specified as 'snowflake' if secret_type is 'sink'"
-        )
+    # Parse the key=value pairs into a dictionary. These are the type-specific secrets.
+    new_secrets = parse_kv_pairs(secrets)
 
-    # dataclass that represents this secret, e.g. SubecaSecrets, SnowflakeSecrets, etc
-    secrets_dataclass = get_secrets_class_type(
-        source_type if secret_type == SecretType.SOURCES.value else sink_type
-    )
-    required_fields = fields(secrets_dataclass)
+    # For large secrets like SSH keys, allow user to pass in path to file instead of raw key
+    for key in ["ssh_tunnel_private_key", "ssh_key"]:
+        if (
+            key in new_secrets
+            and "\n" not in new_secrets[key]
+            and len(new_secrets[key]) < 500
+        ):
+            try:
+                with open(new_secrets[key], "r") as f:
+                    new_secrets[key] = f.read().strip()
+            except FileNotFoundError:
+                pass  # Assume it's the raw key if file not found
 
-    type_specific_options = {
-        "account": account,
-        "user": user,
-        "password": password,
-        "role": role,
-        "warehouse": warehouse,
-        "database": database,
-        "schema": schema,
-        "api_key": api_key,
-        "sftp_user": sftp_user,
-        "sftp_password": sftp_password,
-        "ssh_tunnel_username": ssh_tunnel_username,
-        "database_db_name": database_db_name,
-        "database_user": database_user,
-        "database_password": database_password,
-        "site_id": site_id,
-        "client_id": client_id,
-        "client_secret": client_secret,
-    }
-    if ssh_tunnel_private_key:
-        # Allow user to pass in path to private key file instead of raw key
-        with open(ssh_tunnel_private_key, "r") as f:
-            type_specific_options["ssh_tunnel_private_key"] = f.read().strip()
-    if ssh_key:
-        # Allow user to pass in path to Snowflake ssh key file instead of raw key
-        with open(ssh_key, "r") as f:
-            type_specific_options["ssh_key"] = f.read().strip()
-
-    missing_fields = [
-        f.name for f in required_fields if type_specific_options.get(f.name) is None
-    ]
-    if missing_fields:
-        raise typer.BadParameter(f"Missing values for: {', '.join(missing_fields)}")
-
-    # Instantiate the dataclass with the type-specific fields that are required
-    secrets = secrets_dataclass(
-        **{f.name: type_specific_options[f.name] for f in required_fields}
-    )
+    # Create the appropriate secrets object based on secret type and adapter type
+    if secret_type == SecretType.SOURCES.value:
+        secrets = SourceSecretsBase.from_dict(source_type, new_secrets)
+    else:
+        secrets = SinkSecretsBase.from_dict(sink_type, new_secrets)
 
     update_secret_configuration(secret_type, secret_name, secrets)
 
@@ -753,6 +677,8 @@ def remove_secret(
     """
     if secret_type not in [SecretType.SOURCES.value, SecretType.SINKS.value]:
         raise typer.BadParameter('secret_type must be one of ["sources", "sinks"]')
+    if not secret_name:
+        raise typer.BadParameter("secret_name is required")
     remove_secret_configuration(secret_type, secret_name)
 
 
