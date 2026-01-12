@@ -150,7 +150,26 @@ class SourceSecretsBase(SecretsBase):
     Base class for AMI source secrets dataclasses.
     """
 
-    pass
+    @classmethod
+    def from_dict(
+        cls, source_type: str, raw_secret_config: dict
+    ) -> "SourceSecretsBase":
+        if not raw_secret_config:
+            raise ValueError(f"Found no secrets for source type {source_type}")
+
+        secret_cls = ConfiguredAMISourceTypes.get_secret_type_for_source_type(
+            source_type
+        )
+
+        # Copy so we don't mutate caller data
+        kwargs = dict(raw_secret_config)
+        config = secret_cls(**kwargs)
+        config.validate()
+
+        return config
+
+    def validate(self) -> None:
+        return
 
 
 @dataclass

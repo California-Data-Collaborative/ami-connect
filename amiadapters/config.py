@@ -16,23 +16,16 @@ from amiadapters.adapters.xylem_sensus import XylemSensusAdapter
 from amiadapters.alerts.base import AmiConnectDagFailureNotifier
 from amiadapters.configuration.base import create_snowflake_from_secrets
 from amiadapters.configuration.models import (
-    AclaraSecrets,
     BackfillConfiguration,
-    Beacon360Secrets,
     ConfiguredStorageSink,
     IntermediateOutputType,
     LocalIntermediateOutputControllerConfiguration,
-    MetersenseSecrets,
-    NeptuneSecrets,
     NotificationsConfiguration,
     PipelineConfiguration,
     S3IntermediateOutputControllerConfiguration,
-    SentryxSecrets,
     SinkSecretsBase,
     SourceConfigBase,
-    SubecaSecrets,
-    XylemMoultonNiguelSecrets,
-    XylemSensusSecrets,
+    SourceSecretsBase,
 )
 from amiadapters.configuration.database import get_configuration
 from amiadapters.configuration.env import (
@@ -149,7 +142,7 @@ class AMIAdapterConfiguration:
 
         all_sinks_by_id = {s.id: sink for s in all_sinks}
 
-        # Task output controller
+        # Parse the task output controller
         if pipeline_configuration is None:
             raise ValueError("Missing pipeline configuration")
         task_output_type = pipeline_configuration.intermediate_output_type
@@ -170,61 +163,11 @@ class AMIAdapterConfiguration:
         sources = []
         for source in configured_sources:
             org_id = source.get("org_id")
-            type = source.get("type")
+            source_type = source.get("type")
 
             # Parse secrets for data source
             this_source_secrets = configured_secrets.get("sources", {}).get(org_id)
-            if this_source_secrets is None:
-                raise ValueError(f"No secrets found for org_id: {org_id}")
-            match type:
-                case ConfiguredAMISourceTypes.ACLARA.value.type:
-                    secrets = AclaraSecrets(
-                        this_source_secrets.get("sftp_user"),
-                        this_source_secrets.get("sftp_password"),
-                    )
-                case ConfiguredAMISourceTypes.BEACON_360.value.type:
-                    secrets = Beacon360Secrets(
-                        this_source_secrets.get("user"),
-                        this_source_secrets.get("password"),
-                    )
-                case ConfiguredAMISourceTypes.METERSENSE.value.type:
-                    secrets = MetersenseSecrets(
-                        this_source_secrets.get("ssh_tunnel_private_key"),
-                        this_source_secrets.get("ssh_tunnel_username"),
-                        this_source_secrets.get("database_db_name"),
-                        this_source_secrets.get("database_user"),
-                        this_source_secrets.get("database_password"),
-                    )
-                case ConfiguredAMISourceTypes.NEPTUNE.value.type:
-                    secrets = NeptuneSecrets(
-                        this_source_secrets.get("site_id"),
-                        this_source_secrets.get("api_key"),
-                        this_source_secrets.get("client_id"),
-                        this_source_secrets.get("client_secret"),
-                    )
-                case ConfiguredAMISourceTypes.SENTRYX.value.type:
-                    secrets = SentryxSecrets(
-                        this_source_secrets.get("api_key"),
-                    )
-                case ConfiguredAMISourceTypes.SUBECA.value.type:
-                    secrets = SubecaSecrets(
-                        this_source_secrets.get("api_key"),
-                    )
-                case ConfiguredAMISourceTypes.XYLEM_MOULTON_NIGUEL.value.type:
-                    secrets = XylemMoultonNiguelSecrets(
-                        this_source_secrets.get("ssh_tunnel_private_key"),
-                        this_source_secrets.get("ssh_tunnel_username"),
-                        this_source_secrets.get("database_db_name"),
-                        this_source_secrets.get("database_user"),
-                        this_source_secrets.get("database_password"),
-                    )
-                case ConfiguredAMISourceTypes.XYLEM_SENSUS.value.type:
-                    secrets = XylemSensusSecrets(
-                        this_source_secrets.get("sftp_user"),
-                        this_source_secrets.get("sftp_password"),
-                    )
-                case _:
-                    secrets = None
+            secrets = SourceSecretsBase.from_dict(source_type, this_source_secrets)
 
             # Join any sinks tied to this source
             sink_ids = source.get("sinks", [])
@@ -235,10 +178,13 @@ class AMIAdapterConfiguration:
                     raise ValueError(f"Unrecognized sink {sink_id} for source {org_id}")
                 sinks.append(sink)
 
+            # Join all configuration dictionaries together
             raw_source_config = source.copy()
             raw_source_config["secrets"] = secrets
             raw_source_config["sinks"] = sinks
             raw_source_config["task_output_controller"] = task_output_controller
+
+            # Create the configured source
             configured_source = SourceConfigBase.from_dict(raw_source_config)
 
             if any(s.org_id == configured_source.org_id for s in sources):
@@ -375,7 +321,6 @@ class AMIAdapterConfiguration:
                             source.sinks,
                         )
                     )
-                    pass
                 case ConfiguredAMISourceTypes.SENTRYX.value.type:
                     adapters.append(
                         SentryxAdapter(
