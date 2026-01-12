@@ -20,7 +20,6 @@ from amiadapters.configuration.models import (
     BackfillConfiguration,
     Beacon360Secrets,
     ConfiguredStorageSink,
-    ConfiguredStorageSinkType,
     IntermediateOutputType,
     LocalIntermediateOutputControllerConfiguration,
     MetersenseSecrets,
@@ -142,20 +141,10 @@ class AMIAdapterConfiguration:
         for sink in configured_sinks:
             sink_id = sink.get("id")
             sink_type = sink.get("type")
-            checks = sink.get("checks")
             sink_secrets = SinkSecretsBase.from_dict(
                 sink_type, configured_secrets.get("sinks", {}).get(sink_id, {})
             )
-            match sink_type:
-                case ConfiguredStorageSinkType.SNOWFLAKE:
-                    sink = ConfiguredStorageSink(
-                        ConfiguredStorageSinkType.SNOWFLAKE,
-                        sink_id,
-                        sink_secrets,
-                        data_quality_check_names=checks,
-                    )
-                case _:
-                    raise ValueError(f"Unrecognized sink type {sink_type}")
+            sink = ConfiguredStorageSink.from_dict(sink, sink_secrets)
             all_sinks.append(sink)
 
         all_sinks_by_id = {s.id: sink for s in all_sinks}

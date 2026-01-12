@@ -109,7 +109,7 @@ class SinkSecretsBase(SecretsBase):
             raise ValueError(f"Found no secrets for sink type {sink_type}")
 
         match sink_type:
-            case ConfiguredStorageSinkType.SNOWFLAKE:
+            case ConfiguredStorageSinkType.SNOWFLAKE.value:
                 secret_cls = SnowflakeSecrets
             case _:
                 raise ValueError(f"Unrecognized sink type {sink_type}")
@@ -214,7 +214,7 @@ def get_secrets_class_type(secret_type: str):
 ###############################################################################
 # Storage sinks
 ###############################################################################
-class ConfiguredStorageSinkType:
+class ConfiguredStorageSinkType(str, Enum):
     SNOWFLAKE = "snowflake"
 
 
@@ -231,16 +231,44 @@ class ConfiguredStorageSink:
         secrets: Union[SnowflakeSecrets],
         data_quality_check_names: List = None,
     ):
-        self.type = self._type(type)
-        self.id = self._id(id)
-        self.secrets = self._secrets(secrets)
+        self.type = type
+        self.id = id
+        self.secrets = secrets
         self.data_quality_check_names = data_quality_check_names or []
+
+    @classmethod
+    def from_dict(
+        cls, raw_sink_config: dict, secrets: SinkSecretsBase
+    ) -> "ConfiguredStorageSink":
+        data_quality_check_names = raw_sink_config.get("checks", [])
+        sink_id = raw_sink_config.get("id")
+        sink_type = raw_sink_config.get("type", "").lower()
+        config = cls(
+            type=sink_type,
+            id=sink_id,
+            secrets=secrets,
+            data_quality_check_names=data_quality_check_names,
+        )
+        config.validate()
+        return config
+
+    def validate(self) -> None:
+        if id is None:
+            raise ValueError("Storage sink must have id")
+        if not self.type in ConfiguredStorageSinkType:
+            raise ValueError(
+                f"Invalid storage sink type: {self.type} for sink {self.id}"
+            )
+        if self.type == ConfiguredStorageSinkType.SNOWFLAKE.value and not isinstance(
+            self.secrets, SnowflakeSecrets
+        ):
+            raise ValueError(f"Unrecognized secret type for sink type {self.type}")
 
     def connection(self):
         from amiadapters.configuration.base import create_snowflake_connection
 
         match self.type:
-            case ConfiguredStorageSinkType.SNOWFLAKE:
+            case ConfiguredStorageSinkType.SNOWFLAKE.value:
                 return create_snowflake_connection(
                     account=self.secrets.account,
                     user=self.secrets.user,
@@ -271,25 +299,6 @@ class ConfiguredStorageSink:
                     f"Unrecognized data quality check name: {name}. Choices are: {", ".join(checks_by_name.keys())}"
                 )
         return result
-
-    def _type(self, type: str) -> str:
-        if type in {
-            ConfiguredStorageSinkType.SNOWFLAKE,
-        }:
-            return type
-        raise ValueError(f"Unrecognized storage sink type: {type}")
-
-    def _id(self, id: str) -> str:
-        if id is None:
-            raise ValueError("Storage sink must have id")
-        return id
-
-    def _secrets(self, secrets: Union[SnowflakeSecrets]) -> Union[SnowflakeSecrets]:
-        if self.type == ConfiguredStorageSinkType.SNOWFLAKE and isinstance(
-            secrets, SnowflakeSecrets
-        ):
-            return secrets
-        raise ValueError(f"Unrecognized secret type for sink type {self.type}")
 
 
 ###############################################################################
