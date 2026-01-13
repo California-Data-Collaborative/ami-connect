@@ -1,5 +1,5 @@
 from abc import ABC
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from enum import Enum
 import json
@@ -70,6 +70,50 @@ class SSHTunnelToDatabaseConfiguration:
     ssh_tunnel_key_path: str
     database_host: str
     database_port: str
+
+
+##############################################################################
+# Metrics / Telemetry
+##############################################################################
+class MetricsBackendType(str, Enum):
+    NOOP = "noop"
+    CLOUDWATCH = "cloudwatch"
+
+
+@dataclass
+class MetricsConfigurationBase:
+    """
+    Configuration for a metrics backend that reports stats
+    about this system.
+    """
+
+    @classmethod
+    def from_dict(cls, raw_metrics_config: dict) -> "MetricsConfigurationBase":
+        if not raw_metrics_config:
+            raw_metrics_config["type"] = MetricsBackendType.NOOP.value
+
+        if not raw_metrics_config.get("type"):
+            raise ValueError("Metrics configuration missing type")
+
+        match config_type := raw_metrics_config["type"].lower():
+            case MetricsBackendType.NOOP.value:
+                config_cls = NoopMetricsConfiguration
+            case _:
+                raise ValueError(
+                    f"Unrecognized metrics configuration type {config_type}"
+                )
+
+        metrics_config = config_cls(**raw_metrics_config)
+        metrics_config.validate()
+        return metrics_config
+
+    def validate(self) -> None:
+        pass
+
+
+@dataclass
+class NoopMetricsConfiguration:
+    pass
 
 
 ##############################################################################
@@ -226,8 +270,8 @@ class XylemSensusSecrets(SourceSecretsBase):
     sftp_password: str
 
 
-def get_secrets_class_type(secret_type: str):
-    return ConfiguredAMISourceTypes.get_secret_type_for_source_type(secret_type)
+def get_secrets_class_type(source_type: str):
+    return ConfiguredAMISourceTypes.get_secret_type_for_source_type(source_type)
 
 
 ###############################################################################

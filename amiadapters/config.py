@@ -38,6 +38,13 @@ from amiadapters.configuration.secrets import get_secrets
 
 
 class AMIAdapterConfiguration:
+    """
+    This class ties together the various configuration pieces needed to run
+    AMI Adapters for different data sources. It has code that reads from YAML
+    files or a database to build out the configuration. Once instantiated, it
+    can produce AMI Adapter instances based on the configuration, plus a few
+    other objects used in the pipeline.
+    """
 
     def __init__(
         self,
