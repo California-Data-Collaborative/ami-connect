@@ -98,6 +98,8 @@ class MetricsConfigurationBase:
         match config_type := raw_metrics_config["type"].lower():
             case MetricsBackendType.NOOP.value:
                 config_cls = NoopMetricsConfiguration
+            case MetricsBackendType.CLOUDWATCH.value:
+                config_cls = CloudwatchMetricsConfiguration
             case _:
                 raise ValueError(
                     f"Unrecognized metrics configuration type {config_type}"
@@ -112,8 +114,14 @@ class MetricsConfigurationBase:
 
 
 @dataclass
-class NoopMetricsConfiguration:
+class NoopMetricsConfiguration(MetricsConfigurationBase):
     pass
+
+
+@dataclass
+class CloudwatchMetricsConfiguration(MetricsConfigurationBase):
+
+    namespace: str = "ami-connect"
 
 
 ##############################################################################
@@ -481,7 +489,7 @@ class SourceConfigBase:
         # ---- end transforms ----
 
         # TODO derive from configuration
-        kwargs["metrics"] = NoopMetricsConfiguration()
+        kwargs["metrics"] = CloudwatchMetricsConfiguration()
 
         config = config_cls(**kwargs)
         config.validate()
