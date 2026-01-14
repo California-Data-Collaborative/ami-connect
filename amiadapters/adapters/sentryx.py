@@ -156,6 +156,7 @@ class SentryxAdapter(BaseAMIAdapter):
         org_timezone: str,
         pipeline_configuration,
         configured_task_output_controller,
+        configured_metrics,
         configured_sinks,
         utility_name: str = None,
     ):
@@ -170,6 +171,7 @@ class SentryxAdapter(BaseAMIAdapter):
             org_timezone,
             pipeline_configuration,
             configured_task_output_controller,
+            configured_metrics,
             configured_sinks,
             RawSnowflakeLoader.with_table_loaders(
                 [

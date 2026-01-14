@@ -137,6 +137,7 @@ class TestBeacon360Adapter(BaseTestCase):
             org_id="this-org",
             org_timezone=pytz.timezone("Europe/Rome"),
             configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
+            configured_metrics=self.TEST_METRICS_CONFIGURATION,
             configured_sinks=[],
             cache_output_folder="/tmp/output",
         )

@@ -208,6 +208,7 @@ class MetersenseAdapter(BaseAMIAdapter):
         org_timezone,
         pipeline_configuration,
         configured_task_output_controller,
+        configured_metrics,
         ssh_tunnel_server_host,
         ssh_tunnel_username,
         ssh_tunnel_key_path,
@@ -244,6 +245,7 @@ class MetersenseAdapter(BaseAMIAdapter):
             org_timezone,
             pipeline_configuration,
             configured_task_output_controller,
+            configured_metrics,
             configured_sinks,
             METERSENSE_RAW_SNOWFLAKE_LOADER,
         )

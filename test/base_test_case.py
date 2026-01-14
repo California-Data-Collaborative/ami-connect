@@ -2,9 +2,10 @@ import logging
 from pathlib import Path
 import unittest
 
-from amiadapters.configuration.models import PipelineConfiguration
 from amiadapters.configuration.models import (
     LocalIntermediateOutputControllerConfiguration,
+    NoopMetricsConfiguration,
+    PipelineConfiguration,
 )
 
 
@@ -19,6 +20,7 @@ class BaseTestCase(unittest.TestCase):
         should_run_post_processor=True,
         should_publish_load_finished_events=False,
     )
+    TEST_METRICS_CONFIGURATION = NoopMetricsConfiguration()
     TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION = (
         LocalIntermediateOutputControllerConfiguration("/tmp/output")
     )

@@ -88,6 +88,7 @@ class XylemSensusAdapter(BaseAMIAdapter):
         sftp_user,
         sftp_password,
         configured_task_output_controller,
+        configured_metrics,
         configured_sinks,
     ):
         self.sftp_host = sftp_host
@@ -101,6 +102,7 @@ class XylemSensusAdapter(BaseAMIAdapter):
             org_timezone,
             pipeline_configuration,
             configured_task_output_controller,
+            configured_metrics,
             configured_sinks,
             RawSnowflakeLoader.with_table_loaders([XylemSensusBaseTableLoader()]),
         )

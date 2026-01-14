@@ -38,6 +38,13 @@ from amiadapters.configuration.secrets import get_secrets
 
 
 class AMIAdapterConfiguration:
+    """
+    This class ties together the various configuration pieces needed to run
+    AMI Adapters for different data sources. It has code that reads from YAML
+    files or a database to build out the configuration. Once instantiated, it
+    can produce AMI Adapter instances based on the configuration, plus a few
+    other objects used in the pipeline.
+    """
 
     def __init__(
         self,
@@ -264,6 +271,7 @@ class AMIAdapterConfiguration:
                             source.secrets.sftp_user,
                             source.secrets.sftp_password,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                         )
                     )
@@ -277,6 +285,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                         )
                     )
@@ -287,6 +296,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.metrics,
                             ssh_tunnel_server_host=source.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
                             ssh_tunnel_key_path=source.ssh_tunnel_key_path,
@@ -318,6 +328,7 @@ class AMIAdapterConfiguration:
                             source.secrets.client_id,
                             source.secrets.client_secret,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                         )
                     )
@@ -329,6 +340,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                             utility_name=source.utility_name,
                         )
@@ -342,6 +354,7 @@ class AMIAdapterConfiguration:
                             source.api_url,
                             source.secrets.api_key,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                         )
                     )
@@ -352,6 +365,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.metrics,
                             ssh_tunnel_server_host=source.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
                             ssh_tunnel_key_path=source.ssh_tunnel_key_path,
@@ -377,6 +391,7 @@ class AMIAdapterConfiguration:
                             source.secrets.sftp_user,
                             source.secrets.sftp_password,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                         )
                     )

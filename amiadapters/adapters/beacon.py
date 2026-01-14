@@ -16,6 +16,7 @@ from amiadapters.adapters.base import (
     ScheduledExtract,
     STANDARD_DAILY_SCHEDULED_EXTRACT,
 )
+from amiadapters.configuration.models import MetricsConfigurationBase
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader, RawSnowflakeTableLoader
@@ -103,6 +104,7 @@ class Beacon360Adapter(BaseAMIAdapter):
         org_timezone: DstTzInfo,
         pipeline_configuration,
         configured_task_output_controller,
+        configured_metrics: MetricsConfigurationBase,
         configured_sinks,
         cache_output_folder: str = "./output",
     ):
@@ -115,6 +117,7 @@ class Beacon360Adapter(BaseAMIAdapter):
             org_timezone,
             pipeline_configuration,
             configured_task_output_controller,
+            configured_metrics,
             configured_sinks,
             BEACON_RAW_SNOWFLAKE_LOADER,
         )

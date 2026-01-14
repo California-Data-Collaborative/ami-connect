@@ -73,6 +73,7 @@ class SubecaAdapter(BaseAMIAdapter):
         api_url: str,
         api_key: str,
         configured_task_output_controller,
+        configured_metrics,
         configured_sinks,
     ):
         self.api_url = api_url
@@ -82,6 +83,7 @@ class SubecaAdapter(BaseAMIAdapter):
             org_timezone,
             pipeline_configuration,
             configured_task_output_controller,
+            configured_metrics,
             configured_sinks,
             SUBECA_RAW_SNOWFLAKE_LOADER,
         )
