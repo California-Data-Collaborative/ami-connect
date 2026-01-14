@@ -423,6 +423,7 @@ class SourceConfigBase:
     secrets: SecretsBase
     sinks: List[ConfiguredStorageSink]
     task_output_controller: IntermediateOutputControllerConfiguration
+    metrics: MetricsConfigurationBase
 
     def validate(self) -> None:
         """
@@ -478,6 +479,9 @@ class SourceConfigBase:
         if "database_port" in kwargs:
             kwargs["database_port"] = int(kwargs["database_port"])
         # ---- end transforms ----
+
+        # TODO derive from configuration
+        kwargs["metrics"] = NoopMetricsConfiguration()
 
         config = config_cls(**kwargs)
         config.validate()

@@ -11,8 +11,10 @@ from amiadapters.configuration.models import BackfillConfiguration
 from amiadapters.configuration.models import ConfiguredStorageSink
 from amiadapters.configuration.models import ConfiguredStorageSinkType
 from amiadapters.configuration.models import IntermediateOutputType
+from amiadapters.configuration.models import MetricsConfigurationBase
 from amiadapters.configuration.models import PipelineConfiguration
 from amiadapters.events.base import EventPublisher
+from amiadapters.metrics.base import Metrics
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
@@ -51,6 +53,7 @@ class BaseAMIAdapter(ABC):
         org_timezone: DstTzInfo,
         pipeline_configuration: PipelineConfiguration,
         configured_task_output_controller,
+        configured_metrics: MetricsConfigurationBase,
         configured_sinks: List[ConfiguredStorageSink] = None,
         raw_snowflake_loader: RawSnowflakeLoader = None,
     ):
@@ -64,6 +67,7 @@ class BaseAMIAdapter(ABC):
         self.output_controller = self._create_task_output_controller(
             configured_task_output_controller, org_id
         )
+        self.metrics = Metrics.from_configuration(configured_metrics)
         self.storage_sinks = self._create_storage_sinks(
             configured_sinks,
             self.org_id,

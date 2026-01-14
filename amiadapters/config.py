@@ -271,6 +271,7 @@ class AMIAdapterConfiguration:
                             source.secrets.sftp_user,
                             source.secrets.sftp_password,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                         )
                     )
@@ -284,6 +285,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                         )
                     )
@@ -294,6 +296,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.metrics,
                             ssh_tunnel_server_host=source.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
                             ssh_tunnel_key_path=source.ssh_tunnel_key_path,
@@ -336,6 +339,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                             utility_name=source.utility_name,
                         )
@@ -349,6 +353,7 @@ class AMIAdapterConfiguration:
                             source.api_url,
                             source.secrets.api_key,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                         )
                     )
@@ -359,6 +364,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.metrics,
                             ssh_tunnel_server_host=source.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
                             ssh_tunnel_key_path=source.ssh_tunnel_key_path,
@@ -384,6 +390,7 @@ class AMIAdapterConfiguration:
                             source.secrets.sftp_user,
                             source.secrets.sftp_password,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                         )
                     )
