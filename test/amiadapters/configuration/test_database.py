@@ -146,6 +146,7 @@ class TestDatabase(BaseTestCase):
                     "intermediate_output_local_output_path": None,
                     "run_post_processors": True,
                     "publish_load_finished_events": False,
+                    "metrics_type": None,
                 },
             ]
         elif table_name == "configuration_notifications":

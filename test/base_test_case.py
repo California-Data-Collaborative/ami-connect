@@ -19,6 +19,7 @@ class BaseTestCase(unittest.TestCase):
         intermediate_output_local_output_path="/tmp/output",
         should_run_post_processor=True,
         should_publish_load_finished_events=False,
+        metrics_type="noop",
     )
     TEST_METRICS_CONFIGURATION = NoopMetricsConfiguration()
     TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION = (
