@@ -328,6 +328,7 @@ class AMIAdapterConfiguration:
                             source.secrets.client_id,
                             source.secrets.client_secret,
                             source.task_output_controller,
+                            source.metrics,
                             source.sinks,
                         )
                     )

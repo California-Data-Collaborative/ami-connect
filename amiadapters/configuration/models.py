@@ -382,7 +382,7 @@ class LocalIntermediateOutputControllerConfiguration(
     def _output_folder(self, output_folder: str) -> str:
         if output_folder is None:
             raise ValueError(
-                "ConfiguredLocalTaskOutputController must have output_folder"
+                "LocalIntermediateOutputControllerConfiguration must have output_folder"
             )
         return output_folder
 
