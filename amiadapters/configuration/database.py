@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 
 from amiadapters.configuration.models import (
     ConfiguredAMISourceTypes,
+    MetricsBackendType,
     PipelineConfiguration,
     SourceConfigBase,
 )
@@ -392,6 +393,19 @@ def update_post_processor_configuration(connection, should_run_post_processor: b
         SET run_post_processors = ?
     """,
         (should_run_post_processor,),
+    )
+
+
+def update_metrics_configuration(connection, metrics_configuration: dict):
+    cursor = connection.cursor()
+    _ensure_pipeline_config_row_exists(cursor)
+    metrics_type = metrics_configuration.get("type")  # defaults to noop
+    cursor.execute(
+        """
+        UPDATE configuration_pipeline
+        SET metrics_type = ?
+    """,
+        (metrics_type,),
     )
 
 

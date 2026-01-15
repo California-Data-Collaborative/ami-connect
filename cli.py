@@ -28,6 +28,7 @@ from amiadapters.configuration.base import (
     remove_sink_configuration,
     remove_source_configuration,
     update_backfill_configuration,
+    update_metrics_configuration,
     update_notification_configuration,
     update_post_processor_configuration,
     update_secret_configuration,
@@ -38,6 +39,7 @@ from amiadapters.configuration.base import (
 from amiadapters.configuration.env import set_global_aws_profile, set_global_aws_region
 from amiadapters.configuration.models import (
     IntermediateOutputType,
+    MetricsBackendType,
     SinkSecretsBase,
     SourceSecretsBase,
 )
@@ -442,6 +444,24 @@ def update_post_processor(
     because we erase and recreate entire task output configuration when we make this update.
     """
     update_post_processor_configuration(should_run)
+
+
+@config_app.command()
+@sets_environment_from_profile
+def update_metrics(
+    type: Annotated[
+        MetricsBackendType,
+        typer.Argument(help="Type of metrics backend to use."),
+    ],
+    profile: Annotated[str, typer.Option(help=HELP_MESSAGE__PROFILE)] = None,
+):
+    """
+    Updates metrics configuration in database.
+    """
+    if not type:
+        raise typer.BadParameter("type is required")
+    config = {"type": type.value}
+    update_metrics_configuration(config)
 
 
 @config_app.command()
