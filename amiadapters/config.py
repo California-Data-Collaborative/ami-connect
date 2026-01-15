@@ -20,6 +20,7 @@ from amiadapters.configuration.models import (
     ConfiguredStorageSink,
     IntermediateOutputType,
     LocalIntermediateOutputControllerConfiguration,
+    MetricsConfigurationBase,
     NotificationsConfiguration,
     PipelineConfiguration,
     S3IntermediateOutputControllerConfiguration,
@@ -89,6 +90,7 @@ class AMIAdapterConfiguration:
             should_publish_load_finished_events=pipeline.get(
                 "should_publish_load_finished_events", True
             ),
+            metrics_type=pipeline.get("metrics_type"),
         )
 
         return cls._make_instance(
@@ -166,6 +168,11 @@ class AMIAdapterConfiguration:
             case _:
                 raise ValueError(f"Unrecognized task output type {task_output_type}")
 
+        # Parse metrics configuration
+        metrics = MetricsConfigurationBase.from_dict(
+            {"type": pipeline_configuration.metrics_type}
+        )
+
         # Parse all configured sources
         sources = []
         for source in configured_sources:
@@ -190,6 +197,7 @@ class AMIAdapterConfiguration:
             raw_source_config["secrets"] = secrets
             raw_source_config["sinks"] = sinks
             raw_source_config["task_output_controller"] = task_output_controller
+            raw_source_config["metrics"] = metrics
 
             # Create the configured source
             configured_source = SourceConfigBase.from_dict(raw_source_config)

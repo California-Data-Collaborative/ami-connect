@@ -12,6 +12,7 @@ from amiadapters.config import (
     find_config_yaml,
     find_secrets_yaml,
 )
+from amiadapters.configuration.models import NoopMetricsConfiguration
 from amiadapters.adapters.metersense import MetersenseAdapter
 from amiadapters.adapters.sentryx import SentryxAdapter
 from amiadapters.adapters.subeca import SubecaAdapter
@@ -34,6 +35,7 @@ class TestConfig(BaseTestCase):
         self.assertEqual("America/Los_Angeles", str(source.timezone))
         self.assertEqual(False, source.use_raw_data_cache)
         self.assertEqual("outputs", source.task_output_controller.output_folder)
+        self.assertEqual(NoopMetricsConfiguration(type="noop"), source.metrics)
         self.assertEqual("key", source.secrets.api_key)
 
         self.assertEqual(1, len(source.sinks))

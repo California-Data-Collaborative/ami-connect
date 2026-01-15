@@ -64,6 +64,15 @@ def update_post_processor_configuration(should_run_post_processor: bool):
     database.update_post_processor_configuration(connection, should_run_post_processor)
 
 
+def update_metrics_configuration(metrics_configuration: dict):
+    logger.info(
+        f"Updating metrics configuration in database to {metrics_configuration}"
+    )
+    all_secrets = secrets.get_secrets()
+    connection = create_snowflake_from_secrets(all_secrets)
+    database.update_metrics_configuration(connection, metrics_configuration)
+
+
 def update_backfill_configuration(new_backfill_configuration: dict):
     logger.info(
         f"Updating backfill configuration in database to {new_backfill_configuration}"
