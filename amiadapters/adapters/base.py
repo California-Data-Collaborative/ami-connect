@@ -130,6 +130,20 @@ class BaseAMIAdapter(ABC):
         """
         extract_outputs = self.output_controller.read_extract_outputs(run_id)
         transformed_meters, transformed_reads = self._transform(run_id, extract_outputs)
+        # TODO clean this up
+        self.metrics.incr(
+            "transform.meters_transformed",
+            len(transformed_meters),
+            tags={"org_id": self.org_id},
+        )
+        self.metrics.incr(
+            "transform.meter_reads_transformed",
+            len(transformed_reads),
+            tags={"org_id": self.org_id},
+        )
+        logger.info(
+            f"Transformed {len(transformed_meters)} meters for org {self.org_id}"
+        )
         self.output_controller.write_transformed_meters(run_id, transformed_meters)
         self.output_controller.write_transformed_meter_reads(run_id, transformed_reads)
 

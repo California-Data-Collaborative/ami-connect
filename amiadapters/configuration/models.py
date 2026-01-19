@@ -14,6 +14,11 @@ class IntermediateOutputType(str, Enum):
     S3 = "s3"  # Extract and Transform outputs go to S3 bucket
 
 
+class MetricsBackendType(str, Enum):
+    NOOP = "noop"
+    CLOUDWATCH = "cloudwatch"
+
+
 @dataclass
 class PipelineConfiguration:
     intermediate_output_type: IntermediateOutputType
@@ -22,6 +27,7 @@ class PipelineConfiguration:
     intermediate_output_local_output_path: str
     should_run_post_processor: bool
     should_publish_load_finished_events: bool
+    metrics_type: MetricsBackendType
 
 
 @dataclass
@@ -75,11 +81,6 @@ class SSHTunnelToDatabaseConfiguration:
 ##############################################################################
 # Metrics / Telemetry
 ##############################################################################
-class MetricsBackendType(str, Enum):
-    NOOP = "noop"
-    CLOUDWATCH = "cloudwatch"
-
-
 @dataclass
 class MetricsConfigurationBase:
     """
@@ -87,17 +88,18 @@ class MetricsConfigurationBase:
     about this system.
     """
 
+    type: MetricsBackendType = MetricsBackendType.NOOP
+
     @classmethod
     def from_dict(cls, raw_metrics_config: dict) -> "MetricsConfigurationBase":
-        if not raw_metrics_config:
-            raw_metrics_config["type"] = MetricsBackendType.NOOP.value
-
         if not raw_metrics_config.get("type"):
-            raise ValueError("Metrics configuration missing type")
+            raw_metrics_config["type"] = MetricsBackendType.NOOP.value
 
         match config_type := raw_metrics_config["type"].lower():
             case MetricsBackendType.NOOP.value:
                 config_cls = NoopMetricsConfiguration
+            case MetricsBackendType.CLOUDWATCH.value:
+                config_cls = CloudwatchMetricsConfiguration
             case _:
                 raise ValueError(
                     f"Unrecognized metrics configuration type {config_type}"
@@ -112,8 +114,15 @@ class MetricsConfigurationBase:
 
 
 @dataclass
-class NoopMetricsConfiguration:
+class NoopMetricsConfiguration(MetricsConfigurationBase):
     pass
+
+
+@dataclass
+class CloudwatchMetricsConfiguration(MetricsConfigurationBase):
+
+    namespace: str = "ami-connect"
+    cloudwatch_client: Any = None  # boto3 CloudWatch client, used for mocks in tests
 
 
 ##############################################################################
@@ -479,9 +488,6 @@ class SourceConfigBase:
         if "database_port" in kwargs:
             kwargs["database_port"] = int(kwargs["database_port"])
         # ---- end transforms ----
-
-        # TODO derive from configuration
-        kwargs["metrics"] = NoopMetricsConfiguration()
 
         config = config_cls(**kwargs)
         config.validate()

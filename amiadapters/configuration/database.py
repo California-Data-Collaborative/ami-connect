@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 
 from amiadapters.configuration.models import (
     ConfiguredAMISourceTypes,
+    MetricsBackendType,
     PipelineConfiguration,
     SourceConfigBase,
 )
@@ -119,6 +120,7 @@ def _parse_pipeline_configuration(all_config: dict) -> PipelineConfiguration:
         ],
         should_run_post_processor=row["run_post_processors"],
         should_publish_load_finished_events=row["publish_load_finished_events"],
+        metrics_type=row["metrics_type"],
     )
 
 
@@ -240,6 +242,7 @@ def _create_and_validate_source_config_from_dict(
     # The following are not configured using this function, so spoof them to satisfy the constructor
     c["secrets"] = None
     c["task_output_controller"] = None
+    c["metrics"] = None
     c["sinks"] = []
     new_source = cls.from_dict(c)
     new_source.validate()
@@ -393,17 +396,28 @@ def update_post_processor_configuration(connection, should_run_post_processor: b
     )
 
 
+def update_metrics_configuration(connection, metrics_configuration: dict):
+    cursor = connection.cursor()
+    _ensure_pipeline_config_row_exists(cursor)
+    metrics_type = metrics_configuration.get("type")  # defaults to noop
+    cursor.execute(
+        """
+        UPDATE configuration_pipeline
+        SET metrics_type = ?
+    """,
+        (metrics_type,),
+    )
+
+
 def _ensure_pipeline_config_row_exists(cursor):
     """
     Ensure there's at least one row in the pipeline config table (does nothing if there is already a row)
     """
-    cursor.execute(
-        """
+    cursor.execute("""
         INSERT INTO configuration_pipeline (id, intermediate_output_type, run_post_processors)
         SELECT 1, 's3', true
         WHERE NOT EXISTS (SELECT 1 FROM configuration_pipeline)
-        """
-    )
+        """)
 
 
 def update_backfill_configuration(connection, backfill_configuration: dict):

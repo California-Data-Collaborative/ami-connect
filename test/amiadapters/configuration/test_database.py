@@ -13,6 +13,7 @@ from amiadapters.configuration.database import (
     remove_sink_configuration,
     remove_source_configuration,
     update_backfill_configuration,
+    update_metrics_configuration,
     update_notification_configuration,
     update_post_processor_configuration,
     update_sink_configuration,
@@ -146,6 +147,7 @@ class TestDatabase(BaseTestCase):
                     "intermediate_output_local_output_path": None,
                     "run_post_processors": True,
                     "publish_load_finished_events": False,
+                    "metrics_type": None,
                 },
             ]
         elif table_name == "configuration_notifications":
@@ -186,6 +188,7 @@ class TestDatabase(BaseTestCase):
         )
         self.assertTrue(pipeline_config.should_run_post_processor)
         self.assertFalse(pipeline_config.should_publish_load_finished_events)
+        self.assertIsNone(pipeline_config.metrics_type)
         self.assertEqual(expected["notifications"], notifications)
         self.assertEqual(expected["backfills"], backfills)
 
@@ -256,6 +259,12 @@ class TestDatabase(BaseTestCase):
         query, params = self.mock_cursor.execute.call_args[0]
         self.assertIn("UPDATE configuration_pipeline", query)
         self.assertEqual(params, (True,))
+
+    def test_update_metrics_configuration(self):
+        update_metrics_configuration(self.mock_connection, {"type": "cloudwatch"})
+        args = self.mock_cursor.execute.call_args_list
+        self.assertEqual(len(args), 2)
+        self.assertIn("cloudwatch", args[1][0][1])
 
     def test_update_sink_configuration_missing_id_raises_value_error(self):
         config = {"type": "snowflake"}

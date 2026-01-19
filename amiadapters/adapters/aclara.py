@@ -16,7 +16,6 @@ from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterR
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader, RawSnowflakeTableLoader
 
-
 logger = logging.getLogger(__name__)
 
 
