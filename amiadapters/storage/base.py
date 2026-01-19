@@ -87,8 +87,7 @@ class BaseAMIDataQualityCheck(ABC):
         """
         # This is a hack to make python import the data quality check subclass
         # definitions, which adds them to cls.all_checks. We do this so that
-        # subclasses are automatically registered, but someday we might decide
-        # that's not worth the hackery.
+        # subclasses are automatically registered when DAGs are parsed.
         from amiadapters.storage import snowflake
 
         result = {}
