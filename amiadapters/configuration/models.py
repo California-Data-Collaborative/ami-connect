@@ -122,6 +122,7 @@ class NoopMetricsConfiguration(MetricsConfigurationBase):
 class CloudwatchMetricsConfiguration(MetricsConfigurationBase):
 
     namespace: str = "ami-connect"
+    cloudwatch_client: Any = None  # boto3 CloudWatch client, used for mocks in tests
 
 
 ##############################################################################

@@ -16,7 +16,8 @@ from amiadapters.configuration.models import (
 
 class MetricsBackend(ABC):
     """
-    Abstract base class for metrics backends
+    Abstract base class for metrics backends, which report telemetry data about
+    our system. Implementations can connect to different metrics systems, e.g. CloudWatch.
     """
 
     @abstractmethod
@@ -48,6 +49,10 @@ class MetricsBackend(ABC):
 
 
 class NoopMetricsBackend(MetricsBackend):
+    """
+    A no-op metrics backend that does nothing. This is the default backend.
+    """
+
     def incr(self, *args, **kwargs):
         pass
 
@@ -61,7 +66,8 @@ class NoopMetricsBackend(MetricsBackend):
 class Metrics:
     """
     Metrics client that delegates to the backend
-    configured by the pipeline.
+    configured by the pipeline. The application code uses this class
+    so that it is decoupled from the specific metrics backend implementation.
     """
 
     @classmethod
@@ -72,7 +78,7 @@ class Metrics:
         if isinstance(config, NoopMetricsConfiguration):
             return cls(backend=NoopMetricsBackend())
         elif isinstance(config, CloudwatchMetricsConfiguration):
-            return cls(backend=CloudWatchMetricsBackend(config.namespace))
+            return cls(backend=CloudWatchMetricsBackend(config))
         raise ValueError(f"Unrecognized metrics configuration type {type(config)}")
 
     def __init__(self, backend: MetricsBackend):
@@ -89,10 +95,13 @@ class Metrics:
 
 
 class CloudWatchMetricsBackend(MetricsBackend):
+    """
+    A metrics backend that reports metrics to AWS CloudWatch.
+    """
 
-    def __init__(self, namespace: str, cloudwatch_client=None):
-        self.namespace = namespace
-        if cloudwatch_client is None:
+    def __init__(self, config: CloudwatchMetricsConfiguration):
+        self.namespace = config.namespace
+        if config.cloudwatch_client is None:
             aws_profile_name = get_global_aws_profile()
             aws_region = get_global_aws_region()
             if aws_profile_name:
@@ -106,7 +115,7 @@ class CloudWatchMetricsBackend(MetricsBackend):
                 # IAM roles for authorization, e.g. on the Airflow server
                 self.client = boto3.client("cloudwatch", region_name=aws_region)
         else:
-            self.client = cloudwatch_client
+            self.client = config.cloudwatch_client
 
     def incr(self, name, value=1, tags=None):
         self._put(name, value, "Count", tags)

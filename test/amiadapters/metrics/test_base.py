@@ -1,11 +1,14 @@
 from unittest.mock import MagicMock
 
+from amiadapters.configuration.models import (
+    CloudwatchMetricsConfiguration,
+    NoopMetricsConfiguration,
+)
 from amiadapters.metrics.base import (
     CloudWatchMetricsBackend,
     Metrics,
     MetricsBackend,
     NoopMetricsBackend,
-    NoopMetricsConfiguration,
 )
 from test.base_test_case import BaseTestCase
 
@@ -45,6 +48,21 @@ class TestMetricsGauge(BaseTestCase):
         self.assertIsInstance(metrics._backend, NoopMetricsBackend)
 
 
+class TestMetricsClient(BaseTestCase):
+
+    def test_from_configuration_with_noop_metrics_configuration(self):
+        config = NoopMetricsConfiguration()
+        metrics = Metrics.from_configuration(config)
+        self.assertIsInstance(metrics._backend, NoopMetricsBackend)
+
+    def test_from_configuration_with_cloudwatch_metrics_configuration(self):
+
+        config = CloudwatchMetricsConfiguration(cloudwatch_client=MagicMock())
+        metrics = Metrics.from_configuration(config)
+        self.assertIsInstance(metrics._backend, CloudWatchMetricsBackend)
+        self.assertEqual(metrics._backend.namespace, "ami-connect")
+
+
 class TestNoopMetricsBackend(BaseTestCase):
     def setUp(self):
         self.noop_backend = NoopMetricsBackend()
@@ -64,7 +82,9 @@ class TestCloudWatchMetricsBackend(BaseTestCase):
         self.mock_client = MagicMock()
         self.namespace = "TestNamespace"
         self.cw_backend = CloudWatchMetricsBackend(
-            namespace=self.namespace, cloudwatch_client=self.mock_client
+            CloudwatchMetricsConfiguration(
+                namespace=self.namespace, cloudwatch_client=self.mock_client
+            )
         )
 
     def test_incr_calls_put_metric_data_with_count_unit(self):
