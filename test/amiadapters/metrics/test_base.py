@@ -45,6 +45,20 @@ class TestMetricsGauge(BaseTestCase):
         self.assertIsInstance(metrics._backend, NoopMetricsBackend)
 
 
+class TestNoopMetricsBackend(BaseTestCase):
+    def setUp(self):
+        self.noop_backend = NoopMetricsBackend()
+
+    def test_incr_noops(self):
+        self.noop_backend.incr("test.metric", 42.5, tags={"env": "prod"})
+
+    def test_timing_noops(self):
+        self.noop_backend.timing("test.metric", 42.5, tags={"env": "prod"})
+
+    def test_gauge_noops(self):
+        self.noop_backend.gauge("test.metric", 42.5, tags={"env": "prod"})
+
+
 class TestCloudWatchMetricsBackend(BaseTestCase):
     def setUp(self):
         self.mock_client = MagicMock()
