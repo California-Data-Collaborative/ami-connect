@@ -113,6 +113,9 @@ class Metrics:
             )
 
 
+NOOP_METRICS = Metrics.from_configuration(NoopMetricsConfiguration())
+
+
 class CloudWatchMetricsBackend(MetricsBackend):
     """
     A metrics backend that reports metrics to AWS CloudWatch.

@@ -76,6 +76,7 @@ class BaseAMIAdapter(ABC):
             self.org_id,
             self.org_timezone,
             raw_snowflake_loader,
+            self.metrics,
         )
 
     @abstractmethod
@@ -434,6 +435,7 @@ class BaseAMIAdapter(ABC):
         org_id: str,
         org_timezone: DstTzInfo,
         raw_snowflake_loader: RawSnowflakeLoader,
+        metrics: Metrics,
     ) -> List[BaseAMIStorageSink]:
         result = []
         configured_sinks = configured_sinks if configured_sinks else []
@@ -445,6 +447,7 @@ class BaseAMIAdapter(ABC):
                         org_timezone,
                         sink,
                         raw_snowflake_loader,
+                        metrics,
                     )
                 )
         return result

@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from amiadapters.configuration.models import ConfiguredStorageSink
+from amiadapters.metrics.base import Metrics
 from amiadapters.models import GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from datetime import datetime
@@ -16,8 +17,10 @@ class BaseAMIStorageSink(ABC):
     def __init__(
         self,
         sink_config: ConfiguredStorageSink,
+        metrics: Metrics,
     ):
         self.sink_config = sink_config
+        self.metrics = metrics
 
     @abstractmethod
     def store_raw(self, run_id: str, extract_outputs: ExtractOutput):
