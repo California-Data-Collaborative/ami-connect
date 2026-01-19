@@ -413,13 +413,11 @@ def _ensure_pipeline_config_row_exists(cursor):
     """
     Ensure there's at least one row in the pipeline config table (does nothing if there is already a row)
     """
-    cursor.execute(
-        """
+    cursor.execute("""
         INSERT INTO configuration_pipeline (id, intermediate_output_type, run_post_processors)
         SELECT 1, 's3', true
         WHERE NOT EXISTS (SELECT 1 FROM configuration_pipeline)
-        """
-    )
+        """)
 
 
 def update_backfill_configuration(connection, backfill_configuration: dict):

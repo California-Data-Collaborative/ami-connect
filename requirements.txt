@@ -3,7 +3,7 @@ charset-normalizer==3.4.1
 idna==3.10
 requests==2.32.4
 urllib3==2.6.3
-black==25.1.0
+black==26.1.0
 PyYAML==6.0.2
 boto3==1.38.5
 paramiko==3.5.1
