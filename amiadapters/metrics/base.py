@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
+import time
 from typing import Mapping, Optional
 from datetime import datetime, timezone
 
@@ -92,6 +94,23 @@ class Metrics:
 
     def timing(self, name, value_seconds, tags=None):
         self._backend.timing(name, value_seconds, tags)
+
+    @contextmanager
+    def timed_task(self, name, tags):
+        start = time.monotonic()
+        try:
+            yield
+            success = True
+        except Exception:
+            success = False
+            raise
+        finally:
+            duration = time.monotonic() - start
+            self.timing(
+                name,
+                duration,
+                tags={**tags, "success": str(success).lower()},
+            )
 
 
 class CloudWatchMetricsBackend(MetricsBackend):
