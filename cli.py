@@ -440,8 +440,7 @@ def update_post_processor(
     profile: Annotated[str, typer.Option(help=HELP_MESSAGE__PROFILE)] = None,
 ):
     """
-    Updates task output configuration in database. Assumes you're using S3 task output. Requires all arguments
-    because we erase and recreate entire task output configuration when we make this update.
+    Toggles post processor "should run" configuration in database.
     """
     update_post_processor_configuration(should_run)
 

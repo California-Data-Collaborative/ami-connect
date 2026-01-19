@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from amiadapters.configuration.models import ConfiguredStorageSink
+from amiadapters.metrics.base import Metrics
 from amiadapters.models import GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from datetime import datetime
@@ -16,8 +17,10 @@ class BaseAMIStorageSink(ABC):
     def __init__(
         self,
         sink_config: ConfiguredStorageSink,
+        metrics: Metrics,
     ):
         self.sink_config = sink_config
+        self.metrics = metrics
 
     @abstractmethod
     def store_raw(self, run_id: str, extract_outputs: ExtractOutput):
@@ -87,8 +90,7 @@ class BaseAMIDataQualityCheck(ABC):
         """
         # This is a hack to make python import the data quality check subclass
         # definitions, which adds them to cls.all_checks. We do this so that
-        # subclasses are automatically registered, but someday we might decide
-        # that's not worth the hackery.
+        # subclasses are automatically registered when DAGs are parsed.
         from amiadapters.storage import snowflake
 
         result = {}
