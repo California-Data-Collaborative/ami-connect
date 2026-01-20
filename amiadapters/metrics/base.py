@@ -36,6 +36,7 @@ class MetricsBackend(ABC):
         self,
         name: str,
         value: float,
+        unit: Optional[str] = "None",
         tags: Optional[Mapping[str, str]] = None,
     ) -> None:
         pass
@@ -47,21 +48,6 @@ class MetricsBackend(ABC):
         value_seconds: float,
         tags: Optional[Mapping[str, str]] = None,
     ) -> None:
-        pass
-
-
-class NoopMetricsBackend(MetricsBackend):
-    """
-    A no-op metrics backend that does nothing. This is the default backend.
-    """
-
-    def incr(self, *args, **kwargs):
-        pass
-
-    def gauge(self, *args, **kwargs):
-        pass
-
-    def timing(self, *args, **kwargs):
         pass
 
 
@@ -89,8 +75,8 @@ class Metrics:
     def incr(self, name, value=1, tags=None):
         self._backend.incr(name, value, tags)
 
-    def gauge(self, name, value, tags=None):
-        self._backend.gauge(name, value, tags)
+    def gauge(self, name, value, unit="None", tags=None):
+        self._backend.gauge(name, value, unit, tags)
 
     def timing(self, name, value_seconds, tags=None):
         self._backend.timing(name, value_seconds, tags)
@@ -111,6 +97,30 @@ class Metrics:
                 duration,
                 tags={**tags, "success": str(success).lower()},
             )
+
+
+def seconds_since(dt: datetime) -> float:
+    """
+    Helper function for calculating the number of seconds since a given datetime.
+    """
+    if isinstance(dt, str):
+        dt = datetime.fromisoformat(dt)
+    return (datetime.now(dt.tzinfo) - dt).total_seconds()
+
+
+class NoopMetricsBackend(MetricsBackend):
+    """
+    A no-op metrics backend that does nothing. This is the default backend.
+    """
+
+    def incr(self, *args, **kwargs):
+        pass
+
+    def gauge(self, *args, **kwargs):
+        pass
+
+    def timing(self, *args, **kwargs):
+        pass
 
 
 NOOP_METRICS = Metrics.from_configuration(NoopMetricsConfiguration())
@@ -142,8 +152,8 @@ class CloudWatchMetricsBackend(MetricsBackend):
     def incr(self, name, value=1, tags=None):
         self._put(name, value, "Count", tags)
 
-    def gauge(self, name, value, tags=None):
-        self._put(name, value, "None", tags)
+    def gauge(self, name, value, unit="None", tags=None):
+        self._put(name, value, unit, tags)
 
     def timing(self, name, value_seconds, tags=None):
         self._put(name, value_seconds, "Seconds", tags)
