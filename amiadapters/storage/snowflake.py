@@ -6,7 +6,7 @@ from typing import List, Set
 import pytz
 from pytz.tzinfo import DstTzInfo
 
-from amiadapters.metrics.base import Metrics
+from amiadapters.metrics.base import Metrics, seconds_since
 from amiadapters.models import GeneralMeterRead
 from amiadapters.models import GeneralMeter
 from amiadapters.configuration.models import ConfiguredStorageSink
@@ -587,7 +587,8 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         if oldest_flowtime is not None:
             self.metrics.gauge(
                 "snowflake_storage_sink.oldest_flowtime_stored",
-                int(oldest_flowtime.timestamp()),
+                seconds_since(oldest_flowtime),
+                unit="Seconds",
                 tags={"org_id": self.org_id},
             )
 

@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 from amiadapters.configuration.models import (
@@ -9,6 +10,7 @@ from amiadapters.metrics.base import (
     Metrics,
     MetricsBackend,
     NoopMetricsBackend,
+    seconds_since,
 )
 from test.base_test_case import BaseTestCase
 
@@ -34,12 +36,14 @@ class TestMetricsGauge(BaseTestCase):
     def test_gauge_calls_backend_with_correct_args(self):
         self.metrics.gauge("test.metric", 42.5, tags={"env": "prod"})
         self.mock_backend.gauge.assert_called_once_with(
-            "test.metric", 42.5, {"env": "prod"}
+            "test.metric", 42.5, "None", {"env": "prod"}
         )
 
     def test_gauge_calls_backend_with_default_tags(self):
         self.metrics.gauge("test.metric", 10.0)
-        self.mock_backend.gauge.assert_called_once_with("test.metric", 10.0, None)
+        self.mock_backend.gauge.assert_called_once_with(
+            "test.metric", 10.0, "None", None
+        )
 
     def test_gauge_from_configuration_with_noop_metrics_configuration(self):
         config = NoopMetricsConfiguration()
@@ -125,3 +129,32 @@ class TestCloudWatchMetricsBackend(BaseTestCase):
 
     def test_cloudwatch_backend_is_metrics_backend(self):
         self.assertIsInstance(self.cw_backend, MetricsBackend)
+
+
+class TestSecondsSince(BaseTestCase):
+    def test_seconds_since_with_datetime_with_timezone(self):
+        now = datetime.now(timezone.utc)
+        earlier = now - timedelta(seconds=42)
+        result = seconds_since(earlier)
+        self.assertTrue(41.9 < result < 42.1)  # allow for small timing differences
+
+    def test_seconds_since_with_naive_datetime(self):
+        now = datetime.now()
+        earlier = now - timedelta(seconds=10)
+        # seconds_since should treat naive datetime as UTC
+        result = seconds_since(earlier)
+        self.assertTrue(9.9 < result < 10.1)
+
+    def test_seconds_since_with_isoformat_string(self):
+        now = datetime.now(timezone.utc)
+        earlier = now - timedelta(seconds=5)
+        earlier_str = earlier.isoformat()
+        result = seconds_since(earlier_str)
+        self.assertTrue(4.9 < result < 5.1)
+
+    def test_seconds_since_with_naive_isoformat_string(self):
+        now = datetime.now()
+        earlier = now - timedelta(seconds=3)
+        earlier_str = earlier.isoformat()
+        result = seconds_since(earlier_str)
+        self.assertTrue(2.9 < result < 3.1)
