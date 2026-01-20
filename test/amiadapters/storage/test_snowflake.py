@@ -269,3 +269,52 @@ class TestSnowflakeStorageSink(BaseTestCase):
             self.extract_outputs,
         )
         self.assertEqual(0, self.mock_cursor.execute.call_count)
+
+    def test_verify_no_duplicate_reads_and_return_oldest_flowtime_finds_oldest_flowtime(
+        self,
+    ):
+        reads = [
+            GeneralMeterRead(
+                org_id="this-utility",
+                device_id="1",
+                account_id="101",
+                location_id=None,
+                flowtime=datetime.datetime(
+                    2024, 7, 7, 1, 0, tzinfo=pytz.timezone("Africa/Algiers")
+                ),
+                register_value=116233.61,
+                register_unit="CF",
+                interval_value=None,
+                interval_unit=None,
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
+            ),
+            GeneralMeterRead(
+                org_id="this-utility",
+                device_id="2",
+                account_id=None,
+                location_id=None,
+                flowtime=datetime.datetime(
+                    2024, 9, 7, 1, 0, tzinfo=pytz.timezone("Africa/Algiers")
+                ),
+                register_value=11,
+                register_unit="CF",
+                interval_value=None,
+                interval_unit=None,
+                battery=None,
+                install_date=None,
+                connection=None,
+                estimated=None,
+            ),
+        ]
+        oldest_flowtime = (
+            self.snowflake_sink._verify_no_duplicate_reads_and_return_oldest_flowtime(
+                reads
+            )
+        )
+        self.assertEqual(
+            reads[1].flowtime,
+            oldest_flowtime,
+        )

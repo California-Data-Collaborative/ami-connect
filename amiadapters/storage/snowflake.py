@@ -632,7 +632,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     f"Encountered duplicate read in data for Snowflake: {key}"
                 )
             seen.add(key)
-            if oldest_flowtime is None or read.flowtime < oldest_flowtime:
+            if oldest_flowtime is None or read.flowtime > oldest_flowtime:
                 oldest_flowtime = read.flowtime
         return oldest_flowtime
 
