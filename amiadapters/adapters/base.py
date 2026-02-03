@@ -274,7 +274,10 @@ class BaseAMIAdapter(ABC):
         offset should come from the org_timezone, which tells us which timezone the datetime was produced in.
         """
         # TODO remove allowlist after all data and code is fixed
-        if self.org_id in ("test-org",):
+        if self.org_id in (
+            "test-org",
+            "cadc_valley_county",
+            ):
             # New and fixed way of creating datetime w/ offset
             if datetime_str:
                 result = datetime.fromisoformat(datetime_str)
