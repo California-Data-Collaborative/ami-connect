@@ -277,7 +277,7 @@ class BaseAMIAdapter(ABC):
         if self.org_id in (
             "test-org",
             "cadc_valley_county",
-            ):
+        ):
             # New and fixed way of creating datetime w/ offset
             if datetime_str:
                 result = datetime.fromisoformat(datetime_str)
