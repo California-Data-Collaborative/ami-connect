@@ -390,6 +390,9 @@ class TestBeacon360Adapter(BaseTestCase):
                 location_zip="93727",
             )
         ]
+        self.assertEqual(
+            "2016-01-01T23:59:00-08:00", transformed_meters[0].meter_install_date.isoformat()
+        )
         self.assertListEqual(expected_meters, transformed_meters)
 
         expected_reads = [
@@ -433,7 +436,10 @@ class TestBeacon360Adapter(BaseTestCase):
             ),
         ]
         self.assertEqual(
-            expected_reads[0].flowtime.isoformat(), "2024-08-01T00:59:00-07:00"
+            "2024-08-01T00:59:00-07:00", transformed_reads[0].flowtime.isoformat()
+        )
+        self.assertEqual(
+            "2024-08-01T00:59:00-07:00", transformed_reads[0].install_date.isoformat()
         )
         self.assertListEqual(expected_reads, transformed_reads)
 
