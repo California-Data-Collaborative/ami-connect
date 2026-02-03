@@ -276,7 +276,9 @@ class BaseAMIAdapter(ABC):
         # TODO remove allowlist after all data and code is fixed
         if self.org_id in (
             "test-org",
+            "cadc_thousand_oaks",
             "cadc_valley_county",
+            "current_bakman",
         ):
             # New and fixed way of creating datetime w/ offset
             if datetime_str:
