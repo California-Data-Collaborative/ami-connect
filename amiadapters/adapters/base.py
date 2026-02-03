@@ -262,19 +262,45 @@ class BaseAMIAdapter(ABC):
                 logger.info("Skipping load finished event publication as configured")
 
     def datetime_from_iso_str(
-        self, datetime_str: str, org_timezone: DstTzInfo
+        self, datetime_str: str, timezone_of_measurement: DstTzInfo
     ) -> datetime:
         """
-        Parse an ISO format date string into a datetime object with timezone.
-        Uses org_timezone from arguments if provided or defaults to UTC.
+        Parse an ISO format date string into a datetime object with an offset.
+        Uses timezone_of_measurement from arguments if provided or defaults to UTC.
+        Returned datetimes should never be naive - they should always have an offset.
+        If the datetime_str already includes an offset, do not alter it.
+
+        We must take care to interpret input datetime strings with no offset information - their
+        offset should come from the org_timezone, which tells us which timezone the datetime was produced in.
         """
-        if datetime_str:
-            result = datetime.fromisoformat(datetime_str)
-            tz = org_timezone if org_timezone is not None else timezone("UTC")
-            result = result.replace(tzinfo=tz)
+        # TODO remove allowlist after all data and code is fixed
+        if self.org_id in ("test-org",):
+            # New and fixed way of creating datetime w/ offset
+            if datetime_str:
+                result = datetime.fromisoformat(datetime_str)
+                if result.tzinfo is None:
+                    tz = (
+                        timezone_of_measurement
+                        if timezone_of_measurement is not None
+                        else timezone("UTC")
+                    )
+                    result = tz.localize(result)
+            else:
+                result = None
+            return result
         else:
-            result = None
-        return result
+            # Old and broken way of creating datetime w/ offset
+            if datetime_str:
+                result = datetime.fromisoformat(datetime_str)
+                tz = (
+                    timezone_of_measurement
+                    if timezone_of_measurement is not None
+                    else timezone("UTC")
+                )
+                result = result.replace(tzinfo=tz)
+            else:
+                result = None
+            return result
 
     def map_meter_size(self, size: str) -> str:
         """

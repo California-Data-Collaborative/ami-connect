@@ -83,7 +83,7 @@ Timeseries records of water usage, reported by meter (DEVICE_ID) with optional a
 | ACCOUNT_ID       | VARCHAR           | Optional account tied to this read. See `METERS` definition. |
 | LOCATION_ID      | VARCHAR           | Optional location tied to this read. See `METERS` definition. |
 | DEVICE_ID        | VARCHAR (NOT NULL)| The meter that recorded the read. Used for joins to `METERS`. |
-| FLOWTIME         | TIMESTAMP_TZ(9)   | UTC time of measurement. |
+| FLOWTIME         | TIMESTAMP_TZ(9)   | Time of measurement. |
 | REGISTER_VALUE   | FLOAT             | Cumulative usage recorded at this time. |
 | REGISTER_UNIT    | VARCHAR           | Unit of `REGISTER_VALUE` (e.g., CCF, GAL). |
 | INTERVAL_VALUE   | FLOAT             | Usage in time interval (e.g., past hour). |
