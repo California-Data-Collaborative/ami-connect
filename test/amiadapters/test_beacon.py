@@ -134,8 +134,8 @@ class TestBeacon360Adapter(BaseTestCase):
             api_password="pass",
             pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
             use_cache=False,
-            org_id="this-org",
-            org_timezone=pytz.timezone("Europe/Rome"),
+            org_id="test-org",
+            org_timezone=pytz.timezone("America/Los_Angeles"),
             configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
             configured_metrics=self.TEST_METRICS_CONFIGURATION,
             configured_sinks=[],
@@ -148,7 +148,7 @@ class TestBeacon360Adapter(BaseTestCase):
         self.assertEqual("/tmp/output", self.adapter.output_controller.output_folder)
         self.assertEqual("user", self.adapter.user)
         self.assertEqual("pass", self.adapter.password)
-        self.assertEqual("beacon-360-this-org", self.adapter.name())
+        self.assertEqual("beacon-360-test-org", self.adapter.name())
         self.assertEqual(3, len(self.adapter.scheduled_extracts()))
 
     def test_scheduled_extracts__scheduled_with_lag(self):
@@ -372,14 +372,14 @@ class TestBeacon360Adapter(BaseTestCase):
 
         expected_meters = [
             GeneralMeter(
-                org_id="this-org",
+                org_id="test-org",
                 device_id="22",
                 account_id="303022",
                 location_id="303022",
                 meter_id="1470158170",
                 endpoint_id="22",
-                meter_install_date=datetime.datetime(
-                    2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
+                meter_install_date=self.adapter.org_timezone.localize(
+                    datetime.datetime(2016, 1, 1, 23, 59)
                 ),
                 meter_size="0.625",
                 meter_manufacturer="BADGER",
@@ -394,44 +394,47 @@ class TestBeacon360Adapter(BaseTestCase):
 
         expected_reads = [
             GeneralMeterRead(
-                org_id="this-org",
+                org_id="test-org",
                 device_id="22",
                 account_id="303022",
                 location_id="303022",
-                flowtime=datetime.datetime(
-                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                flowtime=self.adapter.org_timezone.localize(
+                    datetime.datetime(2024, 8, 1, 0, 59)
                 ),
                 register_value=22760.0,
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
                 battery="good",
-                install_date=datetime.datetime(
-                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                install_date=self.adapter.org_timezone.localize(
+                    datetime.datetime(2024, 8, 1, 0, 59)
                 ),
                 connection="marginal",
                 estimated=0,
             ),
             GeneralMeterRead(
-                org_id="this-org",
+                org_id="test-org",
                 device_id="22",
                 account_id="303022",
                 location_id="303022",
-                flowtime=datetime.datetime(
-                    2024, 8, 1, 1, 59, tzinfo=pytz.timezone("Europe/Rome")
+                flowtime=self.adapter.org_timezone.localize(
+                    datetime.datetime(2024, 8, 1, 1, 59)
                 ),
                 register_value=22760.0,
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
                 battery="good",
-                install_date=datetime.datetime(
-                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                install_date=self.adapter.org_timezone.localize(
+                    datetime.datetime(2024, 8, 1, 0, 59)
                 ),
                 connection="marginal",
                 estimated=0,
             ),
         ]
+        self.assertEqual(
+            expected_reads[0].flowtime.isoformat(), "2024-08-01T00:59:00-07:00"
+        )
         self.assertListEqual(expected_reads, transformed_reads)
 
     def test_transform_meters_and_reads__two_different_meters(self):
@@ -459,14 +462,14 @@ class TestBeacon360Adapter(BaseTestCase):
 
         expected_meters = [
             GeneralMeter(
-                org_id="this-org",
+                org_id="test-org",
                 device_id="130615549",
                 account_id="1",
                 location_id="1",
                 meter_id="10101",
                 endpoint_id="130615549",
-                meter_install_date=datetime.datetime(
-                    2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
+                meter_install_date=self.adapter.org_timezone.localize(
+                    datetime.datetime(2016, 1, 1, 23, 59)
                 ),
                 meter_size="0.625",
                 meter_manufacturer="BADGER",
@@ -477,14 +480,14 @@ class TestBeacon360Adapter(BaseTestCase):
                 location_zip="93727",
             ),
             GeneralMeter(
-                org_id="this-org",
+                org_id="test-org",
                 device_id="999",
                 account_id="303022",
                 location_id="303022",
                 meter_id="1470158170",
                 endpoint_id="999",
-                meter_install_date=datetime.datetime(
-                    2016, 1, 1, 23, 59, tzinfo=pytz.timezone("Europe/Rome")
+                meter_install_date=self.adapter.org_timezone.localize(
+                    datetime.datetime(2016, 1, 1, 23, 59)
                 ),
                 meter_size="0.625",
                 meter_manufacturer="BADGER",
@@ -499,39 +502,39 @@ class TestBeacon360Adapter(BaseTestCase):
 
         expected_reads = [
             GeneralMeterRead(
-                org_id="this-org",
+                org_id="test-org",
                 device_id="130615549",
                 account_id="1",
                 location_id="1",
-                flowtime=datetime.datetime(
-                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                flowtime=self.adapter.org_timezone.localize(
+                    datetime.datetime(2024, 8, 1, 0, 59)
                 ),
                 register_value=22760.0,
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
                 battery="good",
-                install_date=datetime.datetime(
-                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                install_date=self.adapter.org_timezone.localize(
+                    datetime.datetime(2024, 8, 1, 0, 59)
                 ),
                 connection="marginal",
                 estimated=0,
             ),
             GeneralMeterRead(
-                org_id="this-org",
+                org_id="test-org",
                 device_id="999",
                 account_id="303022",
                 location_id="303022",
-                flowtime=datetime.datetime(
-                    2024, 8, 1, 1, 59, tzinfo=pytz.timezone("Europe/Rome")
+                flowtime=self.adapter.org_timezone.localize(
+                    datetime.datetime(2024, 8, 1, 1, 59)
                 ),
                 register_value=22760.0,
                 register_unit="CF",
                 interval_value=0.66840273,
                 interval_unit="CF",
                 battery="good",
-                install_date=datetime.datetime(
-                    2024, 8, 1, 0, 59, tzinfo=pytz.timezone("Europe/Rome")
+                install_date=self.adapter.org_timezone.localize(
+                    datetime.datetime(2024, 8, 1, 0, 59)
                 ),
                 connection="marginal",
                 estimated=0,
@@ -551,7 +554,7 @@ class TestBeacon360Adapter(BaseTestCase):
         )
         self.assertEqual(1, len(transformed_meters))
         self.assertEqual(
-            datetime.datetime(2017, 2, 2, 23, 59, tzinfo=pytz.timezone("Europe/Rome")),
+            self.adapter.org_timezone.localize(datetime.datetime(2017, 2, 2, 23, 59)),
             transformed_meters[0].meter_install_date,
         )
         self.assertEqual(1, len(transformed_reads))
@@ -577,7 +580,7 @@ class TestBeacon360Adapter(BaseTestCase):
 
         expected_meters = [
             GeneralMeter(
-                org_id="this-org",
+                org_id="test-org",
                 device_id="22",
                 account_id="303022",
                 location_id="303022",
@@ -619,7 +622,7 @@ class TestBeaconRawSnowflakeLoader(BaseTestCase):
         loader.load(
             "run-id",
             "org-id",
-            pytz.timezone("Europe/Rome"),
+            pytz.timezone("America/Los_Angeles"),
             self.extract_outputs,
             self.conn,
         )
