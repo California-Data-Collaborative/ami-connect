@@ -23,9 +23,9 @@ from test.base_test_case import BaseTestCase
 class TestMetersenseAdapter(BaseTestCase):
 
     def setUp(self):
-        self.tz = pytz.timezone("Europe/Rome")
+        self.tz = pytz.timezone("America/Los_Angeles")
         self.adapter = MetersenseAdapter(
-            org_id="this-org",
+            org_id="test-org",
             org_timezone=self.tz,
             pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
             configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
@@ -329,6 +329,7 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual(1050.0, read.register_value)
         self.assertEqual(50.0, read.interval_value)
         self.assertEqual(1, read.estimated)
+        self.assertEqual("2024-01-01T01:00:00-08:00", read.flowtime.isoformat())
 
     def test_missing_meter_view(self):
         meter = self._meter_factory()
