@@ -21,9 +21,9 @@ from test.base_test_case import BaseTestCase
 class TestMetersenseAdapter(BaseTestCase):
 
     def setUp(self):
-        self.tz = pytz.timezone("Europe/Rome")
+        self.tz = pytz.timezone("America/Los_Angeles")
         self.adapter = XylemMoultonNiguelAdapter(
-            org_id="this-org",
+            org_id="test-org",
             org_timezone=self.tz,
             pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
             configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
@@ -200,14 +200,14 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual(len(meters), 1)
         self.assertEqual(
             GeneralMeter(
-                org_id="this-org",
+                org_id="test-org",
                 device_id="M1",
                 account_id="67890",
                 location_id="100-1",
                 meter_id="M1",
                 endpoint_id="ERT1",
-                meter_install_date=datetime.datetime(
-                    2020, 1, 1, 0, 0, tzinfo=pytz.timezone("Europe/Rome")
+                meter_install_date=self.adapter.org_timezone.localize(
+                    datetime.datetime(2020, 1, 1, 0, 0)
                 ),
                 meter_size="1",
                 meter_manufacturer="S",
@@ -224,7 +224,7 @@ class TestMetersenseAdapter(BaseTestCase):
         # First record has both register and interval reads
         self.assertEqual(
             GeneralMeterRead(
-                org_id="this-org",
+                org_id="test-org",
                 device_id="M1",
                 account_id="67890",
                 location_id="100-1",

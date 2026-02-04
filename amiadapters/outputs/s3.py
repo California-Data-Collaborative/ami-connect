@@ -120,10 +120,18 @@ class S3TaskOutputController(BaseTaskOutputController):
         for page in paginator.paginate(Bucket=self.bucket_name, Prefix=path):
             for obj in page.get("Contents", []):
                 key = obj["Key"]
-                # Keep relative path
-                relative_path = os.path.relpath(key, path)
-                local_path = os.path.join(output_directory, relative_path)
-                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                if key == path:
+                    # We're downloading a single file
+                    os.makedirs(
+                        os.path.join(output_directory, os.path.dirname(path)),
+                        exist_ok=True,
+                    )
+                    local_path = os.path.join(output_directory, path)
+                else:
+                    # Keep relative path
+                    relative_path = os.path.relpath(key, path)
+                    local_path = os.path.join(output_directory, relative_path)
+                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
                 if decompress:
                     # Download into memory and decompress
                     logger.info(
