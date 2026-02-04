@@ -18,7 +18,7 @@ class TestAclaraAdapter(BaseTestCase):
 
     def setUp(self):
         self.adapter = AclaraAdapter(
-            org_id="this-org",
+            org_id="test-org",
             org_timezone=pytz.timezone("Europe/Rome"),
             pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
             sftp_host="example.com",
@@ -164,7 +164,7 @@ class TestAclaraAdapter(BaseTestCase):
         meter = list(meters)[0]
         read = reads[0]
 
-        self.assertEqual(meter.org_id, "this-org")
+        self.assertEqual(meter.org_id, "test-org")
         self.assertEqual(meter.meter_id, "1")
         self.assertEqual(meter.endpoint_id, "2")
         self.assertEqual(meter.meter_size, "0.625x0.75")
