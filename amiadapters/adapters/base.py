@@ -278,6 +278,7 @@ class BaseAMIAdapter(ABC):
             "test-org",
             "cadc_coastside",
             "cadc_long_beach",
+            "cadc_moulton_niguel",
             "cadc_thousand_oaks",
             "cadc_valley_county",
             "current_bakman",
