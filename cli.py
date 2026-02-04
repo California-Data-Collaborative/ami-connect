@@ -190,7 +190,7 @@ def download_intermediate_output(
         raise ValueError(
             f"Task output configuration with invalid type {configured_task_output_controller.type}"
         )
-    controller.download_for_path(path, "./output", decompress=True)
+    controller.download_for_path(path, "./output/", decompress=True)
 
 
 @app.command()
