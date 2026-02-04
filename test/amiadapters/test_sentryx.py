@@ -143,7 +143,7 @@ class TestSentryxAdapter(BaseTestCase):
         self.adapter = SentryxAdapter(
             api_key="key",
             org_id="this-utility",
-            org_timezone=pytz.timezone("Africa/Algiers"),
+            org_timezone=pytz.UTC,
             pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
             configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
             configured_metrics=self.TEST_METRICS_CONFIGURATION,
@@ -156,7 +156,6 @@ class TestSentryxAdapter(BaseTestCase):
     def test_init(self):
         self.assertEqual("key", self.adapter.api_key)
         self.assertEqual("this-utility", self.adapter.org_id)
-        self.assertEqual(pytz.timezone("Africa/Algiers"), self.adapter.org_timezone)
         self.assertEqual("my-utility-name", self.adapter.utility_name)
         self.assertEqual("sentryx-api-this-utility", self.adapter.name())
 
@@ -325,8 +324,8 @@ class TestSentryxAdapter(BaseTestCase):
                 location_id=None,
                 meter_id="1",
                 endpoint_id=None,
-                meter_install_date=datetime.datetime(
-                    2022, 2, 8, 22, 10, 43, tzinfo=pytz.timezone("Africa/Algiers")
+                meter_install_date=self.adapter.org_timezone.localize(
+                    datetime.datetime(2022, 2, 8, 22, 10, 43)
                 ),
                 meter_size="0.375",
                 meter_manufacturer="manufacturer",
@@ -344,8 +343,8 @@ class TestSentryxAdapter(BaseTestCase):
                 device_id="1",
                 account_id="101",
                 location_id=None,
-                flowtime=datetime.datetime(
-                    2024, 7, 7, 1, 0, tzinfo=pytz.timezone("Africa/Algiers")
+                flowtime=self.adapter.org_timezone.localize(
+                    datetime.datetime(2024, 7, 7, 1, 0)
                 ),
                 register_value=116233.61,
                 register_unit="CF",
@@ -361,8 +360,8 @@ class TestSentryxAdapter(BaseTestCase):
                 device_id="2",
                 account_id=None,
                 location_id=None,
-                flowtime=datetime.datetime(
-                    2024, 7, 7, 1, 0, tzinfo=pytz.timezone("Africa/Algiers")
+                flowtime=self.adapter.org_timezone.localize(
+                    datetime.datetime(2024, 7, 7, 1, 0)
                 ),
                 register_value=11,
                 register_unit="CF",
@@ -377,6 +376,9 @@ class TestSentryxAdapter(BaseTestCase):
 
         self.assertListEqual(expected_meters, transformed_meters)
         self.assertListEqual(expected_reads, transformed_reads)
+        self.assertEqual(
+            "2024-07-07T01:00:00+00:00", transformed_reads[0].flowtime.isoformat()
+        )
 
 
 class TestSentryxMeterWithReads(BaseTestCase):
