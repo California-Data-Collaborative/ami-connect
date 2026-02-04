@@ -51,43 +51,6 @@ class TestBaseAdapter(BaseTestCase):
         )
         self.assertEqual("2024-08-01T00:54:00+02:00", result.isoformat())
 
-    # TODO remove these after datetime allowlist is removed
-    def test_old_datetime_from_iso_str__None_results_in_None(self):
-        self.adapter.org_id = "org-id-not-in-allowlist"
-        result = self.adapter.datetime_from_iso_str(None, self.adapter.org_timezone)
-        self.assertIsNone(result)
-
-    def test_old_datetime_from_iso_str__parses_unaware_dt_and_replaces_tz_without_conversion(
-        self,
-    ):
-        self.adapter.org_id = "org-id-not-in-allowlist"
-        result = self.adapter.datetime_from_iso_str(
-            "2024-08-01 00:54", self.adapter.org_timezone
-        )
-        self.assertEqual(
-            datetime(2024, 8, 1, 0, 54, tzinfo=pytz.timezone("Europe/Rome")), result
-        )
-
-    def test_old_datetime_from_iso_str__parses_aware_dt_and_replaces_tz_without_conversion(
-        self,
-    ):
-        self.adapter.org_id = "org-id-not-in-allowlist"
-        result = self.adapter.datetime_from_iso_str(
-            "2024-08-01T00:54:00Z", self.adapter.org_timezone
-        )
-        self.assertEqual(
-            datetime(2024, 8, 1, 0, 54, tzinfo=pytz.timezone("Europe/Rome")), result
-        )
-
-    def test_old_datetime_from_iso_str__parses_aware_dt_and_defaults_to_utc_if_no_tz_provided(
-        self,
-    ):
-        self.adapter.org_id = "org-id-not-in-allowlist"
-        result = self.adapter.datetime_from_iso_str("2024-08-01T00:54:00+02:00", None)
-        self.assertEqual(
-            datetime(2024, 8, 1, 0, 54, tzinfo=pytz.timezone("UTC")), result
-        )
-
     def test_map_meter_size(self):
         cases = [
             ('3/8"', "0.375"),

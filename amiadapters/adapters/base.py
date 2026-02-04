@@ -273,44 +273,18 @@ class BaseAMIAdapter(ABC):
         We must take care to interpret input datetime strings with no offset information - their
         offset should come from the org_timezone, which tells us which timezone the datetime was produced in.
         """
-        # TODO remove allowlist after all data and code is fixed
-        if self.org_id in (
-            "test-org",
-            "cadc_coastside",
-            "cadc_long_beach",
-            "cadc_moulton_niguel",
-            "cadc_thousand_oaks",
-            "cadc_valley_county",
-            "current_bakman",
-            "current_arlington",
-            "current_sierra",
-        ):
-            # New and fixed way of creating datetime w/ offset
-            if datetime_str:
-                result = datetime.fromisoformat(datetime_str)
-                if result.tzinfo is None:
-                    tz = (
-                        timezone_of_measurement
-                        if timezone_of_measurement is not None
-                        else timezone("UTC")
-                    )
-                    result = tz.localize(result)
-            else:
-                result = None
-            return result
-        else:
-            # Old and broken way of creating datetime w/ offset
-            if datetime_str:
-                result = datetime.fromisoformat(datetime_str)
+        if datetime_str:
+            result = datetime.fromisoformat(datetime_str)
+            if result.tzinfo is None:
                 tz = (
                     timezone_of_measurement
                     if timezone_of_measurement is not None
                     else timezone("UTC")
                 )
-                result = result.replace(tzinfo=tz)
-            else:
-                result = None
-            return result
+                result = tz.localize(result)
+        else:
+            result = None
+        return result
 
     def map_meter_size(self, size: str) -> str:
         """
