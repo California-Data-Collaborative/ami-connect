@@ -282,6 +282,8 @@ class BaseAMIAdapter(ABC):
             "cadc_thousand_oaks",
             "cadc_valley_county",
             "current_bakman",
+            "current_arlington",
+            "current_sierra",
         ):
             # New and fixed way of creating datetime w/ offset
             if datetime_str:

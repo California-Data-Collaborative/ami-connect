@@ -71,7 +71,7 @@ class TestSubecaAdapter(BaseTestCase):
 
     def setUp(self):
         self.adapter = SubecaAdapter(
-            org_id="this-utility",
+            org_id="test-org",
             org_timezone=pytz.timezone("Africa/Algiers"),
             pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
             api_url="http://localhost/my-url",
@@ -86,9 +86,9 @@ class TestSubecaAdapter(BaseTestCase):
     def test_init(self):
         self.assertEqual("http://localhost/my-url", self.adapter.api_url)
         self.assertEqual("test-key", self.adapter.api_key)
-        self.assertEqual("this-utility", self.adapter.org_id)
+        self.assertEqual("test-org", self.adapter.org_id)
         self.assertEqual(pytz.timezone("Africa/Algiers"), self.adapter.org_timezone)
-        self.assertEqual("subeca-this-utility", self.adapter.name())
+        self.assertEqual("subeca-test-org", self.adapter.name())
 
     @patch("amiadapters.adapters.subeca.requests.request")
     def test_extract_success(self, mock_request):
