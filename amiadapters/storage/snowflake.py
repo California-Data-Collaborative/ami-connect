@@ -419,10 +419,10 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     , a.class_full_name
                     , min(a.flowtime) as first_read
                     , max(a.flowtime) as last_read
-                    , datediff(hour, last_read::date, $edate) as last_read_hours
+                    , datediff(hour, last_read::date, '{max_date.isoformat()}') as last_read_hours
                     --
                     , count(interval_value) as observations
-                    , datediff(hour, $sdate, $edate) + 24 as hours_in_period
+                    , datediff(hour, '{min_date.isoformat()}', '{max_date.isoformat()}') + 24 as hours_in_period
                     , observations / hours_in_period as read_freq
                     , 1 - read_freq as unread_freq
                     --
