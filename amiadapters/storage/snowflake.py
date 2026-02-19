@@ -395,7 +395,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     , c.class_full_name
                 from cte2 r
                 join ami_connect.meters m on r.org_id = m.org_id and r.device_id = m.device_id and m.row_active_until is null
-                join customer_location_data c on m.account_id = c.cust_id_from_utility and m.location_id = c.location_id_from_utility
+                join wavelet.customer_location_data c on m.account_id = c.cust_id_from_utility and m.location_id = c.location_id_from_utility
             )
             , failing_meters_thresholds as
             (
