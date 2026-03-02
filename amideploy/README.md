@@ -4,7 +4,10 @@ Manage AMI Connect infrastructure and deploy new code.
 
 Structure:
 - [infrastructure](./infrastructure/): Code to create AWS resources using terraform
-- [configuration](./configuration/): Code to stand up AMI Connect on AWS resources
+- [deploy](./deploy/): Code to stand up AMI Connect on AWS resources using Docker
+
+This README describes how to create an AMI Connect deployment from scratch. But you may also use it to set
+up your local environment to work on an existing AMI Connect deployment.
 
 ## Prerequisites
 
@@ -14,7 +17,7 @@ We recommend you use the [AWS CLI](https://docs.aws.amazon.com/cli/latest/usergu
 
 We use `terraform` to manage infrastructure resources. [Here are installation instructions](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli).
 
-### Pick a hostname for your Airflow application
+### (If you are creating a new AMI Connect site) Pick a hostname for your Airflow application
 
 AMI Connect will build an Airflow application accessible on the public internet (but protected by a username and password). You'll want to pick a domain name for this site, then register a domain with Route 53 in your AWS account. The Route53 domain is left out of our `terraform` code because we don't want anyone to accidentally create multiple domain names. Terraform will link the hosted zone for your domain name to your Airflow webserver.
 
@@ -29,7 +32,9 @@ cd amideploy/infrastructure
 ```
 
 We expect that you'll create a terraform workspace here. This will isolate your terraform state and
-allow you to create a `*.tfvars` file for your environment.
+allow you to create a `*.tfvars` file for your environment. Using a workspace adds complexity, but it
+allows us to deploy multiple instances of AMI Connect from this single open source repo. If you know that
+you won't deploy to multiple environments, you may skip this step but the instructions below might not work for you.
 
 From `amideploy/infrastructure`, run:
 
@@ -41,7 +46,10 @@ mkdir environments/<your workspace>
 touch environments/<your workspace>/<your workspace>.tfvars
 ```
 
-`<your workspace>.tfvars` should contain your own AMI Connect infrastructure configuration. See `variables.tf` for the variables you'll specify. Here's an example `<your workspace>.tfvars` file:
+`<your workspace>.tfvars` should contain your own AMI Connect infrastructure configuration. If your teammates
+have already created an environment, you should copy their `<your workspace>.tfvars` file.
+
+Otherwise, you'll create your own. See `variables.tf` for the variables you'll specify. Here's an example `<your workspace>.tfvars` file:
 
 ```
 # cat ./environments/my-workspace/my-workspace.tfvars 
@@ -53,6 +61,10 @@ ami_connect_s3_bucket_name = "my-s3-bucket-name"
 ```
 
 The value in `aws_profile` should match the AWS profile name in your `~/.aws/credentials` file, where an AWS access key's details give access to your AWS account.
+
+### Copy teammate's local terraform state
+
+If you're setting up an environment that already exists, you should copy your teammate's local terraform state (i.e. the entire `terraform.tfstate.d` directory) to your `./amideploy/infrastructure` directory.
 
 ## Run terraform to create the infrastructure
 
@@ -71,11 +83,25 @@ This command should exit without error. It should describe a number of resources
 - Security groups to make all of the networking work
 - An S3 bucket
 - An IAM role that grants permission for resources to access S3
+- More!
 
 If that looks good, create the infrastructure:
 
 ```
 terraform apply -var-file="./environments/$(terraform workspace show)/$(terraform workspace show).tfvars" 
+```
+
+## Create Terraform output file
+
+Our terraform code specifies outputs that include things like the IP address of the Airflow server.
+These outputs can be useful as you develop. They're also used by our `deploy.sh` script to connect to
+the Airflow server. You should tell terraform to make a file with the outputs by running a command like this:
+
+```
+mkdir ../configuration
+terraform output -json > ../configuration/$(terraform workspace show)-output.json
+terraform output -raw airflow_server_private_key_pem > ../configuration/$(terraform workspace show)-airflow-key.pem
+chmod 600 ../configuration/$(terraform workspace show)-airflow-key.pem
 ```
 
 ## Configure the infrastructure
@@ -86,11 +112,6 @@ Access the Airflow EC2's private key, store it on your machine, and prep it for 
 ```
 terraform output -raw airflow_server_private_key_pem > ../configuration/airflow-key.pem
 chmod 600 ../configuration/airflow-key.pem
-```
-
-Put all terraform output into a file that our configuration script can reference:
-```
-terraform output -json > ../configuration/output.json
 ```
 
 Never check these files into version control!
