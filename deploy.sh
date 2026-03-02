@@ -23,7 +23,7 @@ else
     FULL_RESTART="false"
 fi
 
-AMI_CONNECT_REPO="California-Data-Collaborative/ami-connect.git"
+AMI_CONNECT_REPO="currentsoftwareapp/current-software-ami-connect"
 # If you include a private neptune adapter in your deploy,
 # set the AMI_CONNECT_NEPTUNE_REPO_URL environment variable before running this script
 # Defaults to empty string if not set.

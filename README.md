@@ -1,6 +1,8 @@
-# ami-connect
+# Private fork of ami-connect
 
-Seamless pipelines for AMI water data, now as easy to access as turning on a tap.
+Current Software fork of open source [AMI Connect](github.com/California-Data-Collaborative/ami-connect) with
+code that makes the pipeline fit Current's environment. Where possible, we try to merge changes to the upstream
+open source repo.
 
 ## AMI Adapters
 
