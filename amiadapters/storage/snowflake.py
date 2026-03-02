@@ -461,6 +461,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 + 1 * coalesce(score_stuck_events, 0)
                 + 1 * coalesce(score_unaccounted,  0)
                 ) / (1 + 1 + 1 + 1 + 1)::float as score
+            from z_scores
             """
             conn.cursor().execute(ami_meters_score_sql)
 
