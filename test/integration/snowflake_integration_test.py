@@ -53,6 +53,11 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
         cls.test_meter_alerts_table = "meter_alerts_int_test"
         cls.conn = cls.snowflake_sink.sink_config.connection()
         cls.cs = cls.conn.cursor()
+        # This fixes an issue for these tests where tz offsets in Snowflake are set to America/Los_Angeles
+        # even though the python datetime has tzinfo=UTC. The issue doesn't seem to affect production,
+        # but as of now we don't know why!
+        cls.cs.execute("ALTER SESSION SET TIMEZONE = 'UTC'")
+        cls.cs.execute("ALTER SESSION SET TIMESTAMP_TYPE_MAPPING = 'TIMESTAMP_TZ'")
 
     @classmethod
     def tearDownClass(cls):
@@ -87,6 +92,7 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
         location_id: str = "loc1",
         estimated: int = 0,
         interval_value: float = 10.0,
+        register_value: float = 100.0,
         flowtime: datetime = datetime.datetime(2024, 1, 1, 0, 0, tzinfo=pytz.UTC),
     ) -> GeneralMeterRead:
         return GeneralMeterRead(
@@ -95,7 +101,7 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
             account_id=account_id,
             location_id=location_id,
             flowtime=flowtime,
-            register_value=100.0,
+            register_value=register_value,
             register_unit="GAL",
             interval_value=interval_value,
             interval_unit="GAL",
@@ -255,11 +261,6 @@ class TestSnowflakeContinuousFlowAlerts(BaseSnowflakeIntegrationTestCase):
         self.cs.execute(
             f"CREATE OR REPLACE TEMPORARY TABLE {self.test_meter_alerts_table} LIKE meter_alerts;"
         )
-        # TODO why? is this affecting production flowtimes or flowtimes when I run from my laptop?
-        self.conn.cursor().execute("ALTER SESSION SET TIMEZONE = 'UTC'")
-        self.conn.cursor().execute(
-            "ALTER SESSION SET TIMESTAMP_TYPE_MAPPING = 'TIMESTAMP_TZ'"
-        )
 
     def _insert_reading_streak(
         self,
@@ -309,7 +310,6 @@ class TestSnowflakeContinuousFlowAlerts(BaseSnowflakeIntegrationTestCase):
         self._insert_reading_streak(device_id, start_streak, 25, 1.5)
 
         # 2. Run the function
-        # Note: self.snowflake_sink should be the object owning the method
         self.snowflake_sink._upsert_continuous_flow_alerts(
             self.conn,
             min_date,
@@ -405,6 +405,50 @@ class TestSnowflakeContinuousFlowAlerts(BaseSnowflakeIntegrationTestCase):
         )
         end_time = self.cs.fetchone()[0]
         self.assertIsNotNone(end_time)
+
+    def test_alert_stays_active_even_if_register_read_occurs_after_streak(self):
+        """
+        Subeca had an issue where if there was a register read (which has interval_value=null) after a continuous flow streak,
+        it would incorrectly close the alert because the logic was only looking at flowtime and not interval_value.
+        This test ensures that the alert remains active in this scenario.
+        """
+        device_id = "leak_device"
+        min_date = self.now - datetime.timedelta(hours=30)
+        max_date = self.now + datetime.timedelta(days=3)
+        self._assert_num_rows(self.test_meter_alerts_table, 0)
+
+        # Insert 25 hours of continuous flow (value > 0)
+        start_streak = self.now - datetime.timedelta(hours=25)
+        self._insert_reading_streak(device_id, start_streak, 25, 1.5)
+
+        # Insert a register read with interval_value=null after the streak
+        register_read = self._create_read(
+            device_id=device_id,
+            flowtime=self.now + datetime.timedelta(hours=1),
+            interval_value=None,
+            register_value=12312.0,
+        )
+        self.snowflake_sink._upsert_reads(
+            [register_read], self.conn, table_name=self.test_readings_table
+        )
+
+        # Run the function
+        self.snowflake_sink._upsert_continuous_flow_alerts(
+            self.conn,
+            min_date,
+            max_date,
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+
+        # 3. Assertions
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+        self.cs.execute(f"SELECT end_time FROM {self.test_meter_alerts_table}")
+        alert = self.cs.fetchone()
+        self.assertIsNone(
+            alert[0]
+        )  # IS_ACTIVE should be true, so end_time should be NULL
 
 
 class TestSnowflakeDataQualityChecks(BaseSnowflakeIntegrationTestCase):

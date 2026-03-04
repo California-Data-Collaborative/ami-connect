@@ -496,7 +496,9 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     INTERVAL_VALUE as last_interval_value,
                     REGISTER_VALUE as last_register_value
                 FROM {readings_table_name}
-                -- This filters the results to only include the top 1 row per group
+                -- Only consider "clean"-like reads that would be part of a streak
+                WHERE coalesce(estimated::boolean, false) = false and interval_value is not null
+                -- This filters the results to only include the top 1 row per group, giving us the latest read
                 QUALIFY ROW_NUMBER() OVER (
                     PARTITION BY ORG_ID, DEVICE_ID 
                     ORDER BY FLOWTIME DESC
