@@ -17,7 +17,9 @@ def set_global_aws_profile(aws_profile: str = None):
         raise ValueError(
             f"No AWS profile specified. If using the CLI, use the --profile option or set the {AWS_PROFILE_ENV_VAR_NAME} environment variable."
         )
-    os.environ[AWS_PROFILE_ENV_VAR_NAME] = aws_profile
+    # Overwrite with the provided profile if specified
+    if aws_profile is not None:
+        os.environ[AWS_PROFILE_ENV_VAR_NAME] = aws_profile
     os.environ[AWS_REGION_ENV_VAR_NAME] = DEFAULT_AWS_REGION
 
 
