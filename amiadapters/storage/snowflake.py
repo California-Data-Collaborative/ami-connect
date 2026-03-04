@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import logging
 from typing import List, Set
 
@@ -357,318 +357,200 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             "snowflake_storage_sink.exec_postprocessor",
             tags={"org_id": self.org_id},
         ):
-
             conn = self.sink_config.connection()
+            self._upsert_continuous_flow_alerts(conn, min_date, max_date, self.org_id)
 
-            ami_meters_score_sql = f"""
-            create or replace table meters_score_{self.org_id}
+    def _upsert_continuous_flow_alerts(
+        self,
+        conn,
+        min_date: datetime,
+        max_date: datetime,
+        org_id: str,
+        meter_alerts_table_name="meter_alerts",
+        readings_table_name="readings",
+    ):
+        threshold_streak_for_continuous_flow_hours = 24
+        min_date_to_process = min_date - timedelta(
+            hours=2 * threshold_streak_for_continuous_flow_hours
+        )
+        logger.info(
+            f"Detecting continuous flows of at least {threshold_streak_for_continuous_flow_hours} hours for org_id {org_id} on readings between {min_date_to_process} and {max_date}."
+        )
+        continuous_flow_alerts_sql = f"""
+            create or replace temporary table stage_continuous_flows
             as
-            with cte as
+            with augmented_readings as
+            -- Augment recent readings with data that will help us calculate leaks
             (
                 select org_id
-                    , device_id
-                    , flowtime::timestamp_ntz as flowtime
-                    , lag(flowtime) over(partition by org_id, device_id order by flowtime)::timestamp_ntz as flowtime0
-                    , datediff(second, flowtime0, flowtime::timestamp_ntz) as flowinterval
-                    , interval_value
-                    , register_value
-                    , coalesce(estimated::boolean, false) as estimated
-                    , case when not coalesce(estimated::boolean, false) and flowinterval = 3600 and interval_value > 0 then interval_value end as interval_value_clean
-                from ami_connect.readings
+                    ,device_id
+                    ,flowtime
+                    ,datediff(second, lag(flowtime) over(partition by org_id, device_id order by flowtime), flowtime) as flowinterval
+                    ,interval_value
+                    ,register_value
+                    ,coalesce(estimated::boolean, false) as estimated
+                    ,case when not coalesce(estimated::boolean, false) and flowinterval = 3600 and interval_value > 0 then interval_value end as interval_value_clean
+                from {readings_table_name}
                 where 1=1
-                and org_id = '{self.org_id}'
-                and flowtime::timestamp_ntz::date >= '{min_date.isoformat()}'
-                and flowtime::timestamp_ntz::date <= '{max_date.isoformat()}'
+                and org_id = ?
+                and flowtime::date >= ?
+                and flowtime::date <= ?
             )
-            , cte2 as
-            (
-                 select *
-                    , conditional_change_event(coalesce(interval_value, 0) = 0) over(partition by org_id, device_id order by flowtime desc) as grp
-                from cte
-                where flowinterval is not null
-            )
-            , failing_meters_0 as
-            (
-                select r.*
-                    -- , count(interval_value) over(partition by r.org_id, r.device_id, grp) as observations
-                    , sum(flowinterval) over(partition by r.org_id, r.device_id, grp) / 3600 as duration_hours
-                    , c.class_full_name
-                from cte2 r
-                join ami_connect.meters m on r.org_id = m.org_id and r.device_id = m.device_id and m.row_active_until is null
-                join wavelet.customer_location_data c on m.account_id = c.cust_id_from_utility and m.location_id = c.location_id_from_utility
-            )
-            , failing_meters_thresholds as
-            (
-                select org_id
-                    , class_full_name
-                    , percentile_cont(0.99999) within group (order by duration_hours) as duration_hours_thr
-                    , duration_hours_thr / 24 as duration_days_thr
-                from
-                (
-                    select distinct org_id, class_full_name, duration_hours, device_id, grp
-                    from failing_meters_0
-                    where coalesce(interval_value, 0) = 0
-                )
-                group by all
-            )
-            , failing_meters_score_0 as
-            (
-                select
-                    a.org_id
-                    , a.device_id
-                    , a.class_full_name
-                    , min(a.flowtime) as first_read
-                    , max(a.flowtime) as last_read
-                    , datediff(hour, last_read::date, '{max_date.isoformat()}') as last_read_hours
-                    --
-                    , count(interval_value) as observations
-                    , datediff(hour, '{min_date.isoformat()}', '{max_date.isoformat()}') + 24 as hours_in_period
-                    , observations / hours_in_period as read_freq
-                    , 1 - read_freq as unread_freq
-                    --
-                    , count(distinct case when duration_hours > duration_hours_thr and coalesce(interval_value, 0) = 0 then grp end) stuck_events
-                    , sum(case when duration_hours > duration_hours_thr and coalesce(interval_value, 0) = 0 then flowinterval else 0 end)/3600 stuck_hours
-                    , duration_hours_thr
-                    --
-                    ,sum(case when coalesce(interval_value,0) > 0 then interval_value end) as total_usage
-                    ,sum(case when coalesce(interval_value,0) > 0 then flowinterval end)/3600 as used_hours
-                    ,sum(case when coalesce(interval_value,0) = 0 then flowinterval end)/3600 as idle_hours
-                    ,total_usage / used_hours as avg_hourly_usage
-                    ,avg_hourly_usage * stuck_hours as unaccounted
-                from failing_meters_0 a
-                join failing_meters_thresholds b on a.org_id = b.org_id and a.class_full_name = b.class_full_name
-                group by all
-            )
-            , z_scores as
-            (
-                select *
-                    , (last_read_hours - avg(last_read_hours) over(partition by org_id, class_full_name)) / nullif(stddev(last_read_hours) over(partition by org_id, class_full_name), 0) as z_last_read
-                    , (unread_freq     - avg(unread_freq    ) over(partition by org_id, class_full_name)) / nullif(stddev(unread_freq    ) over(partition by org_id, class_full_name), 0) as z_unread_freq
-                    , (stuck_hours     - avg(stuck_hours    ) over(partition by org_id, class_full_name)) / nullif(stddev(stuck_hours    ) over(partition by org_id, class_full_name), 0) as z_stuck_hours
-                    , (stuck_events    - avg(stuck_events   ) over(partition by org_id, class_full_name)) / nullif(stddev(stuck_events   ) over(partition by org_id, class_full_name), 0) as z_stuck_events
-                    , (unaccounted     - avg(unaccounted    ) over(partition by org_id, class_full_name)) / nullif(stddev(unaccounted    ) over(partition by org_id, class_full_name), 0) as z_unaccounted
-                from failing_meters_score_0
-            )
-            select *
-                ,1+4*((z_last_read   -min(z_last_read)    over(partition by org_id, class_full_name))/nullif((max(z_last_read)    over(partition by org_id, class_full_name)-min(z_last_read)    over(partition by org_id, class_full_name)),0)) as score_last_read
-                ,1+4*((z_unread_freq -min(z_unread_freq)  over(partition by org_id, class_full_name))/nullif((max(z_unread_freq)  over(partition by org_id, class_full_name)-min(z_unread_freq)  over(partition by org_id, class_full_name)),0)) as score_unread_freq
-                ,1+4*((z_stuck_hours -min(z_stuck_hours)  over(partition by org_id, class_full_name))/nullif((max(z_stuck_hours)  over(partition by org_id, class_full_name)-min(z_stuck_hours)  over(partition by org_id, class_full_name)),0)) as score_stuck_hours
-                ,1+4*((z_stuck_events-min(z_stuck_events) over(partition by org_id, class_full_name))/nullif((max(z_stuck_events) over(partition by org_id, class_full_name)-min(z_stuck_events) over(partition by org_id, class_full_name)),0)) as score_stuck_events
-                ,1+4*((z_unaccounted -min(z_unaccounted)  over(partition by org_id, class_full_name))/nullif((max(z_unaccounted)  over(partition by org_id, class_full_name)-min(z_unaccounted)  over(partition by org_id, class_full_name)),0)) as score_unaccounted
-                ,(1 * coalesce(score_last_read,    0)
-                + 1 * coalesce(score_unread_freq,  0)
-                + 1 * coalesce(score_stuck_hours,  0)
-                + 1 * coalesce(score_stuck_events, 0)
-                + 1 * coalesce(score_unaccounted,  0)
-                ) / (1 + 1 + 1 + 1 + 1)::float as score
-            from z_scores
-            """
-            conn.cursor().execute(ami_meters_score_sql)
+            -- select * from augmented_readings;
 
-            ami_leaks_sql = f"""
-                create or replace table leaks_{self.org_id}
-                as
-                with data0_readings as
-                (
-                    select org_id
-                        ,device_id
-                        ,flowtime
-                        ,datediff(second, lag(flowtime) over(partition by org_id, device_id order by flowtime), flowtime) as flowinterval
-                        ,interval_value
-                        ,register_value
-                        ,coalesce(estimated::boolean, false) as estimated
-                        ,case when not coalesce(estimated::boolean, false) and flowinterval = 3600 and interval_value > 0 then interval_value end as interval_value_clean
-                    from ami_connect.readings
-                    where 1=1
-                    and org_id = '{self.org_id}'
-                    and flowtime::date >= '{min_date.isoformat()}'
-                    and flowtime::date <= '{max_date.isoformat()}'
-                )
-                ,leaks_groups0 as
-                (
-                    select
-                        org_id
-                        ,device_id
-                        ,min(flowtime) as stime0
-                        ,max(flowtime) as etime0
-                        ,datediff(hour, stime0, etime0) + 1 as duration0
-                    from
-                    (
-                        select
-                            org_id
-                            ,device_id
-                            ,flowtime
-                            ,date_part(epoch_second, flowtime) / 3600 - row_number() over (partition by org_id, device_id order by flowtime) as grp
-                        from data0_readings
-                        where interval_value_clean is not null
-                    )
-                    group by org_id, device_id, grp
-                )
-                ,leaks_groups1 as
-                (
-                    select
-                        a.org_id
-                        ,a.device_id
-                        ,a.stime0 as stime1
-                        ,ifnull(b.etime0, a.etime0) as etime1
-                        ,datediff(hour, stime1, etime1) + 1 as duration1
-                    from leaks_groups0 a
-                    left join leaks_groups0 b on a.org_id = b.org_id and a.device_id = b.device_id and datediff(hour, a.etime0, b.stime0) = 2
-                    where duration1 >= 24
-                )
-                ,leaks_groups2 as
-                (
-                    with cte as
-                    (
-                        select *
-                            ,row_number() over(partition by org_id, device_id order by stime1, etime1) as rn
-                        from leaks_groups1
-                    )
-                    ,rec as
-                    (
-                        select *
-                            ,rn as rn2
-                        from cte
-                        where rn = 1
-                        union all
-                        select a.*
-                            ,case when b.etime1 between a.stime1 and a.etime1 then b.rn2 else a.rn end
-                        from cte a
-                        join rec b on a.org_id = b.org_id and a.device_id = b.device_id and a.rn = b.rn + 1
-                    )
-                    select
-                        org_id
-                        ,device_id
-                        ,min(stime1) as stime2
-                        ,max(etime1) as etime2
-                        ,datediff(hour, stime2, etime2) + 1 as duration2
-                    from rec
-                    group by org_id, device_id, rn2
-                )
-                ,leaks as
-                (
-                    with cte as
-                    (
-                        select a.*
-                            ,(b.device_id is not null) as is_leak
-                            ,conditional_change_event(is_leak) over(partition by a.org_id, a.device_id order by flowtime) as grp
-                        from data0_readings a
-                        left join leaks_groups2 b on a.org_id = b.org_id and a.device_id = b.device_id and flowtime between stime2 and etime2
-                        where concat_ws('-', a.org_id, a.device_id) in (select distinct concat_ws('-', org_id, device_id) from leaks_groups2) --and a.device_id = '38919022'
-                    )
-                    ,cte2 as
-                    (
-                        select *
-                            ,min(flowtime) over(partition by org_id, device_id, grp) as stime
-                            ,max(flowtime) over(partition by org_id, device_id, grp) as etime
-                            ,datediff(hour, stime, etime) + 1 as duration
-                            ,min(case when is_leak then interval_value_clean end) over (partition by org_id, device_id, grp order by flowtime rows between 23 preceding and current row) as min_leak_bck
-                            ,min(case when is_leak then interval_value_clean end) over (partition by org_id, device_id, grp order by flowtime rows between current row and 23 following) as min_leak_fwd
-                            ,greatest(min_leak_bck, min_leak_fwd) as leak_calc
-                        from cte
-                    )
-                    select *
-                        ,avg(leak_calc) over(partition by org_id, device_id, stime, etime) as leak_avg
-                        ,stddev(leak_calc) over(partition by org_id, device_id, stime, etime) as leak_stdev
-                        ,case when leak_calc > leak_avg + leak_stdev then leak_avg else leak_calc end as leak_clean
-                        ,to_varchar(stime, 'yyyy/mm/dd@hh - ') || duration || iff(is_leak, 'h', 'h*') as event_id
-                        ,case when estimated then 0 when leak_clean <= interval_value then leak_clean else 0 end as leak
-                        ,case when estimated then 0 when leak_clean <= interval_value then interval_value - leak_clean else ifnull(interval_value, 0) end as usage
-                        ,case when estimated then interval_value else 0 end as est_usage
-                    from cte2
-                )
+            -- Group readings 
+            ,readings_grouped_by_flow_streak as
+            (
                 select
                     org_id
                     ,device_id
-                    ,flowtime                as flowtime_ts
-                    ,flowinterval            as flowinterval_sec
-                    ,register_value          as raw_register_value_cf
-                    ,interval_value          as raw_interval_value_cf
-                    ,interval_value_clean    as clean_interval_value_cf
-                    ,estimated               as is_estimated
-                    ,is_leak                 as is_leak
-                    ,min_leak_bck            as minflow_prev24h_cf
-                    ,min_leak_fwd            as minflow_lead24h_cf
-                    ,leak_calc               as leak_calculated_cf
-                    ,leak_avg                as leak_average_cf
-                    ,leak_stdev              as leak_stdev_cf
-                    ,leak_clean              as leak_clean_cf
-                    ,grp                     as event_seq
-                    ,stime                   as event_start_ts
-                    ,etime                   as event_end_ts
-                    ,duration                as event_hrs
-                    ,event_id                as event_id
-                    ,leak                    as final_leak_cf
-                    ,usage                   as final_usage_cf
-                    ,est_usage               as final_est_usage_cf
-                from leaks
-            """
-            conn.cursor().execute(ami_leaks_sql)
+                    ,min(flowtime) as stime0
+                    ,max(flowtime) as etime0
+                    ,datediff(hour, stime0, etime0) + 1 as duration0
+                from
+                (
+                    select
+                        org_id
+                        ,device_id
+                        ,flowtime
+                        -- When you subtract the row_number from the epoch_hour, the result remains constant as long as the data is perfectly consecutive. 
+                        -- The moment there is a gap (an hour with no flow), the row_number and the epoch_hour get "out of sync," and the resulting number changes.
+                        ,date_part(epoch_second, flowtime) / 3600 - row_number() over (partition by org_id, device_id order by flowtime) as streak
+                    from augmented_readings
+                    where interval_value_clean is not null
+                )
+                group by org_id, device_id, streak
+            )
+            --select * from readings_grouped_by_flow_streak;
 
-            ami_leaks_agg_sql = f"""
-                create or replace table leaks_{self.org_id}_agg
-                as
+            -- The LEFT JOIN (a self-join) is performing a "Gap-Bridging" or "Look-Ahead" operation. It stitches two separate leak events into one 
+            -- if they are separated by exactly one hour of silence.
+            -- In this step, we also filter to streaks that are long enough to be called continuous flow leaks
+            ,streaks_with_bridged_gaps as
+            (
+                select
+                    a.org_id
+                    ,a.device_id
+                    ,a.stime0 as stime1
+                    ,ifnull(b.etime0, a.etime0) as etime1
+                    ,datediff(hour, stime1, etime1) + 1 as duration1
+                    
+                from readings_grouped_by_flow_streak a
+                left join readings_grouped_by_flow_streak b on a.org_id = b.org_id and a.device_id = b.device_id and datediff(hour, a.etime0, b.stime0) = 2
+                where duration1 >= ?
+            )
+
+            -- select * from streaks_with_bridged_gaps;
+
+            -- Handles nested or overlapping Leaks
+            ,leaks_deduped as
+            (
+                with streaks_by_device as
+                -- This sorts all detected leak intervals chronologically for each device and gives them an ID (rn).
+                (
+                    select *
+                        ,row_number() over(partition by org_id, device_id order by stime1, etime1) as rn
+                    from streaks_with_bridged_gaps
+                )
+                ,rec as
+                -- From Gemini: 
+                -- This is the recursive "brain" of the query. It iterates through the leaks one by one (1,2,3...) to see if they overlap.
+                -- The Anchor (where rn = 1): It starts with the very first leak found for the device. It assigns rn2 = 1 (this rn2 acts as a Group ID).
+                -- The Recursive Join (a.rn = b.rn + 1): It looks at the next row (a) and compares it to the previous results (b).
+                -- The Overlap Check (b.etime1 between a.stime1 and a.etime1): * If the previous leak's end time falls inside the current leak's window, it means they overlap.
+                -- The Action: If they overlap, it assigns the previous group ID (b.rn2). If they don't overlap, it starts a new group ID (a.rn).
+                (
+                    select *
+                        ,rn as rn2
+                    from streaks_by_device
+                    where rn = 1
+                    union all
+                    select a.*
+                        ,case when b.etime1 between a.stime1 and a.etime1 then b.rn2 else a.rn end
+                    from streaks_by_device a
+                    join rec b on a.org_id = b.org_id and a.device_id = b.device_id and a.rn = b.rn + 1
+                )
+                -- Once the recursion finishes, every overlapping row has the same rn2. 
+                -- The query then "squashes" them together by taking the earliest start and the latest end of that specific group.
                 select
                     org_id
-                    , device_id
-                    , event_id
-                    , event_start_ts
-                    , event_end_ts
-                    , event_hrs
-                    , is_leak
-                    , array_agg(flowtime_ts) as flowtime_ts
-                    , array_agg(flowinterval_sec) as flowinterval_sec
-                    , array_agg(ifnull(is_estimated, 'NaN')) as is_estimated
-                    , array_agg(ifnull(raw_interval_value_cf, 'NaN')) as raw_interval_value_cf
-                    , array_agg(ifnull(clean_interval_value_cf, 'NaN')) as clean_interval_value_cf
-                    , array_agg(ifnull(leak_calculated_cf, 'NaN')) as leak_calculated_cf
-                    , avg(leak_calculated_cf) as leak_average_cf
-                    , stddev(leak_calculated_cf) as leak_stdev_cf
-                    , array_agg(ifnull(leak_clean_cf, 'NaN')) as leak_clean_cf
-                    , avg(final_leak_cf) as final_leak_rate_cfph
-                    , array_agg(ifnull(final_leak_cf, 'NaN')) as final_leak_cf
-                    , array_agg(ifnull(final_usage_cf, 'NaN')) as final_usage_cf
-                    , array_agg(ifnull(final_est_usage_cf, 'NaN')) as final_est_usage_cf
-                    , sum(final_leak_cf) as final_leak_sum_cf
-                    , sum(final_usage_cf) as final_usage_sum_cf
-                    , sum(final_est_usage_cf) as final_est_usage_sum_cf
-                    , sum(raw_interval_value_cf) as raw_interval_value_sum_cf
-                from leaks_{self.org_id}
-                group by org_id, device_id, event_id, event_start_ts, event_end_ts, event_hrs, is_leak
-            """
-            conn.cursor().execute(ami_leaks_agg_sql)
+                    ,device_id
+                    ,min(stime1) as stime2
+                    ,max(etime1) as etime2
+                    ,datediff(hour, stime2, etime2) + 1 as duration2
+                from rec
+                group by org_id, device_id, rn2
+            )
+            -- Builds final staging table
+            select l.*, 
+                m.last_flowtime, 
+                m.last_interval_value, 
+                m.last_register_value,
+                (m.last_flowtime <= l.etime2) as IS_ACTIVE
+            from leaks_deduped l
+            left join (
+                SELECT 
+                    ORG_ID,
+                    DEVICE_ID,
+                    FLOWTIME as last_flowtime,
+                    INTERVAL_VALUE as last_interval_value,
+                    REGISTER_VALUE as last_register_value
+                FROM {readings_table_name}
+                -- This filters the results to only include the top 1 row per group
+                QUALIFY ROW_NUMBER() OVER (
+                    PARTITION BY ORG_ID, DEVICE_ID 
+                    ORDER BY FLOWTIME DESC
+                ) = 1
+            ) m on l.org_id = m.org_id and l.device_id = m.device_id
+            ;
+        """
+        conn.cursor().execute(
+            continuous_flow_alerts_sql,
+            (
+                org_id,
+                min_date_to_process,
+                max_date,
+                threshold_streak_for_continuous_flow_hours,
+            ),
+        )
 
-            ami_irrigation_detection_agg_sql = f"""
-                create or replace table irrigation_detection_agg
-                as
-                select
-                    meter_id
-                    , array_agg(timestamp) within group (order by timestamp) as timestamp
-                    , array_agg(total_volume) within group (order by timestamp) as total_volume
-                    , array_agg(irrigation_volume) within group (order by timestamp) as irrigation_volume
-                    , array_agg(non_irrigation_volume) within group (order by timestamp) as non_irrigation_volume
-                    --
-                    , array_agg(irrigation_flag) within group (order by timestamp) as irrigation_flag
-                    , array_agg(daily_irrigation_detected) within group (order by timestamp) as daily_irrigation_detected
-                    --
-                    , array_agg(daily_confidence) within group (order by timestamp) as daily_confidence
-                    , array_agg(hourly_confidence) within group (order by timestamp) as hourly_confidence
-                    --
-                    , model_used
-                    , meter_baseline_days
-                    , meter_normal_days
-                    , meter_total_training_days
-                    , meter_needs_finetuning
-                    , meter_has_custom_model
-                    , district_source
-                    , meter_type
-                from
-                    irrigation_detection
-                where
-                    1=1
-                group by all
-            """
-            conn.cursor().execute(ami_irrigation_detection_agg_sql)
+        num_alerts_detected = (
+            conn.cursor()
+            .execute("select count(*) from stage_continuous_flows")
+            .fetchone()[0]
+        )
+        logger.info(
+            f"Detected {num_alerts_detected} continuous flow alerts in staging table for org_id {org_id}. Merging into {meter_alerts_table_name} table."
+        )
+
+        merge_sql = f"""
+            MERGE INTO {meter_alerts_table_name} t
+            USING stage_continuous_flows s
+            ON t.org_id = s.org_id 
+            AND t.device_id = s.device_id
+            AND t.alert_type = 'continuous_flow'
+            AND (
+                (t.start_time BETWEEN s.stime2 AND s.etime2)
+                OR (t.end_time BETWEEN s.stime2 AND s.etime2)
+                OR (s.stime2 BETWEEN t.start_time AND t.end_time)
+                OR (s.etime2 BETWEEN t.start_time AND t.end_time)
+            )
+            -- still active
+            WHEN MATCHED AND s.is_active = true THEN UPDATE SET
+                t.start_time = LEAST(t.start_time, s.stime2),
+                t.end_time = null
+            -- not active
+            WHEN MATCHED THEN UPDATE SET
+                t.start_time = LEAST(t.start_time, s.stime2),
+                t.end_time = GREATEST(IFNULL(t.end_time, s.etime2), s.etime2)
+            -- new alert
+            WHEN NOT MATCHED THEN INSERT
+                    (org_id, device_id, start_time, end_time, alert_type)
+                VALUES
+                    (s.org_id, s.device_id, s.stime2, case when s.is_active then null else s.etime2 end, 'continuous_flow')
+                ;
+        """
+        conn.cursor().execute(merge_sql)
 
     def _meter_tuple(self, meter: GeneralMeter, row_active_from: datetime):
         result = [

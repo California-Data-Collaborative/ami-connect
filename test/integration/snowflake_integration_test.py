@@ -50,6 +50,7 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
         assert isinstance(cls.snowflake_sink, SnowflakeStorageSink)
         cls.test_meters_table = "meters_int_test"
         cls.test_readings_table = "readings_int_test"
+        cls.test_meter_alerts_table = "meter_alerts_int_test"
         cls.conn = cls.snowflake_sink.sink_config.connection()
         cls.cs = cls.conn.cursor()
 
@@ -85,16 +86,18 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
         account_id: str = "acct1",
         location_id: str = "loc1",
         estimated: int = 0,
+        interval_value: float = 10.0,
+        flowtime: datetime = datetime.datetime(2024, 1, 1, 0, 0, tzinfo=pytz.UTC),
     ) -> GeneralMeterRead:
         return GeneralMeterRead(
             org_id="org1",
             device_id=device_id,
             account_id=account_id,
             location_id=location_id,
-            flowtime=datetime.datetime(2024, 1, 1, tzinfo=pytz.UTC),
+            flowtime=flowtime,
             register_value=100.0,
             register_unit="GAL",
-            interval_value=10.0,
+            interval_value=interval_value,
             interval_unit="GAL",
             battery="good",
             install_date=None,
@@ -211,14 +214,16 @@ class TestSnowflakeUpserts(BaseSnowflakeIntegrationTestCase):
             [read_updated], self.conn, table_name=self.test_readings_table
         )
 
-        self.cs.execute(f"SELECT * FROM {self.test_readings_table}")
+        self.cs.execute(
+            f"SELECT account_id, location_id, register_value, estimated FROM {self.test_readings_table}"
+        )
         rows = self.cs.fetchall()
         self.assertEqual(len(rows), 1)
         updated_row = rows[0]
-        self.assertEqual(updated_row[1], "acct2")  # account_id
-        self.assertEqual(updated_row[2], "loc2")  # location_id
-        self.assertEqual(updated_row[5], 100.0)  # register_value
-        self.assertEqual(updated_row[11], 1)  # estimated
+        self.assertEqual(updated_row[0], "acct2")  # account_id
+        self.assertEqual(updated_row[1], "loc2")  # location_id
+        self.assertEqual(updated_row[2], 100.0)  # register_value
+        self.assertEqual(updated_row[3], 1)  # estimated
 
     def test_upsert_reads_inserts_new_row_when_not_matched(self):
         self._assert_num_rows(self.test_readings_table, 0)
@@ -234,6 +239,172 @@ class TestSnowflakeUpserts(BaseSnowflakeIntegrationTestCase):
         )
 
         self._assert_num_rows(self.test_readings_table, 2)
+
+
+class TestSnowflakeContinuousFlowAlerts(BaseSnowflakeIntegrationTestCase):
+
+    def setUp(self):
+        self.row_active_from = datetime.datetime.now(tz=pytz.UTC)
+        self.now = datetime.datetime(2024, 1, 10, 12, 0, tzinfo=pytz.UTC)
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_meters_table} LIKE meters;"
+        )
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_readings_table} LIKE readings;"
+        )
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_meter_alerts_table} LIKE meter_alerts;"
+        )
+        # TODO why? is this affecting production flowtimes or flowtimes when I run from my laptop?
+        self.conn.cursor().execute("ALTER SESSION SET TIMEZONE = 'UTC'")
+        self.conn.cursor().execute(
+            "ALTER SESSION SET TIMESTAMP_TYPE_MAPPING = 'TIMESTAMP_TZ'"
+        )
+
+    def _insert_reading_streak(
+        self,
+        device_id: str,
+        start_time: datetime,
+        hours: int,
+        value: float,
+        insert_leading_zero: bool = True,
+    ):
+        """Helper to create consecutive hourly readings."""
+        readings = []
+        if insert_leading_zero:
+            # Start with a "zero" reading before the streak to ensure it starts at the correct time.
+            # Otherwise our model does not consider the first read to be "clean", given that it did not occur one hour after the previous read.
+            readings.append(
+                self._create_read(
+                    device_id=device_id,
+                    flowtime=start_time - datetime.timedelta(hours=1),
+                    interval_value=0,
+                    estimated=0,
+                )
+            )
+        # Add a read for every hour in the streak
+        for i in range(hours):
+            flowtime = start_time + datetime.timedelta(hours=i)
+            # We use the GeneralMeterRead model to ensure compatibility with your existing schema
+            read = self._create_read(
+                device_id=device_id,
+                flowtime=flowtime,
+                interval_value=value,
+                estimated=0,
+            )
+            readings.append(read)
+
+        self.snowflake_sink._upsert_reads(
+            readings, self.conn, table_name=self.test_readings_table
+        )
+
+    def test_alert_created_after_24_hour_streak(self):
+        device_id = "leak_device"
+        min_date = self.now - datetime.timedelta(hours=30)
+        max_date = self.now + datetime.timedelta(days=3)
+        self._assert_num_rows(self.test_meter_alerts_table, 0)
+
+        # 1. Insert 25 hours of continuous flow (value > 0)
+        start_streak = self.now - datetime.timedelta(hours=25)
+        self._insert_reading_streak(device_id, start_streak, 25, 1.5)
+
+        # 2. Run the function
+        # Note: self.snowflake_sink should be the object owning the method
+        self.snowflake_sink._upsert_continuous_flow_alerts(
+            self.conn,
+            min_date,
+            max_date,
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+
+        # 3. Assertions
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+        self.cs.execute(
+            f"SELECT alert_type, start_time, end_time FROM {self.test_meter_alerts_table}"
+        )
+        alert = self.cs.fetchone()
+        self.assertEqual(alert[0], "continuous_flow")
+        self.assertEqual(
+            alert[1].isoformat(), start_streak.isoformat()
+        )  # START_TIME should match the start of the streak
+        self.assertIsNone(
+            alert[2]
+        )  # IS_ACTIVE should be true, so end_time should be NULL
+
+    def test_no_alert_when_streak_is_too_short(self):
+        device_id = "short_streak_device"
+        min_date = self.now - datetime.timedelta(hours=30)
+        max_date = self.now + datetime.timedelta(days=3)
+
+        # Insert only 10 hours of flow
+        self._insert_reading_streak(
+            device_id, self.now - datetime.timedelta(hours=10), 10, 5.0
+        )
+
+        self.snowflake_sink._upsert_continuous_flow_alerts(
+            self.conn,
+            min_date,
+            max_date,
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+
+        # Should NOT result in an alert because threshold is 24 hours
+        self._assert_num_rows(self.test_meter_alerts_table, 0)
+
+    def test_alert_closed_when_flow_stops(self):
+        device_id = "closed_leak_device"
+
+        # 1. Create an active leak (25 hours of flow)
+        min_date = self.now - datetime.timedelta(hours=30)
+        max_date = self.now + datetime.timedelta(days=3)
+        self._insert_reading_streak(device_id, min_date, 25, 1.0)
+        self.snowflake_sink._upsert_continuous_flow_alerts(
+            self.conn,
+            min_date,
+            max_date,
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+
+        # Validate that an alert was created and is active (end_time is NULL)
+        self.cs.execute(
+            f"SELECT end_time FROM {self.test_meter_alerts_table} WHERE device_id = '{device_id}'"
+        )
+        end_time = self.cs.fetchone()[0]
+        self.assertIsNone(end_time)
+
+        # 2. Insert a "zero" reading to break the leak
+        zero_read = self._create_read(
+            device_id=device_id,
+            flowtime=self.now + datetime.timedelta(hours=1),
+            interval_value=0.0,
+        )
+        self.snowflake_sink._upsert_reads(
+            [zero_read], self.conn, table_name=self.test_readings_table
+        )
+
+        # 3. Run alerts again
+        self.snowflake_sink._upsert_continuous_flow_alerts(
+            self.conn,
+            min_date,
+            max_date,
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+
+        # 4. Verify the alert now has an END_TIME
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+        self.cs.execute(
+            f"SELECT end_time FROM {self.test_meter_alerts_table} WHERE device_id = '{device_id}'"
+        )
+        end_time = self.cs.fetchone()[0]
+        self.assertIsNotNone(end_time)
 
 
 class TestSnowflakeDataQualityChecks(BaseSnowflakeIntegrationTestCase):
