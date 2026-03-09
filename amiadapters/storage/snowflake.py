@@ -465,9 +465,44 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             """
             conn.cursor().execute(ami_meters_score_sql)
 
+            # Ensure leaks table exists (no-op after first run)
+            conn.cursor().execute(f"""
+                create table if not exists leaks_{self.org_id} (
+                    org_id text,
+                    device_id text,
+                    flowtime_ts timestamp_tz,
+                    flowinterval_sec number(18,0),
+                    raw_register_value_cf float,
+                    raw_interval_value_cf float,
+                    clean_interval_value_cf float,
+                    is_estimated boolean,
+                    is_leak boolean,
+                    minflow_prev24h_cf float,
+                    minflow_lead24h_cf float,
+                    leak_calculated_cf float,
+                    leak_average_cf float,
+                    leak_stdev_cf float,
+                    leak_clean_cf float,
+                    event_seq number(18,0),
+                    event_start_ts timestamp_tz,
+                    event_end_ts timestamp_tz,
+                    event_hrs number(10,0),
+                    event_id text,
+                    final_leak_cf float,
+                    final_usage_cf float,
+                    final_est_usage_cf float
+                )
+            """)
+
+            # Delete existing rows in the window, then insert fresh results
+            conn.cursor().execute(f"""
+                delete from leaks_{self.org_id}
+                where flowtime_ts >= '{min_date.isoformat()}'
+                and flowtime_ts <= '{max_date.isoformat()}'
+            """)
+
             ami_leaks_sql = f"""
-                create or replace table leaks_{self.org_id}
-                as
+                insert into leaks_{self.org_id}
                 with data0_readings as
                 (
                     select org_id
