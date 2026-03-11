@@ -680,7 +680,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 (
                     select *
                         , conditional_change_event(coalesce(irrigation_reading, 0) = 0) over (partition by source, device_id order by timestamp) as grp
-                    from (select distinct * from global_irrigation_detection)
+                    from (select distinct * from wavelet.global_irrigation_detection)
                 )
                 select 
                     source
