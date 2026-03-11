@@ -11,7 +11,7 @@ The Aclara adapter uses SFTP to retrieve meter read data from an Aclara server.
 
 Example:
 ```
-python cli.py config add-source my_utility aclara America/Los_Angeles --sftp-host my-sftp-host --sftp-remote-data-directory ./data --sftp-local-download-directory ./output --sftp-local-known-hosts-file ./known-hosts --sinks my_snowflake
+python cli.py config add-source my_utility aclara America/Los_Angeles --config sftp-host=my-sftp-host --config sftp-remote-data-directory=./data --config sftp-local-download-directory=./output --config sftp-local-known-hosts-file=./known-hosts --sinks my_snowflake
 ```
 
 The `./known-hosts` file is a special SSH known hosts file that should contain info about the Aclara server at `sftp_host`. Its contents
@@ -21,7 +21,7 @@ are read into the database as the "sftp_known_hosts_str" value.
 
 Example:
 ```
-python cli.py config update-secret my_utility --source-type aclara --sftp-user my_user --sftp-password my_password
+python cli.py config update-secret my_utility --source-type aclara --secret sftp-user=my_user --secret sftp-password=my_password
 ```
 
 ## Limitations

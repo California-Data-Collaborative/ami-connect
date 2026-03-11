@@ -19,14 +19,14 @@ server and add it as a [deploy key](https://docs.github.com/en/authentication/co
 
 Example:
 ```
-python cli.py config add-source my_utility neptune America/Los_Angeles --external-adapter-location ./neptune-ami-connect/neptune --sinks my_snowflake
+python cli.py config add-source my_utility neptune America/Los_Angeles --config external-adapter-location=./neptune-ami-connect/neptune --sinks my_snowflake
 ```
 
 ## Secrets
 
 Example:
 ```
-python cli.py config update-secret my_utility --source-type neptune --api-key my_api_key --site-id 1234 --client-id api-client_my_client --client_secret my_secret
+python cli.py config update-secret my_utility --source-type neptune --secret api-key=my_api_key --secret site-id=1234 --secret client-id=api-client_my_client --secret client_secret=my_secret
 ```
 
 ## Notes

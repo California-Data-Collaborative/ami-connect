@@ -15,7 +15,7 @@ python cli.py config add-source my_utility beacon_360 America/Los_Angeles --sink
 
 Example:
 ```
-python cli.py config update-secret my_utility --source-type beacon_360 --user my_user --password my_password
+python cli.py config update-secret my_utility --source-type beacon_360 --secret user=my_user --secret password=my_password
 ```
 
 ## Limitations

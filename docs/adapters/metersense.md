@@ -15,7 +15,7 @@ Some setup outside of AMI Connect may include:
 
 Example:
 ```
-python cli.py config add-source my_utility metersense America/Los_Angeles --ssh-tunnel-server-host my-tunnel-host --ssh-tunnel-key-path ./key --database-host my-db-host --database-port 1521 --sinks my_snowflake
+python cli.py config add-source my_utility metersense America/Los_Angeles --config ssh-tunnel-server-host=my-tunnel-host --config ssh-tunnel-key-path=./key --config database-host=my-db-host --config database-port=1521 --sinks my_snowflake
 ```
 
 ## Secrets
@@ -27,7 +27,7 @@ python cli.py config add-source my_utility metersense America/Los_Angeles --ssh-
 
 Example:
 ```
-python cli.py config update-secret my_utility --source-type metersense --ssh-tunnel-username my_user --database-db-name my_database --database-user my_db_user --database-password my_db_password
+python cli.py config update-secret my_utility --source-type metersense --secret ssh-tunnel-username=my_user --secret database-db-name=my_database --secret database-user=my_db_user --secret database-password=my_db_password
 ```
 
 ## Limitations
