@@ -676,32 +676,26 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             ami_irrigation_detection_agg_sql = f"""
                 create or replace table irrigation_detection_agg
                 as
-                select
-                    meter_id
+                with cte as
+                (
+                    select *
+                        , conditional_change_event(coalesce(irrigation_reading, 0) = 0) over (partition by source, device_id order by timestamp) as grp
+                    from (select distinct * from wavelet.global_irrigation_detection)
+                )
+                select 
+                    source
+                    , device_id
+                    , min(timestamp) as event_start_ts
+                    , max(timestamp) as event_end_ts
+                    , datediff(hour, event_start_ts, event_end_ts) + 1 as event_hrs
+                    , max(irrigation_reading > 0) is_irrigation
+                    , to_varchar(event_start_ts, 'yyyy/mm/dd@hh - ') || event_hrs || iff(is_irrigation, 'h', 'h*') as event_id
                     , array_agg(timestamp) within group (order by timestamp) as timestamp
-                    , array_agg(total_volume) within group (order by timestamp) as total_volume
-                    , array_agg(irrigation_volume) within group (order by timestamp) as irrigation_volume
-                    , array_agg(non_irrigation_volume) within group (order by timestamp) as non_irrigation_volume
-                    --
-                    , array_agg(irrigation_flag) within group (order by timestamp) as irrigation_flag
-                    , array_agg(daily_irrigation_detected) within group (order by timestamp) as daily_irrigation_detected
-                    --
-                    , array_agg(daily_confidence) within group (order by timestamp) as daily_confidence
-                    , array_agg(hourly_confidence) within group (order by timestamp) as hourly_confidence
-                    --
-                    , model_used
-                    , meter_baseline_days
-                    , meter_normal_days
-                    , meter_total_training_days
-                    , meter_needs_finetuning
-                    , meter_has_custom_model
-                    , district_source
-                    , meter_type
-                from
-                    irrigation_detection
-                where
-                    1=1
-                group by all
+                    , array_agg(total_reading) within group (order by timestamp) as total_reading_cf
+                    , array_agg(irrigation_reading) within group (order by timestamp) as irrigation_reading_cf
+                    , array_agg(non_irrigation_reading) within group (order by timestamp) as non_irrigation_reading_cf
+                from cte
+                group by source, device_id, grp
             """
             conn.cursor().execute(ami_irrigation_detection_agg_sql)
 
