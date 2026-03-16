@@ -359,6 +359,9 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         ):
             conn = self.sink_config.connection()
             self._upsert_continuous_flow_alerts(conn, min_date, max_date, self.org_id)
+            self._upsert_daily_usage_threshold_alerts(
+                conn, min_date, max_date, self.org_id
+            )
 
     def _upsert_continuous_flow_alerts(
         self,
@@ -475,9 +478,9 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 select
                     org_id
                     ,device_id
-                    ,min(stime1) as stime2
-                    ,max(etime1) as etime2
-                    ,datediff(hour, stime2, etime2) + 1 as duration2
+                    ,min(stime1) as new_alert_start
+                    ,max(etime1) as new_alert_end
+                    ,datediff(hour, new_alert_start, new_alert_end) + 1 as duration2
                 from rec
                 group by org_id, device_id, rn2
             )
@@ -486,7 +489,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 m.last_flowtime, 
                 m.last_interval_value, 
                 m.last_register_value,
-                (m.last_flowtime <= l.etime2) as IS_ACTIVE
+                (m.last_flowtime <= l.new_alert_end) as IS_ACTIVE
             from leaks_deduped l
             left join (
                 SELECT 
@@ -525,31 +528,155 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             f"Detected {num_alerts_detected} continuous flow alerts in staging table for org_id {org_id}. Merging into {meter_alerts_table_name} table."
         )
 
+        self._merge_alerts(
+            conn, meter_alerts_table_name, "stage_continuous_flows", "continuous_flow"
+        )
+
+    def _upsert_daily_usage_threshold_alerts(
+        self,
+        conn,
+        min_date: datetime,
+        max_date: datetime,
+        org_id: str,
+        meter_alerts_table_name="meter_alerts",
+        readings_table_name="readings",
+    ):
+        """
+        This method detects devices that have a total daily usage above a certain threshold for at least 1 day.
+        """
+        min_date_to_process = min_date - timedelta(days=7)
+
+        # Hardcoded per org for now
+        threshold_for_high_daily_usage = {
+            "current_aeneas": 20,
+            "current_bakman": 250,
+            "current_sierra": 25,
+            "current_arlington": 90,
+            "current_jewell": 750,
+        }.get(org_id, 100)
+
+        logger.info(
+            f"Detecting high daily usage flows of at least {threshold_for_high_daily_usage} units for org_id {org_id} on readings between {min_date_to_process} and {max_date}."
+        )
+        sql = f"""
+            create or replace temporary table stage_daily_usage_thresholds
+            as
+            WITH daily_usage AS (
+                SELECT 
+                    org_id,
+                    device_id,
+                    date_trunc('day', flowtime) AS usage_date,
+                    sum(interval_value) AS total_daily_usage
+                FROM {readings_table_name}
+                WHERE 1=1
+                and org_id = ?
+                and flowtime::date >= ?
+                and flowtime::date <= ?
+                GROUP BY 1, 2, 3
+            ),
+            -- Create streaks (islands) of days exceeding the threshold
+            streaks AS (
+                SELECT 
+                    org_id,
+                    device_id,
+                    usage_date,
+                    total_daily_usage,
+                    -- If usage > threshold, we assign a group ID by subtracting a row_number from the date
+                    DATEADD('day', -ROW_NUMBER() OVER (PARTITION BY org_id, device_id ORDER BY usage_date), usage_date) AS streak_group
+                FROM daily_usage
+                WHERE total_daily_usage > ? -- USAGE THRESHOLD HERE
+            ),
+            -- select * from streaks;
+            -- Squash the streaks into start and end times
+            new_alerts AS (
+                SELECT 
+                    s.org_id,
+                    s.device_id,
+                    min(s.usage_date) AS new_alert_start,
+                    -- The alert "ends" at the start of the next day (the first day below threshold)
+                    dateadd('day', 1, max(s.usage_date)) AS new_alert_end
+                FROM streaks s
+                GROUP BY s.org_id, s.device_id, s.streak_group
+            ),
+            new_alerts_with_status AS (
+                SELECT
+                    s.*,
+                    (m.last_flowtime <= s.new_alert_end) as IS_ACTIVE
+                FROM new_alerts s
+                LEFT JOIN (
+                    SELECT 
+                        ORG_ID,
+                        DEVICE_ID,
+                        FLOWTIME as last_flowtime,
+                        INTERVAL_VALUE as last_interval_value,
+                        REGISTER_VALUE as last_register_value
+                    FROM {readings_table_name}
+                    -- Only consider "clean"-like reads that would be part of a streak
+                    WHERE coalesce(estimated::boolean, false) = false and interval_value is not null
+                    -- This filters the results to only include the top 1 row per group, giving us the latest read
+                    QUALIFY ROW_NUMBER() OVER (
+                        PARTITION BY ORG_ID, DEVICE_ID 
+                        ORDER BY FLOWTIME DESC
+                    ) = 1
+                ) m on s.org_id = m.org_id and s.device_id = m.device_id
+            )
+            select * from new_alerts_with_status
+            ;
+        """
+        conn.cursor().execute(
+            sql,
+            (
+                org_id,
+                min_date_to_process,
+                max_date,
+                threshold_for_high_daily_usage,
+            ),
+        )
+
+        num_alerts_detected = (
+            conn.cursor()
+            .execute("select count(*) from stage_daily_usage_thresholds")
+            .fetchone()[0]
+        )
+        logger.info(
+            f"Detected {num_alerts_detected} daily usage threshold alerts in staging table for org_id {org_id}. Merging into {meter_alerts_table_name} table."
+        )
+
+        self._merge_alerts(
+            conn,
+            meter_alerts_table_name,
+            "stage_daily_usage_thresholds",
+            "high_daily_usage",
+        )
+
+    def _merge_alerts(
+        self, conn, meter_alerts_table_name: str, stage_table_name: str, alert_type: str
+    ):
         merge_sql = f"""
             MERGE INTO {meter_alerts_table_name} t
-            USING stage_continuous_flows s
+            USING {stage_table_name} s
             ON t.org_id = s.org_id 
             AND t.device_id = s.device_id
-            AND t.alert_type = 'continuous_flow'
+            AND t.alert_type = '{alert_type}'
             AND (
-                (t.start_time BETWEEN s.stime2 AND s.etime2)
-                OR (t.end_time BETWEEN s.stime2 AND s.etime2)
-                OR (s.stime2 BETWEEN t.start_time AND t.end_time)
-                OR (s.etime2 BETWEEN t.start_time AND t.end_time)
+                (t.start_time BETWEEN s.new_alert_start AND s.new_alert_end)
+                OR (t.end_time BETWEEN s.new_alert_start AND s.new_alert_end)
+                OR (s.new_alert_start BETWEEN t.start_time AND t.end_time)
+                OR (s.new_alert_end BETWEEN t.start_time AND t.end_time)
             )
             -- still active
             WHEN MATCHED AND s.is_active = true THEN UPDATE SET
-                t.start_time = LEAST(t.start_time, s.stime2),
+                t.start_time = LEAST(t.start_time, s.new_alert_start),
                 t.end_time = null
             -- not active
             WHEN MATCHED THEN UPDATE SET
-                t.start_time = LEAST(t.start_time, s.stime2),
-                t.end_time = GREATEST(IFNULL(t.end_time, s.etime2), s.etime2)
+                t.start_time = LEAST(t.start_time, s.new_alert_start),
+                t.end_time = GREATEST(IFNULL(t.end_time, s.new_alert_end), s.new_alert_end)
             -- new alert
             WHEN NOT MATCHED THEN INSERT
                     (org_id, device_id, start_time, end_time, alert_type)
                 VALUES
-                    (s.org_id, s.device_id, s.stime2, case when s.is_active then null else s.etime2 end, 'continuous_flow')
+                    (s.org_id, s.device_id, s.new_alert_start, case when s.is_active then null else s.new_alert_end end, '{alert_type}')
                 ;
         """
         conn.cursor().execute(merge_sql)

@@ -116,6 +116,45 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
         result = self.cs.fetchone()[0]
         self.assertEqual(result, expected_number_of_rows)
 
+    def _insert_reading_streak(
+        self,
+        device_id: str,
+        start_time: datetime,
+        hours: int,
+        value: float,
+        insert_leading_zero: bool = True,
+    ):
+        """
+        Helper to create consecutive hourly readings.
+        """
+        readings = []
+        if insert_leading_zero:
+            # Start with a "zero" reading before the streak to ensure it starts at the correct time.
+            # Otherwise our model does not consider the first read to be "clean", given that it did not occur one hour after the previous read.
+            readings.append(
+                self._create_read(
+                    device_id=device_id,
+                    flowtime=start_time - datetime.timedelta(hours=1),
+                    interval_value=0,
+                    estimated=0,
+                )
+            )
+        # Add a read for every hour in the streak
+        for i in range(hours):
+            flowtime = start_time + datetime.timedelta(hours=i)
+            # We use the GeneralMeterRead model to ensure compatibility with your existing schema
+            read = self._create_read(
+                device_id=device_id,
+                flowtime=flowtime,
+                interval_value=value,
+                estimated=0,
+            )
+            readings.append(read)
+
+        self.snowflake_sink._upsert_reads(
+            readings, self.conn, table_name=self.test_readings_table
+        )
+
 
 class TestSnowflakeUpserts(BaseSnowflakeIntegrationTestCase):
 
@@ -247,7 +286,7 @@ class TestSnowflakeUpserts(BaseSnowflakeIntegrationTestCase):
         self._assert_num_rows(self.test_readings_table, 2)
 
 
-class TestSnowflakeContinuousFlowAlerts(BaseSnowflakeIntegrationTestCase):
+class TestSnowflakeDailyUsageThresholdAlerts(BaseSnowflakeIntegrationTestCase):
 
     def setUp(self):
         self.row_active_from = datetime.datetime.now(tz=pytz.UTC)
@@ -262,41 +301,107 @@ class TestSnowflakeContinuousFlowAlerts(BaseSnowflakeIntegrationTestCase):
             f"CREATE OR REPLACE TEMPORARY TABLE {self.test_meter_alerts_table} LIKE meter_alerts;"
         )
 
-    def _insert_reading_streak(
-        self,
-        device_id: str,
-        start_time: datetime,
-        hours: int,
-        value: float,
-        insert_leading_zero: bool = True,
-    ):
-        """Helper to create consecutive hourly readings."""
-        readings = []
-        if insert_leading_zero:
-            # Start with a "zero" reading before the streak to ensure it starts at the correct time.
-            # Otherwise our model does not consider the first read to be "clean", given that it did not occur one hour after the previous read.
-            readings.append(
-                self._create_read(
-                    device_id=device_id,
-                    flowtime=start_time - datetime.timedelta(hours=1),
-                    interval_value=0,
-                    estimated=0,
-                )
-            )
-        # Add a read for every hour in the streak
-        for i in range(hours):
-            flowtime = start_time + datetime.timedelta(hours=i)
-            # We use the GeneralMeterRead model to ensure compatibility with your existing schema
-            read = self._create_read(
-                device_id=device_id,
-                flowtime=flowtime,
-                interval_value=value,
-                estimated=0,
-            )
-            readings.append(read)
+    def test_alert_triggers_on_high_daily_usage_then_sets_inactive(self):
+        self._assert_num_rows(self.test_meter_alerts_table, 0)
+        device_id = "high_usage_device"
+        # Two days of high usage to create a 48 hour streak followed by 1 day of low usage.
+        start_streak = self.now - datetime.timedelta(days=7)
+        self._insert_reading_streak(device_id, start_streak, 24 * 2, 100)
+        self._insert_reading_streak(
+            device_id, start_streak + datetime.timedelta(days=2), 24, 0.1
+        )
 
-        self.snowflake_sink._upsert_reads(
-            readings, self.conn, table_name=self.test_readings_table
+        self.snowflake_sink._upsert_daily_usage_threshold_alerts(
+            self.conn,
+            start_streak,
+            self.now,
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+        self.cs.execute(
+            f"SELECT alert_type, start_time, end_time FROM {self.test_meter_alerts_table}"
+        )
+        alert = self.cs.fetchone()
+        self.assertEqual(alert[0], "high_daily_usage")
+        self.assertEqual(
+            alert[1], start_streak.replace(hour=0, minute=0, second=0, microsecond=0)
+        )  # START_TIME should match the start of the streak
+        self.assertEqual(
+            alert[2], start_streak.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=3)
+        )  # IS_ACTIVE should be false, so end_time should be populated
+
+    def test_alert_triggers_on_high_daily_usage_and_sets_as_active(self):
+        self._assert_num_rows(self.test_meter_alerts_table, 0)
+        device_id = "high_usage_device"
+        # Two days of high usage to create a 48 hour streak, no low usage after, status should be active
+        start_streak = self.now - datetime.timedelta(days=7)
+        self._insert_reading_streak(device_id, start_streak, 24 * 2, 100)
+
+        self.snowflake_sink._upsert_daily_usage_threshold_alerts(
+            self.conn,
+            start_streak,
+            self.now,
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+        self.cs.execute(
+            f"SELECT alert_type, start_time, end_time FROM {self.test_meter_alerts_table}"
+        )
+        alert = self.cs.fetchone()
+        self.assertEqual(alert[0], "high_daily_usage")
+        self.assertEqual(
+            alert[1], start_streak.replace(hour=0, minute=0, second=0, microsecond=0)
+        )  # START_TIME should match the start of the streak
+        self.assertIsNone(
+            alert[2]
+        )  # IS_ACTIVE should be true, so end_time should be NULL
+
+    def test_gap_in_usage_creates_two_alerts(self):
+        device_id = "gap_device"
+        self._assert_num_rows(self.test_meter_alerts_table, 0)
+
+        # 2 days over, 1 day under, 2 days over
+        start_streak = pytz.UTC.localize(datetime.datetime(2024, 1, 1, 0, 0))
+        self._insert_reading_streak(device_id, start_streak, 24 * 2, 100)
+        self._insert_reading_streak(
+            device_id, start_streak + datetime.timedelta(days=2), 24, 0.1
+        )
+        self._insert_reading_streak(
+            device_id, start_streak + datetime.timedelta(days=3), 24 * 2, 100
+        )
+
+        self.snowflake_sink._upsert_daily_usage_threshold_alerts(
+            self.conn,
+            start_streak,
+            self.now,
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+
+        # Should be two distinct alerts because the gap broke the streak
+        self._assert_num_rows(self.test_meter_alerts_table, 2)
+
+
+class TestSnowflakeContinuousFlowAlerts(BaseSnowflakeIntegrationTestCase):
+
+    def setUp(self):
+        self.row_active_from = datetime.datetime.now(tz=pytz.UTC)
+        self.now = datetime.datetime(2024, 1, 10, 12, 0, tzinfo=pytz.UTC)
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_meters_table} LIKE meters;"
+        )
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_readings_table} LIKE readings;"
+        )
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_meter_alerts_table} LIKE meter_alerts;"
         )
 
     def test_alert_created_after_24_hour_streak(self):
