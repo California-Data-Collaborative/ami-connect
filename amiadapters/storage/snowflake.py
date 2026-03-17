@@ -561,20 +561,27 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         sql = f"""
             create or replace temporary table stage_daily_usage_thresholds
             as
+            -- First, calculate daily usage totals for each device
             WITH daily_usage AS (
                 SELECT 
                     org_id,
                     device_id,
-                    date_trunc('day', flowtime) AS usage_date,
+                    MIN(date_trunc('day', flowtime)) AS usage_date,
                     sum(interval_value) AS total_daily_usage
                 FROM {readings_table_name}
                 WHERE 1=1
                 and org_id = ?
                 and flowtime::date >= ?
                 and flowtime::date <= ?
-                GROUP BY 1, 2, 3
+                GROUP BY 
+                    org_id, 
+                    device_id, 
+                    -- Group without timezone to account for daylight savings time boundaries when the tz offset shifts
+                    date_trunc('day', flowtime)::timestamp_ntz
             ),
-            -- Create streaks (islands) of days exceeding the threshold
+            -- Create streaks of days where usage exceeds threshold by assigning a group ID to consecutive days above the threshold. 
+            -- The group ID is calculated by subtracting using a partition function's row number from the usage date, 
+            -- so it remains constant for consecutive days and changes when there is a gap.
             streaks AS (
                 SELECT 
                     org_id,
@@ -582,12 +589,13 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     usage_date,
                     total_daily_usage,
                     -- If usage > threshold, we assign a group ID by subtracting a row_number from the date
-                    DATEADD('day', -ROW_NUMBER() OVER (PARTITION BY org_id, device_id ORDER BY usage_date), usage_date) AS streak_group
+                    -- So for consecutive days 1, 2, and 3 above the threshold, you would have a group ID of "1" for all three days
+                    -- If there is a gap (a day below the threshold), the row_number keeps increasing but the date jumps, so the result changes, indicating a new group
+                    DATEADD('day', -ROW_NUMBER() OVER (PARTITION BY org_id, device_id ORDER BY usage_date), usage_date::timestamp_ntz) AS streak_group
                 FROM daily_usage
                 WHERE total_daily_usage > ? -- USAGE THRESHOLD HERE
             ),
-            -- select * from streaks;
-            -- Squash the streaks into start and end times
+            -- Now we group by the streak_group to get the start and end date of each streak of high usage.
             new_alerts AS (
                 SELECT 
                     s.org_id,
@@ -598,6 +606,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 FROM streaks s
                 GROUP BY s.org_id, s.device_id, s.streak_group
             ),
+            -- Finally, determine if the alert is active by looking at the latest reading for the device and checking if it falls within the alert window.
             new_alerts_with_status AS (
                 SELECT
                     s.*,
@@ -612,7 +621,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                         REGISTER_VALUE as last_register_value
                     FROM {readings_table_name}
                     -- Only consider "clean"-like reads that would be part of a streak
-                    WHERE coalesce(estimated::boolean, false) = false and interval_value is not null
+                    WHERE interval_value is not null
                     -- This filters the results to only include the top 1 row per group, giving us the latest read
                     QUALIFY ROW_NUMBER() OVER (
                         PARTITION BY ORG_ID, DEVICE_ID 
