@@ -3,11 +3,11 @@ resource "aws_security_group" "airflow_server_sg" {
   description = "Allow Airflow app server traffic"
 
   ingress {
-    description = "Allow SSH from public internet"
+    description = "Allow SSH from allowed IPs only"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.ssh_ip_allowlist
   }
 
   ingress {

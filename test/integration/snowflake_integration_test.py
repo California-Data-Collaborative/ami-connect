@@ -389,13 +389,13 @@ class TestSnowflakeDailyUsageThresholdAlerts(BaseSnowflakeIntegrationTestCase):
 
         # Should be two distinct alerts because the gap broke the streak
         self._assert_num_rows(self.test_meter_alerts_table, 2)
-    
+
     def test_one_alert_created_when_crossing_daylight_savings_time_boundary(self):
         self._assert_num_rows(self.test_meter_alerts_table, 0)
         device_id = "high_usage_device"
-        # This date is right before the daylight savings time change in US (March 8, 2026), which causes a "missing hour" in the day. 
+        # This date is right before the daylight savings time change in US (March 8, 2026), which causes a "missing hour" in the day.
         # We want to ensure that our logic still counts this as a continuous streak and does not create two separate alerts because of the DST gap.
-        start_streak = datetime.datetime(2026, 3, 7)  
+        start_streak = datetime.datetime(2026, 3, 7)
         self._insert_reading_streak(device_id, start_streak, 24 * 2, 100)
 
         self.snowflake_sink._upsert_daily_usage_threshold_alerts(

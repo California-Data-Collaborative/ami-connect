@@ -72,3 +72,22 @@ resource "aws_instance" "ami_connect_airflow_server" {
 resource "aws_eip" "ami_connect_airflow_server_ip" {
   instance = aws_instance.ami_connect_airflow_server.id
 }
+
+# CPU usage alert
+resource "aws_cloudwatch_metric_alarm" "airflow_server_cpu_alarm" {
+  alarm_name          = "ami-connect-airflow-server-high-cpu"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "Alert when AMI Connect Airflow server CPU exceeds 80%"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.ami_connect_airflow_alerts.arn]
+  ok_actions          = [aws_sns_topic.ami_connect_airflow_alerts.arn]
+  dimensions = {
+    InstanceId = aws_instance.ami_connect_airflow_server.id
+  }
+}

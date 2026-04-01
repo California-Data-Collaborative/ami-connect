@@ -6,7 +6,7 @@ resource "aws_db_instance" "ami_connect_airflow_metastore" {
   allocated_storage          = 100
   storage_type               = "gp3"
   storage_encrypted          = true
-  multi_az                   = false
+  multi_az                   = true
   backup_retention_period    = 7
   deletion_protection        = true
   enabled_cloudwatch_logs_exports = ["postgresql"]
