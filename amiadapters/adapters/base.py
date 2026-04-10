@@ -7,7 +7,10 @@ from typing import List, Tuple
 from pytz import timezone
 from pytz.tzinfo import DstTzInfo
 
-from amiadapters.configuration.models import BackfillConfiguration
+from amiadapters.configuration.models import (
+    BackfillConfiguration,
+    MeterAlertConfiguration,
+)
 from amiadapters.configuration.models import ConfiguredStorageSink
 from amiadapters.configuration.models import ConfiguredStorageSinkType
 from amiadapters.configuration.models import IntermediateOutputType
@@ -15,11 +18,13 @@ from amiadapters.configuration.models import MetricsConfigurationBase
 from amiadapters.configuration.models import PipelineConfiguration
 from amiadapters.events.base import EventPublisher
 from amiadapters.metrics.base import Metrics
+from amiadapters.models import GeneralMeterUnitOfMeasure
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
 from amiadapters.storage.base import BaseAMIStorageSink
 from amiadapters.storage.snowflake import SnowflakeStorageSink, RawSnowflakeLoader
+from amiadapters.utils.conversions import map_reading
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +58,7 @@ class BaseAMIAdapter(ABC):
         org_timezone: DstTzInfo,
         pipeline_configuration: PipelineConfiguration,
         configured_task_output_controller,
+        configured_meter_alerts: MeterAlertConfiguration,
         configured_metrics: MetricsConfigurationBase,
         configured_sinks: List[ConfiguredStorageSink] = None,
         raw_snowflake_loader: RawSnowflakeLoader = None,
@@ -76,6 +82,7 @@ class BaseAMIAdapter(ABC):
             self.org_id,
             self.org_timezone,
             raw_snowflake_loader,
+            configured_meter_alerts,
             self.metrics,
         )
 
@@ -381,32 +388,7 @@ class BaseAMIAdapter(ABC):
         """
         All readings values should be mapped to CF.
         """
-        if reading is None:
-            return None, None
-
-        if original_unit_of_measure is None:
-            return reading, None
-
-        multiplier = 1
-        match original_unit_of_measure.upper():
-            case GeneralMeterUnitOfMeasure.CUBIC_FEET:
-                multiplier = 1
-            case GeneralMeterUnitOfMeasure.HUNDRED_CUBIC_FEET:
-                multiplier = 100
-            case GeneralMeterUnitOfMeasure.GALLON | GeneralMeterUnitOfMeasure.GALLONS:
-                multiplier = 0.133680546  # 1 / 7.48052
-            case GeneralMeterUnitOfMeasure.KILO_GALLON:
-                multiplier = 133.680546  # 1000 * 1 / 7.48052
-            case _:
-                raise ValueError(
-                    f"Unrecognized unit of measure: {original_unit_of_measure}"
-                )
-
-        # 8 was picked arbitrarily, a balance between our Gallon multiplier and a precision
-        # that reflects increases in a fraction of a gallon
-        value = round(reading * multiplier, 8)
-
-        return value, GeneralMeterUnitOfMeasure.CUBIC_FEET
+        return map_reading(reading, original_unit_of_measure)
 
     def _validate_extract_range(
         self, extract_range_start: datetime, extract_range_end: datetime
@@ -445,6 +427,7 @@ class BaseAMIAdapter(ABC):
         org_id: str,
         org_timezone: DstTzInfo,
         raw_snowflake_loader: RawSnowflakeLoader,
+        meter_alerts: MeterAlertConfiguration,
         metrics: Metrics,
     ) -> List[BaseAMIStorageSink]:
         result = []
@@ -457,6 +440,7 @@ class BaseAMIAdapter(ABC):
                         org_timezone,
                         sink,
                         raw_snowflake_loader,
+                        meter_alerts,
                         metrics,
                     )
                 )
@@ -530,18 +514,6 @@ class BaseAMIAdapter(ABC):
                     "adapter_type": self.adapter_type,
                 },
             )
-
-
-class GeneralMeterUnitOfMeasure:
-    """
-    Normalized values for a meter's unit of measure.
-    """
-
-    CUBIC_FEET = "CF"
-    HUNDRED_CUBIC_FEET = "CCF"
-    GALLON = "GALLON"
-    GALLONS = "GALLONS"
-    KILO_GALLON = "KGAL"
 
 
 class ExtractRangeCalculator:

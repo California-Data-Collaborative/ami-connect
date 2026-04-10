@@ -53,6 +53,16 @@ class NotificationsConfiguration:
 
 
 @dataclass
+class MeterAlertConfiguration:
+    """
+    Configuration for sending meter alerts.
+    """
+
+    daily_high_usage_threshold: float
+    daily_high_usage_unit: str
+
+
+@dataclass
 class SftpConfiguration:
     """
     Configuration for connecting to an SFTP server,
@@ -131,7 +141,7 @@ class CloudwatchMetricsConfiguration(MetricsConfigurationBase):
 class SecretsBase:
     """
     Base class for secrets dataclasses, with convenience method to convert to JSON.
-    Secrets dataclasses define the secrets needed for a particular source or sink type.
+    Secrets dataclasses define the secrets needed, e.g. for a particular source or sink type.
     They are serialized directly to JSON for storage in AWS Secrets Manager.
     """
 
@@ -142,6 +152,10 @@ class SecretsBase:
         return
 
     def _require(self, *fields: str) -> None:
+        """
+        Utility method for validating that required fields are present and not None.
+        Subclasses often call this from their validate() method.
+        """
         missing = [
             f for f in fields if not hasattr(self, f) or getattr(self, f) is None
         ]
@@ -433,6 +447,7 @@ class SourceConfigBase:
     sinks: List[ConfiguredStorageSink]
     task_output_controller: IntermediateOutputControllerConfiguration
     metrics: MetricsConfigurationBase
+    meter_alerts: MeterAlertConfiguration
 
     def validate(self) -> None:
         """
@@ -488,7 +503,6 @@ class SourceConfigBase:
         if "database_port" in kwargs:
             kwargs["database_port"] = int(kwargs["database_port"])
         # ---- end transforms ----
-
         config = config_cls(**kwargs)
         config.validate()
 

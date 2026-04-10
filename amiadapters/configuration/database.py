@@ -5,7 +5,6 @@ from typing import Dict, List, Tuple
 
 from amiadapters.configuration.models import (
     ConfiguredAMISourceTypes,
-    MetricsBackendType,
     PipelineConfiguration,
     SourceConfigBase,
 )
@@ -13,7 +12,7 @@ from amiadapters.configuration.models import (
 logger = logging.getLogger(__name__)
 
 
-def get_configuration(snowflake_connection) -> Tuple[
+def get_configuration(snowflake_connection, utility_billing_connection_url) -> Tuple[
     List[Dict],
     List[Dict],
     PipelineConfiguration,
@@ -25,6 +24,22 @@ def get_configuration(snowflake_connection) -> Tuple[
     Given a Snowflake connection, load all raw configuration objects from the database.
     We return as dicts and lists to match the YAML config system's API.
     """
+    sources, sinks, pipeline_config, notifications, backfills = (
+        _get_configuration_from_snowflake(snowflake_connection)
+    )
+
+    ub_sources = []
+    if utility_billing_connection_url:
+        ub_sources = _get_utility_billing_settings_from_postgres(
+            utility_billing_connection_url
+        )
+
+    sources = _merge_snowflake_and_utility_billing_settings(sources, ub_sources)
+
+    return sources, sinks, pipeline_config, notifications, backfills
+
+
+def _get_configuration_from_snowflake(snowflake_connection):
     tables = [
         "configuration_pipeline",
         "configuration_sources",
@@ -95,6 +110,58 @@ def get_configuration(snowflake_connection) -> Tuple[
         backfills.append(backfill)
 
     return sources, sinks, pipeline_config, notifications, backfills
+
+
+def _get_utility_billing_settings_from_postgres(
+    utility_billing_settings_connection,
+) -> Dict:
+    with utility_billing_settings_connection.cursor() as cursor:
+        cursor.execute("""
+                    SELECT 
+                        o."id", 
+                        o."snowflakeId", 
+                        op."meterAlertHighUsageThreshold", 
+                        op."meterAlertHighUsageUnit"
+                    FROM public."Organization" o
+                    JOIN public."OrganizationPreferences" op ON o."id" = op."organizationId"
+                    WHERE o."snowflakeId" IS NOT NULL
+                    """)
+        columns = [col[0].lower() for col in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def _merge_snowflake_and_utility_billing_settings(
+    snowflake_sources, utility_billing_sources
+):
+    """
+    Merge Utility Billing app's settings from Postgresql with the sources from Snowflake.
+    As of this writing, that means stitching the meter alerts for each organization into their source object.
+    """
+    for source in snowflake_sources:
+        # Add meter alerts object to source config
+        source["meter_alerts"] = {}
+        # Find matching configuration from utility billing settings, matching on snowflake_id = org_id
+        if matching := [
+            i for i in utility_billing_sources if i["snowflakeid"] == source["org_id"]
+        ]:
+            if len(matching) != 1:
+                raise ValueError(
+                    f"Expected one matching configuration from postgres for {source['org_id']}, got {len(matching)}"
+                )
+            matching_ub_source = matching[0]
+            # Usage threshold alert
+            if matching_ub_source.get(
+                "meteralerthighusagethreshold"
+            ) and matching_ub_source.get("meteralerthighusageunit"):
+                source["meter_alerts"] = {
+                    "daily_high_usage_threshold": matching_ub_source[
+                        "meteralerthighusagethreshold"
+                    ],
+                    "daily_high_usage_unit": matching_ub_source[
+                        "meteralerthighusageunit"
+                    ],
+                }
+    return snowflake_sources
 
 
 def _fetch_table(cursor, table_name):
@@ -244,6 +311,7 @@ def _create_and_validate_source_config_from_dict(
     c["task_output_controller"] = None
     c["metrics"] = None
     c["sinks"] = []
+    c["meter_alerts"] = {}
     new_source = cls.from_dict(c)
     new_source.validate()
     return new_source

@@ -29,6 +29,7 @@ class TestMetersenseAdapter(BaseTestCase):
             org_timezone=self.tz,
             pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
             configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
+            configured_meter_alerts=self.TEST_METER_ALERT_CONFIGURATION,
             configured_metrics=self.TEST_METRICS_CONFIGURATION,
             configured_sinks=[],
             ssh_tunnel_server_host="tunnel-ip",

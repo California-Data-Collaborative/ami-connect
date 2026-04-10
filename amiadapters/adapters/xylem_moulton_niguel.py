@@ -9,11 +9,15 @@ import psycopg2
 
 from amiadapters.adapters.base import (
     BaseAMIAdapter,
-    GeneralMeterUnitOfMeasure,
     ScheduledExtract,
 )
 from amiadapters.adapters.connections import open_ssh_tunnel
-from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
+from amiadapters.models import (
+    DataclassJSONEncoder,
+    GeneralMeter,
+    GeneralMeterRead,
+    GeneralMeterUnitOfMeasure,
+)
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader, RawSnowflakeTableLoader
 
@@ -130,6 +134,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         org_timezone,
         pipeline_configuration,
         configured_task_output_controller,
+        configured_meter_alerts,
         configured_metrics,
         ssh_tunnel_server_host,
         ssh_tunnel_username,
@@ -167,6 +172,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
             org_timezone,
             pipeline_configuration,
             configured_task_output_controller,
+            configured_meter_alerts,
             configured_metrics,
             configured_sinks,
             XYLEM_MOULTON_NIGUEL_RAW_SNOWFLAKE_LOADER,

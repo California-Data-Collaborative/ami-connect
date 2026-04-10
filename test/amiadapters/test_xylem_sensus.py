@@ -8,7 +8,6 @@ from amiadapters.adapters.xylem_sensus import (
     XylemSensusRead,
 )
 from test.base_test_case import BaseTestCase
-from amiadapters.configuration.models import SftpConfiguration
 from amiadapters.models import GeneralMeter, GeneralMeterRead
 
 
@@ -52,6 +51,7 @@ class TestXylemSensusAdapter(BaseTestCase):
             sftp_user="user",
             sftp_password="pass",
             configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
+            configured_meter_alerts=self.TEST_METER_ALERT_CONFIGURATION,
             configured_metrics=self.TEST_METRICS_CONFIGURATION,
             configured_sinks=[],
         )

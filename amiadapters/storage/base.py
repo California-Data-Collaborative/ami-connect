@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from amiadapters.configuration.models import ConfiguredStorageSink
+from amiadapters.configuration.models import (
+    ConfiguredStorageSink,
+    MeterAlertConfiguration,
+)
 from amiadapters.metrics.base import Metrics
 from amiadapters.models import GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
@@ -17,9 +20,11 @@ class BaseAMIStorageSink(ABC):
     def __init__(
         self,
         sink_config: ConfiguredStorageSink,
+        meter_alerts: MeterAlertConfiguration,
         metrics: Metrics,
     ):
         self.sink_config = sink_config
+        self.meter_alerts = meter_alerts
         self.metrics = metrics
 
     @abstractmethod

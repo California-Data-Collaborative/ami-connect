@@ -4,6 +4,7 @@ import unittest
 
 from amiadapters.configuration.models import (
     LocalIntermediateOutputControllerConfiguration,
+    MeterAlertConfiguration,
     NoopMetricsConfiguration,
     PipelineConfiguration,
 )
@@ -20,6 +21,10 @@ class BaseTestCase(unittest.TestCase):
         should_run_post_processor=True,
         should_publish_load_finished_events=False,
         metrics_type="noop",
+    )
+    TEST_METER_ALERT_CONFIGURATION = MeterAlertConfiguration(
+        daily_high_usage_threshold=None,
+        daily_high_usage_unit=None,
     )
     TEST_METRICS_CONFIGURATION = NoopMetricsConfiguration()
     TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION = (

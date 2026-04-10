@@ -4,6 +4,9 @@ sources:
   org_id: my_beacon_utility
   timezone: America/Los_Angeles
   use_raw_data_cache: False
+  meter_alerts:
+    daily_high_usage_threshold: 100
+    daily_high_usage_unit: "CF"
   sinks:
   - my_snowflake_instance
 - type: sentryx
@@ -11,12 +14,14 @@ sources:
   timezone: America/Los_Angeles
   utility_name: "my-sentryx-utility"
   use_raw_data_cache: False
+  meter_alerts: {}
   sinks:
   - my_snowflake_instance
 - type: subeca
   org_id: my_subeca_utility
   timezone: America/Los_Angeles
   api_url: my-url
+  meter_alerts: {}
   sinks:
   - my_snowflake_instance
 - type: aclara
@@ -26,6 +31,7 @@ sources:
   sftp_remote_data_directory: ./data
   sftp_local_download_directory: ./output
   sftp_known_hosts_str: example.com ssh-rsa abc
+  meter_alerts: {}
   sinks:
   - my_snowflake_instance
 - type: metersense
@@ -35,6 +41,7 @@ sources:
   ssh_tunnel_key_path: /key
   database_host: db-host
   database_port: 1521
+  meter_alerts: {}
   sinks:
   - my_snowflake_instance
 - type: xylem_moulton_niguel
@@ -44,6 +51,7 @@ sources:
   ssh_tunnel_key_path: /key
   database_host: db-host
   database_port: 1521
+  meter_alerts: {}
   sinks:
   - my_snowflake_instance
 - type: xylem_sensus
@@ -53,6 +61,7 @@ sources:
   sftp_remote_data_directory: ./data
   sftp_local_download_directory: ./output
   sftp_known_hosts_str:
+  meter_alerts: {}
   sinks:
   - my_snowflake_instance
 

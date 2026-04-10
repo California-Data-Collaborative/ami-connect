@@ -77,6 +77,7 @@ class TestSubecaAdapter(BaseTestCase):
             api_url="http://localhost/my-url",
             api_key="test-key",
             configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
+            configured_meter_alerts=self.TEST_METER_ALERT_CONFIGURATION,
             configured_metrics=self.TEST_METRICS_CONFIGURATION,
             configured_sinks=[],
         )

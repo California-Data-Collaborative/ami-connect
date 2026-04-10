@@ -1,6 +1,6 @@
 from datetime import datetime
 import pathlib
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytz
 
@@ -12,7 +12,10 @@ from amiadapters.config import (
     find_config_yaml,
     find_secrets_yaml,
 )
-from amiadapters.configuration.models import NoopMetricsConfiguration
+from amiadapters.configuration.models import (
+    NoopMetricsConfiguration,
+    PipelineConfiguration,
+)
 from amiadapters.adapters.metersense import MetersenseAdapter
 from amiadapters.adapters.sentryx import SentryxAdapter
 from amiadapters.adapters.subeca import SubecaAdapter
@@ -205,6 +208,108 @@ class TestConfig(BaseTestCase):
         )
         checks = config.sinks()[0].checks()
         self.assertEqual(1, len(checks))
+
+
+class TestFromDatabase(BaseTestCase):
+
+    FAKE_SECRETS = {
+        "sources": {
+            "current_bakman": {"api_key": "key"},
+        },
+        "sinks": {
+            "my_snowflake_instance": {
+                "account": "my_account",
+                "user": "my_user",
+                "ssh_key": "my_ssh_key",
+                "role": "my_role",
+                "warehouse": "my_warehouse",
+                "database": "my_database",
+                "schema": "my_schema",
+            }
+        },
+    }
+
+    FAKE_PIPELINE_CONFIGURATION = PipelineConfiguration(
+        intermediate_output_type="local",
+        intermediate_output_s3_bucket=None,
+        intermediate_output_dev_profile=None,
+        intermediate_output_local_output_path="/tmp/output",
+        should_run_post_processor=True,
+        should_publish_load_finished_events=False,
+        metrics_type="noop",
+    )
+
+    FAKE_SOURCES = [
+        {
+            "type": "sentryx",
+            "org_id": "current_bakman",
+            "timezone": "America/Los_Angeles",
+            "utility_name": "bakman",
+            "sinks": ["my_snowflake_instance"],
+            "meter_alerts": {},
+        }
+    ]
+
+    FAKE_SINKS = [{"id": "my_snowflake_instance", "type": "snowflake", "checks": []}]
+
+    @patch("amiadapters.config.get_secrets")
+    @patch("amiadapters.config.create_snowflake_from_secrets")
+    @patch("amiadapters.config.create_utility_billing_settings_connection_from_env")
+    @patch("amiadapters.config.get_configuration")
+    def test_from_database__builds_configuration(
+        self,
+        mock_get_configuration,
+        mock_utility_billing_conn,
+        mock_create_snowflake,
+        mock_get_secrets,
+    ):
+        mock_get_secrets.return_value = self.FAKE_SECRETS
+        mock_create_snowflake.return_value = MagicMock()
+        mock_utility_billing_conn.return_value = None
+        mock_get_configuration.return_value = (
+            self.FAKE_SOURCES,
+            self.FAKE_SINKS,
+            self.FAKE_PIPELINE_CONFIGURATION,
+            {},
+            [],
+        )
+
+        config = AMIAdapterConfiguration.from_database()
+
+        self.assertEqual(1, len(config._sources))
+        self.assertEqual("current_bakman", config._sources[0].org_id)
+        self.assertEqual("sentryx", config._sources[0].type)
+        self.assertEqual(1, len(config._sinks))
+
+    @patch("amiadapters.config.get_secrets")
+    @patch("amiadapters.config.create_snowflake_from_secrets")
+    @patch("amiadapters.config.create_utility_billing_settings_connection_from_env")
+    @patch("amiadapters.config.get_configuration")
+    def test_from_database__without_utility_billing_connection(
+        self,
+        mock_get_configuration,
+        mock_utility_billing_conn,
+        mock_create_snowflake,
+        mock_get_secrets,
+    ):
+        """from_database should succeed when Postgres is not configured."""
+        mock_get_secrets.return_value = self.FAKE_SECRETS
+        mock_create_snowflake.return_value = MagicMock()
+        mock_utility_billing_conn.return_value = None
+        mock_get_configuration.return_value = (
+            self.FAKE_SOURCES,
+            self.FAKE_SINKS,
+            self.FAKE_PIPELINE_CONFIGURATION,
+            {},
+            [],
+        )
+
+        config = AMIAdapterConfiguration.from_database()
+
+        self.assertIsNotNone(config)
+        mock_get_configuration.assert_called_once_with(
+            mock_create_snowflake.return_value, None
+        )
 
 
 class TestFindConfigAndSecrets(BaseTestCase):

@@ -29,3 +29,9 @@ output "airflow_db_password" {
   value       = var.airflow_db_password
   sensitive   = true
 }
+
+output "utility_billing_connection_url" {
+  description = "The connection URL for the utility billing Postgres database"
+  value       = var.utility_billing_connection_url
+  sensitive   = true
+}

@@ -10,9 +10,13 @@ from typing import Generator, List, Tuple
 import paramiko
 import pytz
 
-from amiadapters.adapters.base import BaseAMIAdapter, GeneralMeterUnitOfMeasure
-from amiadapters.configuration.models import SftpConfiguration
-from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
+from amiadapters.adapters.base import BaseAMIAdapter
+from amiadapters.models import (
+    DataclassJSONEncoder,
+    GeneralMeter,
+    GeneralMeterRead,
+    GeneralMeterUnitOfMeasure,
+)
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import RawSnowflakeLoader, RawSnowflakeTableLoader
 
@@ -68,6 +72,7 @@ class AclaraAdapter(BaseAMIAdapter):
         sftp_user,
         sftp_password,
         configured_task_output_controller,
+        configured_meter_alerts,
         configured_metrics,
         configured_sinks,
     ):
@@ -82,6 +87,7 @@ class AclaraAdapter(BaseAMIAdapter):
             org_timezone,
             pipeline_configuration,
             configured_task_output_controller,
+            configured_meter_alerts,
             configured_metrics,
             configured_sinks,
             RawSnowflakeLoader.with_table_loaders([AclaraBaseTableLoader()]),

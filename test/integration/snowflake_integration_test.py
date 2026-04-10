@@ -26,7 +26,13 @@ from amiadapters.adapters.subeca import (
 )
 from amiadapters.configuration.env import set_global_aws_profile, set_global_aws_region
 from amiadapters.config import AMIAdapterConfiguration
-from amiadapters.models import GeneralMeter, GeneralMeterRead, DataclassJSONEncoder
+from amiadapters.configuration.models import MeterAlertConfiguration
+from amiadapters.models import (
+    GeneralMeter,
+    GeneralMeterRead,
+    DataclassJSONEncoder,
+    GeneralMeterUnitOfMeasure,
+)
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.snowflake import (
     RawSnowflakeLoader,
@@ -48,6 +54,11 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
         adapter = cls.config.adapters()[0]
         cls.snowflake_sink = adapter.storage_sinks[0]
         assert isinstance(cls.snowflake_sink, SnowflakeStorageSink)
+        # Hardcode meter alert configuration instead of reading from external database
+        cls.snowflake_sink.meter_alerts = MeterAlertConfiguration(
+            daily_high_usage_threshold=10,
+            daily_high_usage_unit="CF",
+        )
         cls.test_meters_table = "meters_int_test"
         cls.test_readings_table = "readings_int_test"
         cls.test_meter_alerts_table = "meter_alerts_int_test"
@@ -102,9 +113,9 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
             location_id=location_id,
             flowtime=flowtime,
             register_value=register_value,
-            register_unit="GAL",
+            register_unit=GeneralMeterUnitOfMeasure.CUBIC_FEET,
             interval_value=interval_value,
-            interval_unit="GAL",
+            interval_unit=GeneralMeterUnitOfMeasure.CUBIC_FEET,
             battery="good",
             install_date=None,
             connection=None,

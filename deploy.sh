@@ -40,6 +40,7 @@ AIRFLOW_HOST=$(jq -r '.airflow_server_ip.value' $TERRAFORM_OUTPUT_FILE)
 DB_HOST=$(jq -r '.airflow_db_host.value' $TERRAFORM_OUTPUT_FILE)
 DB_PASSWORD=$(jq -r '.airflow_db_password.value' $TERRAFORM_OUTPUT_FILE)
 AIRFLOW_SITE_URL=$(jq -r '.airflow_site_url.value' $TERRAFORM_OUTPUT_FILE)
+UTILITY_BILLING_CONNECTION_URL=$(jq -r '.utility_billing_connection_url.value' $TERRAFORM_OUTPUT_FILE)
 
 AIRFLOW_DB_CONN="postgresql+psycopg2://airflow_user:$DB_PASSWORD@$DB_HOST/airflow_db"
 
@@ -80,6 +81,7 @@ log "Running remote deployment script with FULL_RESTART=$FULL_RESTART..."
 run_ssh "cd $REMOTE_DIR && \
     AMI_CONNECT__AIRFLOW_METASTORE_CONN='$AIRFLOW_DB_CONN' \
     AMI_CONNECT__AIRFLOW_SITE_URL='$AIRFLOW_SITE_URL' \
+    AMI_CONNECT__UTILITY_BILLING_CONNECTION_URL='$UTILITY_BILLING_CONNECTION_URL' \
     FULL_RESTART='$FULL_RESTART' \
     AMI_CONNECT_REPO='$AMI_CONNECT_REPO' \
     AMI_CONNECT_NEPTUNE_REPO_URL='$AMI_CONNECT_NEPTUNE_REPO_URL' \

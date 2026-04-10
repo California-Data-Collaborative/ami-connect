@@ -2,6 +2,7 @@ import os
 
 AWS_PROFILE_ENV_VAR_NAME = "AMI_CONNECT__AWS_PROFILE"
 AWS_REGION_ENV_VAR_NAME = "AMI_CONNECT__AWS_REGION"
+UTILITY_BILLING_CONNECTION_URL_ENV_VAR_NAME = "AMI_CONNECT__UTILITY_BILLING_CONNECTION_URL"
 
 DEFAULT_AWS_REGION = "us-west-2"
 
@@ -35,6 +36,16 @@ def set_global_aws_region(aws_region: str):
     )
 
 
+def set_global_utility_billing_connection_url(connection_url: str):
+    """
+    Sets the Utility Billing connection URL to use for the current process. This is used to load configuration from the Utility Billing app's Postgres database.
+
+    The connection URL should be in the format: postgresql://user:password@host:port/database
+    """
+    if connection_url is not None:
+        os.environ[UTILITY_BILLING_CONNECTION_URL_ENV_VAR_NAME] = connection_url
+
+
 def get_global_aws_profile() -> str | None:
     """
     Returns the AWS profile to use for the current process, or None if not set.
@@ -47,6 +58,13 @@ def get_global_aws_region() -> str | None:
     Returns the AWS region to use for the current process, or None if not set.
     """
     return os.environ.get(AWS_REGION_ENV_VAR_NAME, DEFAULT_AWS_REGION)
+
+
+def get_global_utility_billing_connection_url() -> str | None:
+    """
+    Returns the Utility Billing connection URL to use for the current process, or None if not set.
+    """
+    return os.environ.get(UTILITY_BILLING_CONNECTION_URL_ENV_VAR_NAME)
 
 
 def get_global_airflow_site_url() -> str | None:

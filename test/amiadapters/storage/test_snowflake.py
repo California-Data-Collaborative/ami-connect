@@ -6,6 +6,7 @@ from unittest.mock import Mock
 import pytz
 
 from amiadapters.adapters.beacon import BEACON_RAW_SNOWFLAKE_LOADER
+from amiadapters.configuration.models import MeterAlertConfiguration
 from amiadapters.metrics.base import NOOP_METRICS
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
@@ -36,6 +37,9 @@ class TestSnowflakeStorageSink(BaseTestCase):
             pytz.timezone("Africa/Algiers"),
             sink_config,
             BEACON_RAW_SNOWFLAKE_LOADER,
+            MeterAlertConfiguration(
+                daily_high_usage_threshold=1000, daily_high_usage_unit="CF"
+            ),
             NOOP_METRICS,
         )
 

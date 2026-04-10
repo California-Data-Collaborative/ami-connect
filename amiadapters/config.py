@@ -14,12 +14,16 @@ from amiadapters.adapters.subeca import SubecaAdapter
 from amiadapters.adapters.xylem_moulton_niguel import XylemMoultonNiguelAdapter
 from amiadapters.adapters.xylem_sensus import XylemSensusAdapter
 from amiadapters.alerts.base import AmiConnectDagFailureNotifier
-from amiadapters.configuration.base import create_snowflake_from_secrets
+from amiadapters.configuration.base import (
+    create_snowflake_from_secrets,
+    create_utility_billing_settings_connection_from_env,
+)
 from amiadapters.configuration.models import (
     BackfillConfiguration,
     ConfiguredStorageSink,
     IntermediateOutputType,
     LocalIntermediateOutputControllerConfiguration,
+    MeterAlertConfiguration,
     MetricsConfigurationBase,
     NotificationsConfiguration,
     PipelineConfiguration,
@@ -111,8 +115,11 @@ class AMIAdapterConfiguration:
         # Get all secrets, including Snowflake creds used to get non-secret configuration
         secrets = get_secrets()
         connection = create_snowflake_from_secrets(secrets)
+        utility_billing_connection_url = (
+            create_utility_billing_settings_connection_from_env()
+        )
         sources, sinks, pipeline_configuration, notifications, backfills = (
-            get_configuration(connection)
+            get_configuration(connection, utility_billing_connection_url)
         )
 
         return cls._make_instance(
@@ -183,6 +190,17 @@ class AMIAdapterConfiguration:
             this_source_secrets = configured_secrets.get("sources", {}).get(org_id)
             secrets = SourceSecretsBase.from_dict(source_type, this_source_secrets)
 
+            # Parse settings secrets for data source
+            this_meter_alerts_config = source.get("meter_alerts", {})
+            meter_alerts = MeterAlertConfiguration(
+                daily_high_usage_threshold=this_meter_alerts_config.get(
+                    "daily_high_usage_threshold"
+                ),
+                daily_high_usage_unit=this_meter_alerts_config.get(
+                    "daily_high_usage_unit"
+                ),
+            )
+
             # Join any sinks tied to this source
             sink_ids = source.get("sinks", [])
             sinks = []
@@ -198,6 +216,7 @@ class AMIAdapterConfiguration:
             raw_source_config["sinks"] = sinks
             raw_source_config["task_output_controller"] = task_output_controller
             raw_source_config["metrics"] = metrics
+            raw_source_config["meter_alerts"] = meter_alerts
 
             # Create the configured source
             configured_source = SourceConfigBase.from_dict(raw_source_config)
@@ -279,6 +298,7 @@ class AMIAdapterConfiguration:
                             source.secrets.sftp_user,
                             source.secrets.sftp_password,
                             source.task_output_controller,
+                            source.meter_alerts,
                             source.metrics,
                             source.sinks,
                         )
@@ -293,6 +313,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.meter_alerts,
                             source.metrics,
                             source.sinks,
                         )
@@ -304,6 +325,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.meter_alerts,
                             source.metrics,
                             ssh_tunnel_server_host=source.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
@@ -336,6 +358,7 @@ class AMIAdapterConfiguration:
                             source.secrets.client_id,
                             source.secrets.client_secret,
                             source.task_output_controller,
+                            source.meter_alerts,
                             source.metrics,
                             source.sinks,
                         )
@@ -348,6 +371,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.meter_alerts,
                             source.metrics,
                             source.sinks,
                             utility_name=source.utility_name,
@@ -362,6 +386,7 @@ class AMIAdapterConfiguration:
                             source.api_url,
                             source.secrets.api_key,
                             source.task_output_controller,
+                            source.meter_alerts,
                             source.metrics,
                             source.sinks,
                         )
@@ -373,6 +398,7 @@ class AMIAdapterConfiguration:
                             source.timezone,
                             self._pipeline_configuration,
                             source.task_output_controller,
+                            source.meter_alerts,
                             source.metrics,
                             ssh_tunnel_server_host=source.ssh_tunnel_server_host,
                             ssh_tunnel_username=source.secrets.ssh_tunnel_username,
@@ -399,6 +425,7 @@ class AMIAdapterConfiguration:
                             source.secrets.sftp_user,
                             source.secrets.sftp_password,
                             source.task_output_controller,
+                            source.meter_alerts,
                             source.metrics,
                             source.sinks,
                         )

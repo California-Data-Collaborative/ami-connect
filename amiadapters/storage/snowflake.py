@@ -7,11 +7,14 @@ import pytz
 from pytz.tzinfo import DstTzInfo
 
 from amiadapters.metrics.base import Metrics, seconds_since
-from amiadapters.models import GeneralMeterRead
-from amiadapters.models import GeneralMeter
-from amiadapters.configuration.models import ConfiguredStorageSink
+from amiadapters.models import GeneralMeter, GeneralMeterRead, GeneralMeterUnitOfMeasure
+from amiadapters.configuration.models import (
+    ConfiguredStorageSink,
+    MeterAlertConfiguration,
+)
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.base import BaseAMIStorageSink, BaseAMIDataQualityCheck
+from amiadapters.utils.conversions import map_reading
 
 logger = logging.getLogger(__name__)
 
@@ -233,12 +236,13 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         org_timezone: DstTzInfo,
         sink_config: ConfiguredStorageSink,
         raw_loader: RawSnowflakeLoader,
+        meter_alerts: MeterAlertConfiguration,
         metrics: Metrics,
     ):
         self.org_id = org_id
         self.org_timezone = org_timezone
         self.raw_loader = raw_loader
-        super().__init__(sink_config, metrics)
+        super().__init__(sink_config, meter_alerts, metrics)
 
     def store_raw(self, run_id: str, extract_outputs: ExtractOutput):
         """
@@ -544,19 +548,54 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         """
         This method detects devices that have a total daily usage above a certain threshold for at least 1 day.
         """
-        min_date_to_process = min_date - timedelta(days=7)
+        daily_high_usage_threshold = self.meter_alerts.daily_high_usage_threshold
+        daily_high_usage_unit = self.meter_alerts.daily_high_usage_unit
 
-        # Hardcoded per org for now
-        threshold_for_high_daily_usage = {
-            "current_aeneas": 20,
-            "current_bakman": 250,
-            "current_sierra": 25,
-            "current_arlington": 90,
-            "current_jewell": 750,
-        }.get(org_id, 100)
+        if daily_high_usage_threshold is None or daily_high_usage_unit is None:
+            logger.info(
+                f"Skipping daily usage threshold alert detection for org_id {org_id} because invalid threshold configuration: daily_high_usage_threshold={daily_high_usage_threshold}, daily_high_usage_unit={daily_high_usage_unit}."
+            )
+            return
+
+        # Determine the distinct unit(s) readings are stored in for this org.
+        # All adapters normalize interval values to CF via map_reading before storing,
+        # so we assert CF is the only unit present before converting the configured threshold.
+        distinct_units = [
+            row[0]
+            for row in conn.cursor()
+            .execute(
+                f"SELECT DISTINCT interval_unit FROM {readings_table_name} WHERE org_id = ? AND interval_unit IS NOT NULL",
+                (org_id,),
+            )
+            .fetchall()
+        ]
+        if not distinct_units:
+            logger.info(
+                f"No readings found for org_id {org_id}, skipping daily usage threshold alert detection."
+            )
+            return
+
+        # We assume all interval reads are stored in CF, which is the policy in our transform step
+        non_cf_units = [
+            u for u in distinct_units if u != GeneralMeterUnitOfMeasure.CUBIC_FEET
+        ]
+        if non_cf_units:
+            logger.warning(
+                f"Expected all interval readings for org_id {org_id} to be stored in CF, "
+                f"but found unexpected unit(s): {non_cf_units}. "
+                f"Skipping daily usage threshold alert detection."
+            )
+            return
+
+        # Convert the configured threshold from its configured unit to CF.
+        converted_daily_high_daily_usage_threshold, _ = map_reading(
+            daily_high_usage_threshold, daily_high_usage_unit
+        )
 
         logger.info(
-            f"Detecting high daily usage flows of at least {threshold_for_high_daily_usage} units for org_id {org_id} on readings between {min_date_to_process} and {max_date}."
+            f"Detecting high daily usage flows of at least {daily_high_usage_threshold} {daily_high_usage_unit} "
+            f"({converted_daily_high_daily_usage_threshold} CF) for org_id {org_id} "
+            f"on readings between {min_date} and {max_date}."
         )
         sql = f"""
             create or replace temporary table stage_daily_usage_thresholds
@@ -636,9 +675,9 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             sql,
             (
                 org_id,
-                min_date_to_process,
+                min_date,
                 max_date,
-                threshold_for_high_daily_usage,
+                converted_daily_high_daily_usage_threshold,
             ),
         )
 
