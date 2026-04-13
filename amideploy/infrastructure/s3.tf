@@ -21,6 +21,14 @@ resource "aws_s3_bucket_lifecycle_configuration" "ami_connect_s3_bucket_lifecycl
   }
 }
 
+resource "aws_s3_bucket_versioning" "ami_connect_s3_bucket" {
+  bucket = aws_s3_bucket.ami_connect_s3_bucket.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "ami_connect_s3_bucket" {
   bucket = aws_s3_bucket.ami_connect_s3_bucket.id
 
