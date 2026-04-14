@@ -597,6 +597,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             f"({converted_daily_high_daily_usage_threshold} CF) for org_id {org_id} "
             f"on readings between {min_date} and {max_date}."
         )
+
         sql = f"""
             create or replace temporary table stage_daily_usage_thresholds
             as
@@ -701,30 +702,33 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         self, conn, meter_alerts_table_name: str, stage_table_name: str, alert_type: str
     ):
         merge_sql = f"""
-            MERGE INTO {meter_alerts_table_name} t
-            USING {stage_table_name} s
-            ON t.org_id = s.org_id 
-            AND t.device_id = s.device_id
-            AND t.alert_type = '{alert_type}'
+            MERGE INTO {meter_alerts_table_name} existing
+            USING {stage_table_name} stage
+            ON existing.org_id = stage.org_id
+            AND existing.device_id = stage.device_id
+            AND existing.alert_type = '{alert_type}'
             AND (
-                (t.start_time BETWEEN s.new_alert_start AND s.new_alert_end)
-                OR (t.end_time BETWEEN s.new_alert_start AND s.new_alert_end)
-                OR (s.new_alert_start BETWEEN t.start_time AND t.end_time)
-                OR (s.new_alert_end BETWEEN t.start_time AND t.end_time)
+                   (existing.start_time BETWEEN stage.new_alert_start AND stage.new_alert_end)
+                OR (existing.end_time BETWEEN stage.new_alert_start AND stage.new_alert_end)
+                -- Covers case when new alert is completely contained within the existing alert period
+                OR (stage.new_alert_start BETWEEN existing.start_time AND existing.end_time)
+                -- Active alerts have a NULL end_time, which makes BETWEEN comparisons return NULL (falsy).
+                -- Treat an active alert as overlapping if it started before the new alert period endstage.
+                OR (existing.end_time IS NULL AND existing.start_time <= stage.new_alert_end)
             )
             -- still active
-            WHEN MATCHED AND s.is_active = true THEN UPDATE SET
-                t.start_time = LEAST(t.start_time, s.new_alert_start),
-                t.end_time = null
+            WHEN MATCHED AND stage.is_active = true THEN UPDATE SET
+                existing.start_time = LEAST(existing.start_time, stage.new_alert_start),
+                existing.end_time = null
             -- not active
             WHEN MATCHED THEN UPDATE SET
-                t.start_time = LEAST(t.start_time, s.new_alert_start),
-                t.end_time = GREATEST(IFNULL(t.end_time, s.new_alert_end), s.new_alert_end)
+                existing.start_time = LEAST(existing.start_time, stage.new_alert_start),
+                existing.end_time = GREATEST(IFNULL(existing.end_time, stage.new_alert_end), stage.new_alert_end)
             -- new alert
             WHEN NOT MATCHED THEN INSERT
                     (org_id, device_id, start_time, end_time, alert_type)
                 VALUES
-                    (s.org_id, s.device_id, s.new_alert_start, case when s.is_active then null else s.new_alert_end end, '{alert_type}')
+                    (stage.org_id, stage.device_id, stage.new_alert_start, case when stage.is_active then null else stage.new_alert_end end, '{alert_type}')
                 ;
         """
         conn.cursor().execute(merge_sql)

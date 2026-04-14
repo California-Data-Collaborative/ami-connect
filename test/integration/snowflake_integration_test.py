@@ -324,7 +324,7 @@ class TestSnowflakeDailyUsageThresholdAlerts(BaseSnowflakeIntegrationTestCase):
 
         self.snowflake_sink._upsert_daily_usage_threshold_alerts(
             self.conn,
-            start_streak,
+            start_streak - datetime.timedelta(days=1),
             self.now,
             org_id="org1",
             meter_alerts_table_name=self.test_meter_alerts_table,
@@ -355,7 +355,7 @@ class TestSnowflakeDailyUsageThresholdAlerts(BaseSnowflakeIntegrationTestCase):
 
         self.snowflake_sink._upsert_daily_usage_threshold_alerts(
             self.conn,
-            start_streak,
+            start_streak - datetime.timedelta(days=1),
             self.now,
             org_id="org1",
             meter_alerts_table_name=self.test_meter_alerts_table,
@@ -374,6 +374,102 @@ class TestSnowflakeDailyUsageThresholdAlerts(BaseSnowflakeIntegrationTestCase):
         self.assertIsNone(
             alert[2]
         )  # IS_ACTIVE should be true, so end_time should be NULL
+
+    def test_alert_extended_on_high_daily_usage_over_multiple_days(self):
+        self._assert_num_rows(self.test_meter_alerts_table, 0)
+        device_id = "high_usage_device"
+
+        # Two days of high usage to create a streak, no low usage after, status should be active
+        start_streak_1 = self.now - datetime.timedelta(days=7)
+        self._insert_reading_streak(device_id, start_streak_1, 24 * 2, 100)
+
+        # Run function on first two days to create alert for that range
+        self.snowflake_sink._upsert_daily_usage_threshold_alerts(
+            self.conn,
+            start_streak_1 - datetime.timedelta(days=1),
+            start_streak_1 + datetime.timedelta(days=2),
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+        self.cs.execute(
+            f"SELECT alert_type, start_time, end_time FROM {self.test_meter_alerts_table}"
+        )
+        alert = self.cs.fetchone()
+        self.assertIsNone(
+            alert[2]
+        )  # IS_ACTIVE should be true, so end_time should be NULL
+
+        # Two days of high usage FOLLOWING the first streak (represents subsequent day's DAG run w/ new reads)
+        start_streak_2 = start_streak_1 + datetime.timedelta(days=2)
+        self._insert_reading_streak(device_id, start_streak_2, 24 * 2, 100)
+        # Run function again on last days of streak, should get updated alert
+        # that extends the end time instead of creating a new alert since it's the same streak
+        self.snowflake_sink._upsert_daily_usage_threshold_alerts(
+            self.conn,
+            start_streak_2 - datetime.timedelta(days=1),
+            start_streak_2 + datetime.timedelta(days=2),
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+
+        self.cs.execute(
+            f"SELECT alert_type, start_time, end_time FROM {self.test_meter_alerts_table}"
+        )
+        alert = self.cs.fetchone()
+        self.assertEqual(alert[0], "high_daily_usage")
+        self.assertEqual(
+            alert[1], start_streak_1.replace(hour=0, minute=0, second=0, microsecond=0)
+        )  # START_TIME should match the start of the streak
+        self.assertIsNone(
+            alert[2]
+        )  # IS_ACTIVE should be true, so end_time should be NULL
+
+    def test_alert_reprocessing_range_inside_existing_alert_is_same_alert(self):
+        self._assert_num_rows(self.test_meter_alerts_table, 0)
+        device_id = "high_usage_device"
+
+        # Four days of high usage to create a streak, low usage after
+        start_streak = self.now - datetime.timedelta(days=7)
+        self._insert_reading_streak(device_id, start_streak, 24 * 4, 100)
+        self._insert_reading_streak(
+            device_id, start_streak + datetime.timedelta(days=4), 24 * 1, 0.01
+        )
+
+        # Run function on first two days to create alert for that range
+        self.snowflake_sink._upsert_daily_usage_threshold_alerts(
+            self.conn,
+            start_streak - datetime.timedelta(days=1),
+            start_streak + datetime.timedelta(days=5),
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+        self.cs.execute(
+            f"SELECT alert_type, start_time, end_time FROM {self.test_meter_alerts_table}"
+        )
+        alert = self.cs.fetchone()
+        print(alert)
+
+        # Run function again on middle of streak, should get same alert
+        self.snowflake_sink._upsert_daily_usage_threshold_alerts(
+            self.conn,
+            start_streak + datetime.timedelta(days=1),
+            start_streak + datetime.timedelta(days=2),
+            org_id="org1",
+            meter_alerts_table_name=self.test_meter_alerts_table,
+            readings_table_name=self.test_readings_table,
+        )
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+        self.cs.execute(
+            f"SELECT alert_type, start_time, end_time FROM {self.test_meter_alerts_table}"
+        )
+        alert = self.cs.fetchone()
+        print(alert)
 
     def test_gap_in_usage_creates_two_alerts(self):
         device_id = "gap_device"

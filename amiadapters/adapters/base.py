@@ -240,17 +240,15 @@ class BaseAMIAdapter(ABC):
         with self._base_adapter_metrics.post_process_timer():
             # Sink post processing, e.g. leak detection queries
             if self.pipeline_configuration.should_run_post_processor:
-                logger.info("Running sink post processor")
+                logger.info(
+                    f"Running sink post processor for range {extract_range_start} to {extract_range_end}"
+                )
                 for sink in self.storage_sinks:
-                    sink_post_process_end_date = datetime.today()
-                    sink_post_process_start_date = (
-                        sink_post_process_end_date - timedelta(days=30)
-                    )
                     logger.info(
-                        f"Running post processor for sink {sink.__class__.__name__} from {sink_post_process_start_date} to {sink_post_process_end_date}"
+                        f"Running post processor for sink {sink.__class__.__name__} from {extract_range_start} to {extract_range_end}"
                     )
                     sink.exec_postprocessor(
-                        run_id, sink_post_process_start_date, sink_post_process_end_date
+                        run_id, extract_range_start, extract_range_end
                     )
             else:
                 logger.info("Skipping sink post processor as configured")

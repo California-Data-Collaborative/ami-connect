@@ -20,7 +20,11 @@ def map_reading(reading: float, original_unit_of_measure: str) -> Tuple[float, s
             multiplier = 1
         case GeneralMeterUnitOfMeasure.HUNDRED_CUBIC_FEET:
             multiplier = 100
-        case GeneralMeterUnitOfMeasure.GALLON | GeneralMeterUnitOfMeasure.GAL | GeneralMeterUnitOfMeasure.GALLONS:
+        case (
+            GeneralMeterUnitOfMeasure.GALLON
+            | GeneralMeterUnitOfMeasure.GAL
+            | GeneralMeterUnitOfMeasure.GALLONS
+        ):
             multiplier = 0.133680546  # 1 / 7.48052
         case GeneralMeterUnitOfMeasure.KILO_GALLON:
             multiplier = 133.680546  # 1000 * 1 / 7.48052
