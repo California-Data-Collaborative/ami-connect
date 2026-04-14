@@ -274,6 +274,12 @@ class XylemMoultonNiguelSecrets(SourceSecretsBase):
 
 
 @dataclass
+class XylemDatalakeSecrets(SourceSecretsBase):
+    username: str
+    password: str
+
+
+@dataclass
 class XylemSensusSecrets(SourceSecretsBase):
     sftp_user: str
     sftp_password: str
@@ -591,6 +597,22 @@ class SubecaSourceConfig(SourceConfigBase):
 
 
 @dataclass(frozen=True)
+class XylemDatalakeSourceConfig(SourceConfigBase):
+    agency_code: str
+    database_id: int
+    client_id: str
+    chunk_hours: int = 12
+
+    def validate(self):
+        super().validate()
+        self._require(
+            "agency_code",
+            "database_id",
+            "client_id",
+        )
+
+
+@dataclass(frozen=True)
 class XylemSensusSourceConfig(SourceConfigBase):
     sftp_host: str
     sftp_remote_data_directory: str
@@ -664,6 +686,12 @@ class ConfiguredAMISourceTypes(Enum):
         "xylem_moulton_niguel",
         XylemMoultonNiguelSourceConfig,
         XylemMoultonNiguelSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    XYLEM_DATALAKE = SourceSchema(
+        "xylem_datalake",
+        XylemDatalakeSourceConfig,
+        XylemDatalakeSecrets,
         [ConfiguredStorageSinkType.SNOWFLAKE],
     )
     XYLEM_SENSUS = SourceSchema(

@@ -11,6 +11,7 @@ from amiadapters.adapters.beacon import Beacon360Adapter
 from amiadapters.adapters.metersense import MetersenseAdapter
 from amiadapters.adapters.sentryx import SentryxAdapter
 from amiadapters.adapters.subeca import SubecaAdapter
+from amiadapters.adapters.xylem_datalake import XylemDatalakeAdapter
 from amiadapters.adapters.xylem_moulton_niguel import XylemMoultonNiguelAdapter
 from amiadapters.adapters.xylem_sensus import XylemSensusAdapter
 from amiadapters.alerts.base import AmiConnectDagFailureNotifier
@@ -364,6 +365,23 @@ class AMIAdapterConfiguration:
                             source.task_output_controller,
                             source.metrics,
                             source.sinks,
+                        )
+                    )
+                case ConfiguredAMISourceTypes.XYLEM_DATALAKE.value.type:
+                    adapters.append(
+                        XylemDatalakeAdapter(
+                            source.org_id,
+                            source.timezone,
+                            self._pipeline_configuration,
+                            source.task_output_controller,
+                            source.metrics,
+                            agency_code=source.agency_code,
+                            database_id=source.database_id,
+                            client_id=source.client_id,
+                            username=source.secrets.username,
+                            password=source.secrets.password,
+                            chunk_hours=source.chunk_hours,
+                            configured_sinks=source.sinks,
                         )
                     )
                 case ConfiguredAMISourceTypes.XYLEM_MOULTON_NIGUEL.value.type:
