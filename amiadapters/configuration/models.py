@@ -493,6 +493,10 @@ class SourceConfigBase:
         # Python dataclasses don't coerce types automatically, so we need to do it here for non-str fields
         if "database_port" in kwargs:
             kwargs["database_port"] = int(kwargs["database_port"])
+        if "database_id" in kwargs:
+            kwargs["database_id"] = int(kwargs["database_id"])
+        if "chunk_hours" in kwargs:
+            kwargs["chunk_hours"] = int(kwargs["chunk_hours"])
         # ---- end transforms ----
 
         config = config_cls(**kwargs)
