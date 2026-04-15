@@ -1,0 +1,22 @@
+sources:
+- type: xylem_datalake
+  org_id: cadc_hillsborough
+  timezone: America/Los_Angeles
+  agency_code: hlsbo
+  database_id: 1
+  client_id: e4b8a1bf-51c5-4ba4-a8e6-15e5186d503e
+  chunk_hours: 12
+  sinks:
+  - my_snowflake_instance
+
+sinks:
+- type: snowflake
+  id: my_snowflake_instance
+
+task_output:
+  type: local
+  output_folder: outputs
+
+pipeline:
+  run_post_processors: false
+  should_publish_load_finished_events: false
