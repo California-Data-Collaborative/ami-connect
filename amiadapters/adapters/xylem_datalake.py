@@ -103,19 +103,19 @@ def _create_superset_session(
 ) -> requests.Session:
     """Keycloak PKCE OAuth -> Xylem Data Lake -> Superset session."""
     session = requests.Session()
-    session.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/145.0.0.0 Safari/537.36"
-        ),
-    })
+    session.headers.update(
+        {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/145.0.0.0 Safari/537.36"
+            ),
+        }
+    )
 
     code_verifier = secrets.token_urlsafe(32)
     code_challenge = (
-        base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode()).digest()
-        )
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
         .rstrip(b"=")
         .decode()
     )
@@ -205,7 +205,9 @@ def _refresh_csrf(session: requests.Session, superset_url: str) -> None:
         f"{superset_url}/api/v1/security/csrf_token/",
         allow_redirects=False,
     )
-    if csrf_resp.status_code == 200 and "application/json" in csrf_resp.headers.get("Content-Type", ""):
+    if csrf_resp.status_code == 200 and "application/json" in csrf_resp.headers.get(
+        "Content-Type", ""
+    ):
         session.headers["X-CSRFToken"] = csrf_resp.json()["result"]
         session.headers["Referer"] = f"{superset_url}/sqllab/"
         logger.info("CSRF token refreshed")
@@ -342,7 +344,9 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
         all_rows = []
         current_end = range_end
         while current_end > range_start:
-            current_start = max(current_end - timedelta(hours=self.chunk_hours), range_start)
+            current_start = max(
+                current_end - timedelta(hours=self.chunk_hours), range_start
+            )
             sql = (
                 f"SELECT {columns} FROM {table} "
                 f"WHERE {date_column} >= '{current_start:%Y-%m-%d %H:%M:%S}' "
@@ -367,24 +371,36 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
             try:
                 resp = self._session.post(
                     f"{self.superset_url}/api/v1/sqllab/execute/",
-                    json={"database_id": self.database_id, "sql": sql, "runAsync": False},
+                    json={
+                        "database_id": self.database_id,
+                        "sql": sql,
+                        "runAsync": False,
+                    },
                     allow_redirects=False,
                 )
             except requests.exceptions.TooManyRedirects:
                 auth_failures += 1
                 logger.warning("Redirect loop (session expired)")
                 if auth_failures > MAX_AUTH_ATTEMPTS:
-                    raise RuntimeError(f"Max re-auth attempts ({MAX_AUTH_ATTEMPTS}) reached")
+                    raise RuntimeError(
+                        f"Max re-auth attempts ({MAX_AUTH_ATTEMPTS}) reached"
+                    )
                 self._session = self._reauth(auth_failures - 1)
                 self._requests_since_csrf = 0
                 continue
 
             if _session_expired(resp):
                 auth_failures += 1
-                reason = f"HTTP {resp.status_code}" if resp.status_code != 200 else "non-JSON response"
+                reason = (
+                    f"HTTP {resp.status_code}"
+                    if resp.status_code != 200
+                    else "non-JSON response"
+                )
                 logger.warning(f"Session expired ({reason})")
                 if auth_failures > MAX_AUTH_ATTEMPTS:
-                    raise RuntimeError(f"Max re-auth attempts ({MAX_AUTH_ATTEMPTS}) reached")
+                    raise RuntimeError(
+                        f"Max re-auth attempts ({MAX_AUTH_ATTEMPTS}) reached"
+                    )
                 self._session = self._reauth(auth_failures - 1)
                 self._requests_since_csrf = 0
                 continue
@@ -406,7 +422,9 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
         """Re-authenticate with backoff."""
         if consecutive_failures > 0:
             delay = AUTH_BACKOFF_BASE * (2 ** (consecutive_failures - 1))
-            logger.info(f"Backing off {delay}s (failed attempt {consecutive_failures}/{MAX_AUTH_ATTEMPTS})")
+            logger.info(
+                f"Backing off {delay}s (failed attempt {consecutive_failures}/{MAX_AUTH_ATTEMPTS})"
+            )
             time.sleep(delay)
         else:
             logger.info("Re-authenticating")
@@ -450,7 +468,9 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
         meters = {}
         for device_id, account in accounts_by_device_id.items():
             if account.commodity != "WATER":
-                logger.info(f"Skipping non-water account {device_id} (commodity={account.commodity})")
+                logger.info(
+                    f"Skipping non-water account {device_id} (commodity={account.commodity})"
+                )
                 continue
 
             meter = GeneralMeter(
@@ -461,7 +481,11 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
                 meter_id=device_id,
                 endpoint_id=account.radio_id,
                 meter_install_date=None,
-                meter_size=self.map_meter_size(str(account.meter_size)) if account.meter_size is not None else None,
+                meter_size=(
+                    self.map_meter_size(str(account.meter_size))
+                    if account.meter_size is not None
+                    else None
+                ),
                 meter_manufacturer=account.meter_manufacturer,
                 multiplier=account.display_multiplier,
                 location_address=account.asset_address,
@@ -590,7 +614,9 @@ class XylemDatalakeRawAccountLoader(RawSnowflakeTableLoader):
         return ["device_id"]
 
     def prepare_raw_data(self, extract_outputs):
-        raw_data = extract_outputs.load_from_file("account.json", DatalakeAccount, allow_empty=True)
+        raw_data = extract_outputs.load_from_file(
+            "account.json", DatalakeAccount, allow_empty=True
+        )
         return [
             tuple(i.__getattribute__(name) for name in self.columns()) for i in raw_data
         ]

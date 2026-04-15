@@ -73,12 +73,16 @@ def main():
 
     if meters:
         m = meters[0]
-        logger.info(f"  Sample meter: device_id={m.device_id} account_id={m.account_id} "
-                     f"location_id={m.location_id} address={m.location_address}")
+        logger.info(
+            f"  Sample meter: device_id={m.device_id} account_id={m.account_id} "
+            f"location_id={m.location_id} address={m.location_address}"
+        )
     if reads:
         r = reads[0]
-        logger.info(f"  Sample read: device_id={r.device_id} flowtime={r.flowtime} "
-                     f"interval_value={r.interval_value} register_value={r.register_value}")
+        logger.info(
+            f"  Sample read: device_id={r.device_id} flowtime={r.flowtime} "
+            f"interval_value={r.interval_value} register_value={r.register_value}"
+        )
 
     # Step 3: Load to Snowflake
     logger.info("=== LOAD RAW ===")
