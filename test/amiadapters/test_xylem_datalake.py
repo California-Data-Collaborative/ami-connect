@@ -2,12 +2,7 @@ import json
 
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
-from amiadapters.adapters.xylem_datalake import (
-    XylemDatalakeAdapter,
-    DatalakeAccount,
-    DatalakeWaterInterval,
-    DatalakeWaterRegister,
-)
+from amiadapters.adapters.xylem_datalake import XylemDatalakeAdapter
 from test.base_test_case import BaseTestCase
 
 
@@ -194,8 +189,7 @@ class TestXylemDatalakeAdapter(BaseTestCase):
         self.assertEqual(len(meters), 1)
         self.assertEqual(len(reads), 0)
 
-    def test_transform_handles_null_account_for_read(self):
-        """Read whose meter_id matches a meter but has no account."""
+    def test_transform_populates_account_metadata_on_read(self):
         account = _make_account()
         interval = _make_interval()
         extract = _build_extract_output([account], [interval], [])
@@ -203,6 +197,7 @@ class TestXylemDatalakeAdapter(BaseTestCase):
         meters, reads = self.adapter._transform("run1", extract)
         self.assertEqual(len(reads), 1)
         self.assertEqual(reads[0].account_id, "1818")
+        self.assertEqual(reads[0].location_id, "030-100-010")
 
     def test_transform_multiple_meters(self):
         account1 = _make_account(device_id="111", account_id="A1", radio_id="R1")
