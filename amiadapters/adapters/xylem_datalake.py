@@ -513,7 +513,7 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
             flowtime = self._parse_flowtime(raw_read.read_time_timestamp)
             interval_value, interval_unit = self.map_reading(
                 float(raw_read.interval_value),
-                raw_read.unit_of_measure,
+                self._normalize_unit(raw_read.unit_of_measure),
             )
 
             account = accounts_by_device_id.get(device_id)
@@ -542,7 +542,7 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
             flowtime = self._parse_flowtime(raw_read.read_time_timestamp)
             register_value, register_unit = self.map_reading(
                 float(raw_read.register_value),
-                raw_read.unit_of_measure,
+                self._normalize_unit(raw_read.unit_of_measure),
             )
 
             if (device_id, flowtime) in reads_by_device_and_time:
@@ -572,6 +572,16 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
             reads_by_device_and_time[(device_id, flowtime)] = read
 
         return list(reads_by_device_and_time.values())
+
+    @staticmethod
+    def _normalize_unit(unit: str) -> str:
+        """Normalize Data Lake unit codes to values recognized by map_reading."""
+        if unit is None:
+            return None
+        normalized = unit.upper()
+        if normalized == "GAL":
+            return "GALLON"
+        return normalized
 
     def _parse_flowtime(self, raw_flowtime: str) -> datetime:
         """Parse a UTC timestamp from the Data Lake. Timestamps are naive but represent UTC."""
