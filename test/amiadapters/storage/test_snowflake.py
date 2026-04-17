@@ -266,9 +266,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
 
         self.snowflake_sink.exec_postprocessor("run-id", min_date, max_date)
 
-        all_sqls = [
-            call[0][0] for call in self.mock_cursor.execute.call_args_list
-        ]
+        all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
         normalized = [self.normalize_sql(sql) for sql in all_sqls]
 
         # Debe haber exactamente 9 execute calls:
@@ -279,7 +277,11 @@ class TestSnowflakeStorageSink(BaseTestCase):
 
         # --- Tabla detalle irrigation ---
         irrigation_create = next(
-            (s for s in normalized if "create table if not exists irrigation_org-id" in s.lower()),
+            (
+                s
+                for s in normalized
+                if "create table if not exists irrigation_org-id" in s.lower()
+            ),
             None,
         )
         self.assertIsNotNone(irrigation_create, "Debe crear tabla irrigation_{org_id}")
@@ -293,7 +295,9 @@ class TestSnowflakeStorageSink(BaseTestCase):
             (s for s in normalized if "delete from irrigation_org-id" in s.lower()),
             None,
         )
-        self.assertIsNotNone(irrigation_delete, "Debe hacer DELETE en irrigation_{org_id}")
+        self.assertIsNotNone(
+            irrigation_delete, "Debe hacer DELETE en irrigation_{org_id}"
+        )
         self.assertIn("2025-01-01", irrigation_delete)
         self.assertIn("2025-01-31", irrigation_delete)
 
@@ -302,7 +306,9 @@ class TestSnowflakeStorageSink(BaseTestCase):
             (s for s in normalized if "insert into irrigation_org-id" in s.lower()),
             None,
         )
-        self.assertIsNotNone(irrigation_insert, "Debe hacer INSERT en irrigation_{org_id}")
+        self.assertIsNotNone(
+            irrigation_insert, "Debe hacer INSERT en irrigation_{org_id}"
+        )
         self.assertIn("wavelet.global_irrigation_detection", irrigation_insert)
         self.assertIn("source = 'org-id'", irrigation_insert)
         self.assertIn("2025-01-01", irrigation_insert)
@@ -313,7 +319,11 @@ class TestSnowflakeStorageSink(BaseTestCase):
 
         # --- Tabla agg ---
         irrigation_agg = next(
-            (s for s in normalized if "create or replace table irrigation_org-id_agg" in s.lower()),
+            (
+                s
+                for s in normalized
+                if "create or replace table irrigation_org-id_agg" in s.lower()
+            ),
             None,
         )
         self.assertIsNotNone(irrigation_agg, "Debe crear tabla irrigation_{org_id}_agg")
