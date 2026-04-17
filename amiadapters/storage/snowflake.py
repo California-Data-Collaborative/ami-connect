@@ -673,31 +673,104 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             """
             conn.cursor().execute(ami_leaks_agg_sql)
 
-            ami_irrigation_detection_agg_sql = f"""
-                create or replace table irrigation_detection_agg
-                as
-                with cte as
+            # Ensure irrigation detail table exists (no-op after first run)
+            conn.cursor().execute(f"""
+                create table if not exists irrigation_{self.org_id} (
+                    org_id text,
+                    device_id text,
+                    flowtime_ts timestamp_tz,
+                    total_reading_cf float,
+                    irrigation_reading_cf float,
+                    non_irrigation_reading_cf float,
+                    is_irrigation boolean,
+                    event_seq number(18,0),
+                    event_start_ts timestamp_tz,
+                    event_end_ts timestamp_tz,
+                    event_hrs number(10,0),
+                    event_id text
+                )
+            """)
+
+            # Delete existing rows in the window, then insert fresh results
+            conn.cursor().execute(f"""
+                delete from irrigation_{self.org_id}
+                where flowtime_ts >= '{min_date.isoformat()}'
+                and flowtime_ts <= '{max_date.isoformat()}'
+            """)
+
+            ami_irrigation_sql = f"""
+                insert into irrigation_{self.org_id}
+                with source_data as
+                (
+                    select distinct *
+                    from wavelet.global_irrigation_detection
+                    where source = '{self.org_id}'
+                    and timestamp::date >= '{min_date.isoformat()}'
+                    and timestamp::date <= '{max_date.isoformat()}'
+                )
+                , with_events as
+                (
+                    select
+                        source                                as org_id
+                        , device_id
+                        , timestamp::timestamp_tz             as flowtime_ts
+                        , total_reading                       as total_reading_cf
+                        , irrigation_reading                  as irrigation_reading_cf
+                        , non_irrigation_reading              as non_irrigation_reading_cf
+                        , coalesce(irrigation_reading, 0) > 0 as is_irrigation
+                        , conditional_change_event(coalesce(irrigation_reading, 0) = 0)
+                              over (partition by source, device_id order by timestamp) as event_seq
+                    from source_data
+                )
+                , with_event_bounds as
                 (
                     select *
-                        , conditional_change_event(coalesce(irrigation_reading, 0) = 0) over (partition by source, device_id order by timestamp) as grp
-                    from (select distinct * from wavelet.global_irrigation_detection)
+                        , min(flowtime_ts) over (partition by org_id, device_id, event_seq) as event_start_ts
+                        , max(flowtime_ts) over (partition by org_id, device_id, event_seq) as event_end_ts
+                        , datediff(hour, event_start_ts, event_end_ts) + 1                  as event_hrs
+                        , to_varchar(event_start_ts, 'yyyy/mm/dd@hh - ')
+                              || event_hrs
+                              || iff(max(is_irrigation::int) over (partition by org_id, device_id, event_seq) = 1, 'h', 'h*') as event_id
+                    from with_events
                 )
-                select 
-                    source
+                select
+                    org_id
                     , device_id
-                    , min(timestamp) as event_start_ts
-                    , max(timestamp) as event_end_ts
-                    , datediff(hour, event_start_ts, event_end_ts) + 1 as event_hrs
-                    , max(irrigation_reading > 0) is_irrigation
-                    , to_varchar(event_start_ts, 'yyyy/mm/dd@hh - ') || event_hrs || iff(is_irrigation, 'h', 'h*') as event_id
-                    , array_agg(timestamp) within group (order by timestamp) as timestamp
-                    , array_agg(total_reading) within group (order by timestamp) as total_reading_cf
-                    , array_agg(irrigation_reading) within group (order by timestamp) as irrigation_reading_cf
-                    , array_agg(non_irrigation_reading) within group (order by timestamp) as non_irrigation_reading_cf
-                from cte
-                group by source, device_id, grp
+                    , flowtime_ts
+                    , total_reading_cf
+                    , irrigation_reading_cf
+                    , non_irrigation_reading_cf
+                    , is_irrigation
+                    , event_seq
+                    , event_start_ts
+                    , event_end_ts
+                    , event_hrs
+                    , event_id
+                from with_event_bounds
             """
-            conn.cursor().execute(ami_irrigation_detection_agg_sql)
+            conn.cursor().execute(ami_irrigation_sql)
+
+            ami_irrigation_agg_sql = f"""
+                create or replace table irrigation_{self.org_id}_agg
+                as
+                select
+                    org_id
+                    , device_id
+                    , event_id
+                    , event_start_ts
+                    , event_end_ts
+                    , event_hrs
+                    , max(is_irrigation)                                                           as is_irrigation
+                    , array_agg(flowtime_ts) within group (order by flowtime_ts)                   as flowtime_ts
+                    , array_agg(total_reading_cf) within group (order by flowtime_ts)              as total_reading_cf
+                    , array_agg(irrigation_reading_cf) within group (order by flowtime_ts)         as irrigation_reading_cf
+                    , array_agg(non_irrigation_reading_cf) within group (order by flowtime_ts)     as non_irrigation_reading_cf
+                    , sum(total_reading_cf)                                                        as total_reading_sum_cf
+                    , sum(irrigation_reading_cf)                                                   as irrigation_reading_sum_cf
+                from irrigation_{self.org_id}
+                group by org_id, device_id, event_id, event_start_ts, event_end_ts, event_hrs
+            """
+            conn.cursor().execute(ami_irrigation_agg_sql)
 
     def _meter_tuple(self, meter: GeneralMeter, row_active_from: datetime):
         result = [
