@@ -1,5 +1,7 @@
 import os
 
+from dotenv import load_dotenv
+
 AWS_PROFILE_ENV_VAR_NAME = "AMI_CONNECT__AWS_PROFILE"
 AWS_REGION_ENV_VAR_NAME = "AMI_CONNECT__AWS_REGION"
 UTILITY_BILLING_CONNECTION_URL_ENV_VAR_NAME = (
@@ -7,6 +9,11 @@ UTILITY_BILLING_CONNECTION_URL_ENV_VAR_NAME = (
 )
 
 DEFAULT_AWS_REGION = "us-west-2"
+
+
+# Environment variables from .env file are used by these functions
+# .env is the preferred method for configuring those variables during local dev
+load_dotenv()
 
 
 def set_global_aws_profile(aws_profile: str = None):
@@ -18,27 +25,28 @@ def set_global_aws_profile(aws_profile: str = None):
     """
     if aws_profile is None and AWS_PROFILE_ENV_VAR_NAME not in os.environ:
         raise ValueError(
-            f"No AWS profile specified. If using the CLI, use the --profile option or set the {AWS_PROFILE_ENV_VAR_NAME} environment variable."
+            f"No AWS profile specified. Set {AWS_PROFILE_ENV_VAR_NAME} in your .env file (copy .env.example to get started)."
         )
     # Overwrite with the provided profile if specified
     if aws_profile is not None:
         os.environ[AWS_PROFILE_ENV_VAR_NAME] = aws_profile
-    os.environ[AWS_REGION_ENV_VAR_NAME] = DEFAULT_AWS_REGION
+    set_global_aws_region()
 
 
-def set_global_aws_region(aws_region: str):
+def set_global_aws_region(aws_region: str = None):
     """
     Sets the AWS region to use for the current process. This is used by boto3 to
     determine which AWS region to use during local development.
 
     In production, AWS access is provided via the EC2 instance role.
     """
-    os.environ[AWS_REGION_ENV_VAR_NAME] = (
-        aws_region if aws_region else DEFAULT_AWS_REGION
-    )
+    if aws_region is not None:
+        os.environ[AWS_REGION_ENV_VAR_NAME] = aws_region
+    elif AWS_REGION_ENV_VAR_NAME not in os.environ:
+        os.environ[AWS_REGION_ENV_VAR_NAME] = DEFAULT_AWS_REGION
 
 
-def set_global_utility_billing_connection_url(connection_url: str):
+def set_global_utility_billing_connection_url(connection_url: str = None):
     """
     Sets the Utility Billing connection URL to use for the current process. This is used to load configuration from the Utility Billing app's Postgres database.
 

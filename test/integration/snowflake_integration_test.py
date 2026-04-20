@@ -6,13 +6,12 @@ Assumes configuration is set up with an adapter that uses a Snowflake sink.
 Connects to production Snowflake.
 
 Usage:
-    AMI_CONNECT__AWS_PROFILE=my-profile python -m test.integration.snowflake_integration_test
+    python -m test.integration.snowflake_integration_test
 
 """
 
 import datetime
 import json
-import os
 import pytz
 import unittest
 
@@ -46,9 +45,8 @@ class BaseSnowflakeIntegrationTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        profile = os.environ.get("AMI_CONNECT__AWS_PROFILE")
-        set_global_aws_profile(aws_profile=profile)
-        set_global_aws_region(None)
+        set_global_aws_profile()
+        set_global_aws_region()
         cls.config = AMIAdapterConfiguration.from_database()
         # Hack! Pick an adapter out of the config so we can create a connection to Snowflake.
         adapter = cls.config.adapters()[0]

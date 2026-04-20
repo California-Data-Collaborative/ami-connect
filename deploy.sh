@@ -5,18 +5,23 @@ set -euo pipefail
 #  CONFIG
 ########################################
 
-if [[ $# -lt 1 ]]; then
-    echo "ERROR: Missing required argument: ENVIRONMENT"
-    echo "Usage: $0 <environment> [restart] where <environment> matches the name of your terraform environment so the script can pull details from your terraform output files."
-    echo "Example: $0 cadc"
-    echo "Or for full restart: $0 cadc restart"
+# Load .env if it exists
+if [[ -f .env ]]; then
+    set -o allexport
+    source .env
+    set +o allexport
+fi
+
+if [[ -z "${AMI_CONNECT__AWS_PROFILE:-}" ]]; then
+    echo "ERROR: AMI_CONNECT__AWS_PROFILE is not set. Add it to your .env file."
     exit 1
 fi
 
-ENVIRONMENT="$1"
+# Use the AWS profile as the environment name for deployment purposes
+ENVIRONMENT=$AMI_CONNECT__AWS_PROFILE
 
 # Pass in value "restart" to do a full restart of Airflow services, whick kills running DAGs.
-FULL_RESTART_ARG="${2:-false}"
+FULL_RESTART_ARG="${1:-false}"
 if [[ $FULL_RESTART_ARG == "restart" ]]; then
     FULL_RESTART="true"
 else

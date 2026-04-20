@@ -36,7 +36,11 @@ from amiadapters.configuration.base import (
     update_source_configuration,
     update_task_output_configuration,
 )
-from amiadapters.configuration.env import set_global_aws_profile, set_global_aws_region
+from amiadapters.configuration.env import (
+    set_global_aws_profile,
+    set_global_aws_region,
+    set_global_utility_billing_connection_url,
+)
 from amiadapters.configuration.models import (
     IntermediateOutputType,
     MetricsBackendType,
@@ -77,8 +81,9 @@ def sets_environment_from_profile(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         if kwargs.get("local") is None:
-            set_global_aws_region("us-west-2")
+            set_global_aws_region()
             set_global_aws_profile(kwargs.get("profile"))
+            set_global_utility_billing_connection_url()
         return func(*args, **kwargs)
 
     return wrapper

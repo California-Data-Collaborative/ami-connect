@@ -85,8 +85,8 @@ All ETL logic lives in the **`amiadapters`** package:
 ## Example Workflow
 
 1. Download the repo to your development environment. Set it up using instructions in the main `README.md`.
-2. Ensure you have AWS credentials in `~/.aws/credentials` under a profile name like `my_aws_profile`. The credentials need to grant you access to AWS Secrets Manager.
-3. Run the pipeline with our CLI: `python cli.py run --profile my_aws_profile`
+2. Ensure you have AWS credentials in `~/.aws/credentials` under a profile name like `my_aws_profile`. The credentials need to grant you access to AWS Secrets Manager. Copy `.env.example` to `.env` and set `AMI_CONNECT__AWS_PROFILE` to that profile name.
+3. Run the pipeline with our CLI: `python cli.py run`
 
 ---
 

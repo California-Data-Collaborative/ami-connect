@@ -185,3 +185,4 @@ known-hosts
 .DS_Store
 neptune
 .vscode
+.env

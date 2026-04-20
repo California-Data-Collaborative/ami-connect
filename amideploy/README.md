@@ -142,6 +142,25 @@ sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-
 sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 ```
 
+### Install the GitHub Actions self-hosted runner
+
+Deploys are triggered automatically from GitHub Actions using a self-hosted runner on the EC2. You need to install and register the runner once per server.
+
+Follow the instructions at **https://github.com/currentsoftwareapp/current-software-ami-connect/settings/actions/runners/new?arch=x64&os=linux** (select Linux / x64). The page generates a unique registration token and provides the exact commands to run.
+
+Before running the config script, install a missing dependency:
+```
+sudo dnf install -y libicu
+```
+
+After downloading and configuring the runner, install it as a systemd service so it starts automatically on reboot:
+```
+sudo ./svc.sh install
+sudo ./svc.sh start
+```
+
+The runner should appear as **Online** in the GitHub Actions runners list.
+
 Back on your laptop, run the `deploy.sh` script to start Airflow and your pipeline.
 
 Now Airflow is running inside Docker on the server. You should see a response from Airflow if you run `curl localhost:8080` on the server.

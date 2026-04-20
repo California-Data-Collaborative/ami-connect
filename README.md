@@ -74,10 +74,9 @@ Use it to:
 - Configure your production pipeline
 - Run the pipeline locally
 
-The CLI must be able to locate AWS credentials so that it can retrieve secrets and configuration. Most commands accept the `--profile` option which should match the name of
-the AWS profile you're using, e.g. in your `~/.aws/credentials` file.
+The CLI must be able to locate AWS credentials so that it can retrieve secrets and configuration. Set the `AMI_CONNECT__AWS_PROFILE` environment variable to the name of the AWS profile you're using, e.g. in your `~/.aws/credentials` file.
 
-If you'd prefer not to specify the `--profile` option every time, you can set the `AMI_CONNECT__AWS_PROFILE` environment variable to the name of your AWS profile.
+The easiest way to do this is to copy `.env.example` to `.env` and fill in your profile name. The `.env` file is loaded automatically.
 
 #### Configuration
 
@@ -120,30 +119,29 @@ It's common to comment out or modify lines in this script while testing.
 
 ### Deploying
 
-Use the `deploy.sh` script to deploy new code to your AMI Connect pipeline. As of this writing, the script
-bootstraps a deploy environment on the server, then remotely executes a script that builds a new Docker container with Airflow.
+Deploys run automatically via GitHub Actions whenever a commit lands on `main`. No local setup is required.
 
-You'll need to tell the script the name of your environment, which should match the name of your environment in Terraform. (The script
-uses Terraform outputs to configure itself).
+The workflow runs on a self-hosted runner installed on the EC2 server. It syncs the deploy scripts and runs them directly on the server — no SSH access needed from your laptop.
 
-By default, the deploy will not restart Airflow. You can use this behavior to deploy new DAG code, which the Docker container should pick up.
+To trigger a **full restart** (rebuilds the Docker image and restarts Airflow — kills running DAGs):
+1. Go to **Actions → Deploy** in the GitHub UI
+2. Click **Run workflow**, enable the `full_restart` toggle, and run
 
-Example deploy without restarting Airflow:
-```
-sh deploy.sh <my profile name>
-```
-
-But if you do need to restart Airflow, you can pass in the `restart` argument, like so:
-```
-sh deploy.sh <my profile name> restart
-```
 Your Airflow site will be down momentarily and running DAGs will be killed. After about 30s, the site will come back up.
 
-Finally, for systems that rely on a privately hosted [Neptune adapter](./docs/adapters/neptune.md), the script accepts a
-`AMI_CONNECT_NEPTUNE_REPO_URL` environment variable that specifies where the Neptune code should be pulled from. Example:
-```
-AMI_CONNECT_NEPTUNE_REPO_URL=git@github.com:<my github org>/ami-connect-neptune-adapter.git sh deploy.sh <my profile name>
-```
+#### Required GitHub secrets
+
+The workflow reads the following secrets from the `production` environment (`Settings → Environments → production`):
+
+| Secret | Description |
+|---|---|
+| `AIRFLOW_DB_HOST` | RDS PostgreSQL endpoint (from Terraform output `airflow_db_host`) |
+| `AIRFLOW_DB_PASSWORD` | RDS database password (from Terraform output `airflow_db_password`) |
+| `AIRFLOW_SITE_URL` | Public URL of the Airflow site (from Terraform output `airflow_site_url`) |
+| `UTILITY_BILLING_CONNECTION_URL` | Postgres connection string for the utility billing app (from Terraform output `utility_billing_connection_url`) |
+| `AMI_CONNECT_NEPTUNE_REPO_URL` | SSH clone URL of the private Neptune adapter repo. Set to an empty string if not used. |
+
+Terraform output values can be found in `amideploy/configuration/current-output.json`.
 
 ### Run Airflow application locally (rarely necessary)
 

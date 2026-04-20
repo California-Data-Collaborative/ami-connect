@@ -1,0 +1,35 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      full_restart:
+        description: 'Full restart (rebuilds Docker image, kills running DAGs)'
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync deploy files
+        run: |
+          mkdir -p /home/ec2-user/build
+          cp -r $GITHUB_WORKSPACE/amideploy/deploy/. /home/ec2-user/build/
+
+      - name: Run deploy
+        env:
+          AMI_CONNECT__AIRFLOW_METASTORE_CONN: "postgresql+psycopg2://airflow_user:${{ secrets.AIRFLOW_DB_PASSWORD }}@${{ secrets.AIRFLOW_DB_HOST }}/airflow_db"
+          AMI_CONNECT__AIRFLOW_SITE_URL: ${{ secrets.AIRFLOW_SITE_URL }}
+          AMI_CONNECT__UTILITY_BILLING_CONNECTION_URL: ${{ secrets.UTILITY_BILLING_CONNECTION_URL }}
+          AMI_CONNECT_REPO: currentsoftwareapp/current-software-ami-connect
+          AMI_CONNECT_NEPTUNE_REPO_URL: ${{ secrets.AMI_CONNECT_NEPTUNE_REPO_URL }}
+          FULL_RESTART: ${{ github.event_name == 'workflow_dispatch' && inputs.full_restart || 'false' }}
+        run: |
+          cd /home/ec2-user/build
+          bash remote-deploy.sh
