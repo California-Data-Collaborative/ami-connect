@@ -18,7 +18,7 @@ from amiadapters.configuration.models import MetricsConfigurationBase
 from amiadapters.configuration.models import PipelineConfiguration
 from amiadapters.events.base import EventPublisher
 from amiadapters.metrics.base import Metrics
-from amiadapters.models import GeneralMeterUnitOfMeasure
+from amiadapters.models import GeneralMeter, GeneralMeterAlert, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
@@ -163,12 +163,51 @@ class BaseAMIAdapter(ABC):
             )
 
     @abstractmethod
-    def _transform(self, run_id: str, extract_outputs: ExtractOutput):
+    def _transform(
+        self, run_id: str, extract_outputs: ExtractOutput
+    ) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
         """
         Transform data from an AMI data source into the generalized format.
 
         :run_id: identifier for this run of the pipeline
         :extract_outputs: Data from the extract stage expected to be the same as the output of the extract stage.
+        """
+        pass
+
+    def transform_meter_alerts_and_output(self, run_id: str):
+        """
+        Public function for meter alerts transform stage of meter alerts.
+        """
+        with self._base_adapter_metrics.transform_meter_alerts_timer():
+            # Read extract outputs from intermediate storage
+            extract_outputs = self.output_controller.read_extract_outputs(run_id)
+
+            # Transform
+            transformed_meter_alerts = self._transform_meter_alerts(
+                run_id, extract_outputs
+            )
+            self._base_adapter_metrics.mark_meter_alerts_transformed(
+                len(transformed_meter_alerts)
+            )
+
+            # Write transformed outputs to intermediate storage
+            logger.info(
+                f"Transformed {len(transformed_meter_alerts)} meter alerts for org {self.org_id}"
+            )
+            self.output_controller.write_transformed_meter_alerts(
+                run_id, transformed_meter_alerts
+            )
+
+    @abstractmethod
+    def _transform_meter_alerts(
+        self, run_id: str, extract_outputs: ExtractOutput
+    ) -> List[GeneralMeterAlert]:
+        """
+        Transform meter alerts from an AMI data source into the generalized format.
+
+        :run_id: identifier for this run of the pipeline
+        :extract_outputs: Data from the extract stage expected to be the same as the output of the extract stage.
+        :return: List of GeneralMeterAlert objects representing transformed meter alerts
         """
         pass
 
@@ -224,6 +263,17 @@ class BaseAMIAdapter(ABC):
             reads = self.output_controller.read_transformed_meter_reads(run_id)
             for sink in self.storage_sinks:
                 sink.store_transformed(run_id, meters, reads)
+
+    def load_transformed_meter_alerts(self, run_id: str):
+        """
+        Stores transformed meter alerts from transform step into all storage sinks.
+
+        :run_id: identifier for this run of the pipeline, is used to find intermediate output files
+        """
+        with self._base_adapter_metrics.load_transformed_alerts_timer():
+            meter_alerts = self.output_controller.read_transformed_meter_alerts(run_id)
+            for sink in self.storage_sinks:
+                sink.store_transformed_meter_alerts(run_id, meter_alerts)
 
     def post_process(
         self,
@@ -472,6 +522,15 @@ class BaseAMIAdapter(ABC):
                 },
             )
 
+        def transform_meter_alerts_timer(self):
+            return self.metrics.timed_task(
+                "adapter.transform_meter_alerts.duration_seconds",
+                tags={
+                    "org_id": self.org_id,
+                    "adapter_type": self.adapter_type,
+                },
+            )
+
         def mark_meters_transformed(self, count: int):
             self.metrics.incr(
                 "adapter.transform.meters_transformed",
@@ -482,6 +541,13 @@ class BaseAMIAdapter(ABC):
         def mark_reads_transformed(self, count: int):
             self.metrics.incr(
                 "adapter.transform.reads_transformed",
+                count,
+                tags={"org_id": self.org_id, "adapter_type": self.adapter_type},
+            )
+
+        def mark_meter_alerts_transformed(self, count: int):
+            self.metrics.incr(
+                "adapter.transform.meter_alerts_transformed",
                 count,
                 tags={"org_id": self.org_id, "adapter_type": self.adapter_type},
             )
@@ -498,6 +564,15 @@ class BaseAMIAdapter(ABC):
         def load_transformed_timer(self):
             return self.metrics.timed_task(
                 "adapter.load_transformed.duration_seconds",
+                tags={
+                    "org_id": self.org_id,
+                    "adapter_type": self.adapter_type,
+                },
+            )
+
+        def load_transformed_alerts_timer(self):
+            return self.metrics.timed_task(
+                "adapter.load_transformed_alerts.duration_seconds",
                 tags={
                     "org_id": self.org_id,
                     "adapter_type": self.adapter_type,

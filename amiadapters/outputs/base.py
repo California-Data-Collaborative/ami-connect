@@ -2,8 +2,7 @@ from abc import ABC, abstractmethod
 import json
 from typing import List
 
-from amiadapters.models import GeneralMeterRead
-from amiadapters.models import GeneralMeter
+from amiadapters.models import GeneralMeter, GeneralMeterAlert, GeneralMeterRead
 
 
 class ExtractOutput:
@@ -66,6 +65,10 @@ class BaseTaskOutputController(ABC):
 
     @abstractmethod
     def read_transformed_meter_reads(self) -> List[GeneralMeterRead]:
+        pass
+
+    @abstractmethod
+    def write_transformed_meter_alerts(self, alerts: List[GeneralMeterAlert]):
         pass
 
     @abstractmethod

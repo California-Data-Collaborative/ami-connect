@@ -3,7 +3,7 @@ import logging
 import os
 from typing import List
 
-from amiadapters.models import GeneralMeter, GeneralMeterRead
+from amiadapters.models import GeneralMeter, GeneralMeterAlert, GeneralMeterRead
 from amiadapters.models import GeneralModelJSONEncoder
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
 
@@ -90,6 +90,29 @@ class LocalTaskOutputController(BaseTaskOutputController):
         logger.info(f"Read {len(reads)} meter reads from {path}")
         return reads
 
+    def read_transformed_meter_alerts(self, run_id: str) -> List[GeneralMeterAlert]:
+        path = self._transformed_alerts_path(run_id)
+        logger.info(f"Reading meter alerts from {path}")
+        with open(path, "r") as f:
+            text = f.read()
+            alerts = [
+                GeneralMeterAlert(**json.loads(d)) for d in text.strip().split("\n")
+            ]
+        logger.info(f"Read {len(alerts)} meter alerts from {path}")
+        return alerts
+
+    def write_transformed_meter_alerts(
+        self, run_id: str, alerts: List[GeneralMeterAlert]
+    ):
+        path = self._transformed_alerts_path(run_id)
+        self._create_parent_directories_if_missing(path)
+        logger.info(f"Writing {len(alerts)} transformed meter alerts to {path}")
+        with open(path, "w") as f:
+            f.write(
+                "\n".join(json.dumps(v, cls=GeneralModelJSONEncoder) for v in alerts)
+            )
+        logger.info(f"Wrote alerts to {path}")
+
     def download_for_path(self, path: str, output_directory: str):
         logger.info(f"Not implemented for LocalTaskOutputController")
 
@@ -101,6 +124,9 @@ class LocalTaskOutputController(BaseTaskOutputController):
 
     def _transformed_reads_path(self, run_id: str) -> str:
         return os.path.join(self._base_dir(run_id), self.TRANSFORM, "reads.json")
+
+    def _transformed_alerts_path(self, run_id: str) -> str:
+        return os.path.join(self._base_dir(run_id), self.TRANSFORM, "alerts.json")
 
     def _create_parent_directories_if_missing(self, path):
         directory = os.path.dirname(path)

@@ -6,7 +6,7 @@ from amiadapters.configuration.models import (
     MeterAlertConfiguration,
 )
 from amiadapters.metrics.base import Metrics
-from amiadapters.models import GeneralMeter, GeneralMeterRead
+from amiadapters.models import GeneralMeter, GeneralMeterAlert, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
 from datetime import datetime
 
@@ -34,6 +34,12 @@ class BaseAMIStorageSink(ABC):
     @abstractmethod
     def store_transformed(
         self, run_id: str, meters: List[GeneralMeter], reads: List[GeneralMeterRead]
+    ):
+        pass
+
+    @abstractmethod
+    def store_transformed_meter_alerts(
+        self, run_id: str, alerts: List[GeneralMeterAlert]
     ):
         pass
 

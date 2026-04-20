@@ -6,7 +6,7 @@ import tempfile
 
 import pytz
 
-from amiadapters.models import GeneralMeter, GeneralMeterRead
+from amiadapters.models import GeneralMeter, GeneralMeterAlert, GeneralMeterRead
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.base import ExtractOutput
 from test.base_test_case import BaseTestCase
@@ -146,3 +146,27 @@ class TestLocalTaskOutputController(BaseTestCase):
         self.assertEqual(reads_out[0].device_id, "1")
         self.assertEqual(reads_out[0].register_value, 123.4)
         self.assertEqual(reads_out[1].device_id, "2")
+
+    def test_write_and_read_transformed_meter_alerts(self):
+        alerts = [
+            GeneralMeterAlert(
+                org_id="org456",
+                device_id="1",
+                alert_type="low_battery",
+                start_time=datetime.datetime(2024, 8, 1, 0, 0, tzinfo=pytz.UTC),
+                end_time=datetime.datetime(2024, 9, 1, 0, 0, tzinfo=pytz.UTC),
+                source="subeca",
+            ),
+        ]
+        self.controller.write_transformed_meter_alerts("run123", alerts)
+
+        path = os.path.join(self.test_dir, "run123/org456/t/alerts.json")
+        self.assertTrue(os.path.exists(path))
+
+        with open(path, "r") as f:
+            lines = f.read().strip().split("\n")
+            self.assertEqual(len(lines), 1)
+
+        alerts_out = self.controller.read_transformed_meter_alerts("run123")
+        self.assertEqual(len(alerts_out), 1)
+        self.assertEqual(alerts_out[0].device_id, "1")

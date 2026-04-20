@@ -426,6 +426,12 @@ class Beacon360Adapter(BaseAMIAdapter):
             transformed_reads_by_key.values()
         )
 
+    def _transform_meter_alerts(self, run_id, extract_outputs):
+        """
+        Not implemented.
+        """
+        return []
+
     def _cached_report_file(
         self, extract_range_start: datetime, extract_range_end: datetime
     ) -> str:

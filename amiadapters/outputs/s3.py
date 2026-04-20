@@ -10,7 +10,7 @@ import boto3
 from botocore.exceptions import ClientError, ProfileNotFound
 
 from amiadapters.configuration.env import get_global_aws_profile
-from amiadapters.models import GeneralMeter, GeneralMeterRead
+from amiadapters.models import GeneralMeter, GeneralMeterAlert, GeneralMeterRead
 from amiadapters.models import GeneralModelJSONEncoder
 from amiadapters.outputs.base import BaseTaskOutputController, ExtractOutput
 
@@ -104,6 +104,22 @@ class S3TaskOutputController(BaseTaskOutputController):
         return [
             GeneralMeterRead(**json.loads(line)) for line in text.strip().split("\n")
         ]
+
+    def read_transformed_meter_alerts(self, run_id: str) -> List[GeneralMeterAlert]:
+        key = self._s3_key(run_id, self.TRANSFORM, "alerts.json.gz")
+        logger.info(f"Downloading alerts from s3://{self.bucket_name}/{key}")
+        text = self._download_string_from_s3(key)
+        return [
+            GeneralMeterAlert(**json.loads(line)) for line in text.strip().split("\n")
+        ]
+
+    def write_transformed_meter_alerts(
+        self, run_id: str, alerts: List[GeneralMeterAlert]
+    ):
+        key = self._s3_key(run_id, self.TRANSFORM, "alerts.json.gz")
+        logger.info(f"Uploading {len(alerts)} alerts to s3://{self.bucket_name}/{key}")
+        data = "\n".join(json.dumps(a, cls=GeneralModelJSONEncoder) for a in alerts)
+        self._upload_string_to_s3(key, data)
 
     def download_for_path(
         self, path: str, output_directory: str, decompress: bool = True

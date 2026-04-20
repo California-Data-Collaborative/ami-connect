@@ -8,10 +8,11 @@ from amiadapters.outputs.base import ExtractOutput
 from amiadapters.adapters.subeca import (
     SubecaAccount,
     SubecaAdapter,
+    SubecaAlarm,
     SubecaReading,
     SUBECA_RAW_SNOWFLAKE_LOADER,
 )
-from test.base_test_case import BaseTestCase
+from test.base_test_case import BaseTestCase, MockResponse
 
 
 def create_mock_account_metadata_response() -> MagicMock:
@@ -67,6 +68,31 @@ def create_mock_accounts_response() -> MagicMock:
     return mock_accounts_response
 
 
+def create_mock_alarms_response() -> MagicMock:
+    mock_alarms_response = MagicMock()
+    mock_alarms_response.ok = True
+    mock_alarms_response.json.return_value = {"data": [], "nextToken": None}
+    return mock_alarms_response
+
+
+ALARM_RESPONSE_ITEM = {
+    "accountId": "acc1",
+    "accountStatus": "active",
+    "meterSerial": "",
+    "billingRoute": "",
+    "registerSerial": "",
+    "alarm": {
+        "name": "Radio Low Battery",
+        "startAt": "2026-01-02T00:00:00+00:00",
+        "endAt": "2026-01-02T01:00:00+00:00",
+        "deviceId": "device-001",
+    },
+}
+
+ALARM_RANGE_START = datetime.datetime(2026, 1, 1)
+ALARM_RANGE_END = datetime.datetime(2026, 1, 3)
+
+
 class TestSubecaAdapter(BaseTestCase):
 
     def setUp(self):
@@ -99,11 +125,14 @@ class TestSubecaAdapter(BaseTestCase):
         mock_usages_response = create_mock_usages_response()
         # --- Mock GET /accounts/{id} metadata response ---
         mock_account_metadata_response = create_mock_account_metadata_response()
+        # --- Mock POST /alarms alarms response ---
+        mock_alarms_response = create_mock_alarms_response()
 
         mock_request.side_effect = [
             mock_accounts_response,
             mock_usages_response,
             mock_account_metadata_response,
+            mock_alarms_response,
         ]
 
         result = self.adapter._extract("run1", self.start_date, self.end_date)
@@ -115,7 +144,7 @@ class TestSubecaAdapter(BaseTestCase):
             params={"pageSize": 100},
             headers={"accept": "application/json", "x-subeca-api-key": "test-key"},
         )
-        self.assertEqual(3, mock_request.call_count)
+        self.assertEqual(4, mock_request.call_count)
 
         # Validate returned ExtractOutput
         accounts = result.load_from_file("accounts.json", SubecaAccount)
@@ -150,10 +179,14 @@ class TestSubecaAdapter(BaseTestCase):
         # --- Mock GET /accounts/{id} metadata response ---
         mock_account_metadata_response = create_mock_account_metadata_response()
 
+        # --- Mock POST /alarms alarms response ---
+        mock_alarms_response = create_mock_alarms_response()
+
         mock_request.side_effect = [
             mock_accounts_response,
             mock_usages_response,
             mock_account_metadata_response,
+            mock_alarms_response,
         ]
 
         result = self.adapter._extract("run1", self.start_date, self.end_date)
@@ -181,17 +214,21 @@ class TestSubecaAdapter(BaseTestCase):
         # Mock GET /accounts/{accountId}
         mock_account_metadata_response = create_mock_account_metadata_response()
 
+        # --- Mock POST /alarms alarms response ---
+        mock_alarms_response = create_mock_alarms_response()
+
         # The second GET call should return metadata response
         mock_request.side_effect = [
             mock_accounts_response_1,
             mock_accounts_response_2,
             mock_usages_response,
             mock_account_metadata_response,
+            mock_alarms_response,
         ]
 
         result = self.adapter._extract("run1", self.start_date, self.end_date)
 
-        self.assertEqual(4, mock_request.call_count)
+        self.assertEqual(5, mock_request.call_count)
 
         # Validate returned ExtractOutput
         accounts = result.load_from_file(
@@ -219,17 +256,21 @@ class TestSubecaAdapter(BaseTestCase):
         # Mock GET /accounts/{accountId}
         mock_account_metadata_response = create_mock_account_metadata_response()
 
+        # --- Mock POST /alarms alarms response ---
+        mock_alarms_response = create_mock_alarms_response()
+
         # The second GET call should return metadata response
         mock_request.side_effect = [
             mock_accounts_response_1,
             mock_accounts_response_2,
             mock_usages_response,
             mock_account_metadata_response,
+            mock_alarms_response,
         ]
 
         self.adapter._extract("run1", self.start_date, self.end_date)
 
-        self.assertEqual(4, mock_request.call_count)
+        self.assertEqual(5, mock_request.call_count)
 
     @patch("amiadapters.adapters.subeca.requests.request")
     def test_extract_accounts_api_non_retriable_failure(self, mock_request):
@@ -287,12 +328,13 @@ class TestSubecaAdapter(BaseTestCase):
             failed_usage_request,
             mock_usages_response,
             mock_metadata_response,
+            create_mock_alarms_response(),
         ]
 
         self.adapter._extract("run1", self.start_date, self.end_date)
 
         # Includes one retry
-        self.assertEqual(4, mock_request.call_count)
+        self.assertEqual(5, mock_request.call_count)
 
     @patch("amiadapters.adapters.subeca.requests.request")
     def test_extract_account_metadata_non_retriable_failure(self, mock_request):
@@ -334,19 +376,23 @@ class TestSubecaAdapter(BaseTestCase):
         mock_metadata_response.text = "Bad Request"
         mock_metadata_response_2 = create_mock_account_metadata_response()
 
+        # --- Mock POST /alarms alarms response ---
+        mock_alarms_response = create_mock_alarms_response()
+
         mock_request.side_effect = [
             mock_accounts_response,
             mock_usages_response,
             mock_metadata_response,
             mock_metadata_response_2,
+            mock_alarms_response,
         ]
 
         self.adapter._extract("run1", self.start_date, self.end_date)
 
         # Includes one retry
-        self.assertEqual(4, mock_request.call_count)
+        self.assertEqual(5, mock_request.call_count)
 
-    def make_extract_output(self, accounts, usages):
+    def make_extract_output(self, accounts, usages, alarms=None):
         return ExtractOutput(
             {
                 "accounts.json": "\n".join(
@@ -354,6 +400,9 @@ class TestSubecaAdapter(BaseTestCase):
                 ),
                 "usages.json": "\n".join(
                     json.dumps(u, default=lambda o: o.__dict__) for u in usages
+                ),
+                "alarms.json": "\n".join(
+                    json.dumps(a, default=lambda o: o.__dict__) for a in (alarms or [])
                 ),
             }
         )
@@ -482,7 +531,7 @@ class TestSubecaAdapter(BaseTestCase):
         self.assertEqual(len(meters), 1)
         self.assertTrue(all(r.device_id != "OTHER_DEVICE" for r in reads))
 
-    def test_transform_transform_no_device_id(self):
+    def test_transform_no_device_id(self):
         """If no service point is found, meter still gets created with None for location_id."""
         account = SubecaAccount(
             accountId="A1",
@@ -508,6 +557,254 @@ class TestSubecaAdapter(BaseTestCase):
         meters, _ = self.adapter._transform("run-1", extract_output)
 
         self.assertEqual(0, len(meters))
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_returns_alarms_from_single_page(self, mock_request):
+        mock_request.return_value = MockResponse(
+            {"data": [ALARM_RESPONSE_ITEM], "nextToken": None},
+            200,
+        )
+
+        result = self.adapter._extract_alarms_for_account(
+            "acc1", ALARM_RANGE_START, ALARM_RANGE_END
+        )
+
+        self.assertEqual(1, len(result))
+        alarm = result[0]
+        self.assertIsInstance(alarm, SubecaAlarm)
+        self.assertEqual("Radio Low Battery", alarm.name)
+        self.assertEqual("2026-01-02T00:00:00+00:00", alarm.startAt)
+        self.assertEqual("2026-01-02T01:00:00+00:00", alarm.endAt)
+        self.assertEqual("device-001", alarm.deviceId)
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_paginates_until_no_next_token_for_alarms(self, mock_request):
+        page1 = {
+            "data": [ALARM_RESPONSE_ITEM],
+            "nextToken": "tok123",
+        }
+        page2_item = {
+            **ALARM_RESPONSE_ITEM,
+            "alarm": {
+                "name": "Tamper",
+                "startAt": "2026-01-03T00:00:00+00:00",
+                "endAt": "2026-01-03T01:00:00+00:00",
+                "deviceId": "device-002",
+            },
+        }
+        page2 = {"data": [page2_item], "nextToken": None}
+        mock_request.side_effect = [MockResponse(page1, 200), MockResponse(page2, 200)]
+
+        result = self.adapter._extract_alarms_for_account(
+            "acc1", ALARM_RANGE_START, ALARM_RANGE_END
+        )
+
+        self.assertEqual(2, len(result))
+        self.assertEqual("Radio Low Battery", result[0].name)
+        self.assertEqual("Tamper", result[1].name)
+        self.assertEqual(2, mock_request.call_count)
+
+        # Second call should include nextToken in request body
+        second_call_body = mock_request.call_args_list[1].kwargs["json"]
+        self.assertEqual("tok123", second_call_body["nextToken"])
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_skips_items_without_alarm_field(self, mock_request):
+        item_without_alarm = {
+            "accountId": "acc1",
+            "accountStatus": "active",
+        }
+        mock_request.return_value = MockResponse(
+            {"data": [item_without_alarm, ALARM_RESPONSE_ITEM], "nextToken": None},
+            200,
+        )
+
+        result = self.adapter._extract_alarms_for_account(
+            "acc1", ALARM_RANGE_START, ALARM_RANGE_END
+        )
+
+        self.assertEqual(1, len(result))
+        self.assertEqual("Radio Low Battery", result[0].name)
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_returns_empty_list_when_no_data_for_alarms(self, mock_request):
+        mock_request.return_value = MockResponse(
+            {"data": [], "nextToken": None},
+            200,
+        )
+
+        result = self.adapter._extract_alarms_for_account(
+            "acc1", ALARM_RANGE_START, ALARM_RANGE_END
+        )
+
+        self.assertEqual([], result)
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_sends_correct_reference_period(self, mock_request):
+        mock_request.return_value = MockResponse(
+            {"data": [], "nextToken": None},
+            200,
+        )
+
+        self.adapter._extract_alarms_for_account(
+            "acc1", ALARM_RANGE_START, ALARM_RANGE_END
+        )
+
+        call_body = mock_request.call_args.kwargs["json"]
+        self.assertEqual("2026-01-01", call_body["referencePeriod"]["start"])
+        self.assertEqual("2026-01-03", call_body["referencePeriod"]["end"])
+        self.assertEqual("+00:00", call_body["referencePeriod"]["utcOffset"])
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_calls_correct_url_for_alarms(self, mock_request):
+        mock_request.return_value = MockResponse(
+            {"data": [], "nextToken": None},
+            200,
+        )
+
+        self.adapter._extract_alarms_for_account(
+            "my-account", ALARM_RANGE_START, ALARM_RANGE_END
+        )
+
+        call_url = mock_request.call_args.args[1]
+        self.assertEqual(
+            "http://localhost/my-url/v1/accounts/my-account/alarms", call_url
+        )
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_output_includes_alarms_json(self, mock_request):
+        accounts_response = {
+            "data": [{"accountId": "acc1"}],
+            "nextToken": None,
+        }
+        account_detail_response = {
+            "accountId": "acc1",
+            "accountStatus": "active",
+            "meterSerial": "serial1",
+            "billingRoute": "route1",
+            "registerSerial": "reg1",
+            "meterInfo": {"meterSize": "5/8"},
+            "device": {
+                "activeProtocol": "LoRaWAN",
+                "installationDate": None,
+                "latestCommunicationDate": None,
+                "deviceId": "device-001",
+            },
+            "createdAt": None,
+        }
+        usages_response = {"data": {"hourly": {}}}
+        alarms_response = {"data": [ALARM_RESPONSE_ITEM], "nextToken": None}
+
+        mock_request.side_effect = [
+            MockResponse(accounts_response, 200),
+            MockResponse(usages_response, 200),
+            MockResponse(account_detail_response, 200),
+            MockResponse(alarms_response, 200),
+        ]
+
+        output = self.adapter._extract("run-1", ALARM_RANGE_START, ALARM_RANGE_END)
+
+        self.assertIn("alarms.json", output.get_outputs())
+        alarms = output.load_from_file("alarms.json", SubecaAlarm, allow_empty=True)
+        self.assertEqual(1, len(alarms))
+        self.assertEqual("Radio Low Battery", alarms[0].name)
+        self.assertEqual("device-001", alarms[0].deviceId)
+
+    def test_maps_alarm_to_general_meter_alert(self):
+        alarm = SubecaAlarm(
+            name="Radio Low Battery",
+            startAt="2026-01-02T00:00:00+00:00",
+            endAt="2026-01-02T01:00:00+00:00",
+            deviceId="device-001",
+        )
+        extract_output = self.make_extract_output([], [], alarms=[alarm])
+
+        result = self.adapter._transform_meter_alerts("run-1", extract_output)
+
+        self.assertEqual(1, len(result))
+        alert = result[0]
+        self.assertEqual("test-org", alert.org_id)
+        self.assertEqual("device-001", alert.device_id)
+        self.assertEqual("Radio Low Battery", alert.alert_type)
+        self.assertEqual(
+            datetime.datetime(2026, 1, 2, 0, 0, 0, tzinfo=pytz.UTC), alert.start_time
+        )
+        self.assertEqual(
+            datetime.datetime(2026, 1, 2, 1, 0, 0, tzinfo=pytz.UTC), alert.end_time
+        )
+        self.assertEqual("subeca", alert.source)
+
+    def test_active_alarm_maps_to_none_end_time(self):
+        alarm = SubecaAlarm(
+            name="Leak - Now",
+            startAt="2026-01-02T00:00:00+00:00",
+            endAt=None,
+            deviceId="device-002",
+        )
+        extract_output = self.make_extract_output([], [], alarms=[alarm])
+
+        result = self.adapter._transform_meter_alerts("run-1", extract_output)
+
+        self.assertEqual(1, len(result))
+        self.assertIsNone(result[0].end_time)
+
+    def test_returns_empty_list_for_no_alarms(self):
+        extract_output = ExtractOutput({"alarms.json": ""})
+
+        result = self.adapter._transform_meter_alerts("run-1", extract_output)
+
+        self.assertEqual([], result)
+
+    def test_maps_multiple_alarms(self):
+        alarms = [
+            SubecaAlarm(
+                name="Tamper",
+                startAt="2026-01-01T00:00:00+00:00",
+                endAt="2026-01-01T12:00:00+00:00",
+                deviceId="device-001",
+            ),
+            SubecaAlarm(
+                name="Dry Meter",
+                startAt="2026-01-02T00:00:00+00:00",
+                endAt=None,
+                deviceId="device-002",
+            ),
+        ]
+        extract_output = self.make_extract_output([], [], alarms=alarms)
+
+        result = self.adapter._transform_meter_alerts("run-1", extract_output)
+
+        self.assertEqual(2, len(result))
+        self.assertEqual("Tamper", result[0].alert_type)
+        self.assertEqual("device-001", result[0].device_id)
+        self.assertEqual("Dry Meter", result[1].alert_type)
+        self.assertEqual("device-002", result[1].device_id)
+        self.assertIsNone(result[1].end_time)
+
+
+class TestTransformMeterAlerts(BaseTestCase):
+
+    def setUp(self):
+        self.adapter = SubecaAdapter(
+            org_id="test-org",
+            org_timezone=pytz.timezone("America/Los_Angeles"),
+            pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
+            api_url="http://localhost/my-url",
+            api_key="test-key",
+            configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
+            configured_meter_alerts=self.TEST_METER_ALERT_CONFIGURATION,
+            configured_metrics=self.TEST_METRICS_CONFIGURATION,
+            configured_sinks=[],
+        )
+
+    def _make_extract_output(self, alarms):
+        return ExtractOutput(
+            {
+                "alarms.json": "\n".join(
+                    json.dumps(a, default=lambda o: o.__dict__) for a in alarms
+                ),
+            }
+        )
 
 
 class TestSubecaRawSnowflakeLoader(BaseTestCase):

@@ -48,6 +48,11 @@ def ami_control_dag_factory(
             adapter.transform_and_output(run_id)
 
         @task()
+        def transform_meter_alerts(adapter: BaseAMIAdapter, **context):
+            run_id = context["dag_run"].run_id
+            adapter.transform_meter_alerts_and_output(run_id)
+
+        @task()
         def load_raw(adapter: BaseAMIAdapter, **context):
             run_id = context["dag_run"].run_id
             adapter.load_raw(run_id)
@@ -58,6 +63,11 @@ def ami_control_dag_factory(
             adapter.load_transformed(run_id)
 
         @task()
+        def load_transformed_meter_alerts(adapter: BaseAMIAdapter, **context):
+            run_id = context["dag_run"].run_id
+            adapter.load_transformed_meter_alerts(run_id)
+
+        @task()
         def post_process(**context):
             run_id = context["dag_run"].run_id
             start, end = _calculate_extract_range(adapter, context, interval, lag)
@@ -66,13 +76,22 @@ def ami_control_dag_factory(
         # Set sequence of tasks for this utility
         (
             extract.override(task_id=f"extract-{adapter.name()}")(adapter)
-            >> transform.override(task_id=f"transform-{adapter.name()}")(adapter)
+            >> [
+                # Run transform tasks in parallel
+                transform.override(task_id=f"transform-{adapter.name()}")(adapter),
+                transform_meter_alerts.override(
+                    task_id=f"transform-alerts-{adapter.name()}"
+                )(adapter),
+            ]
             >> [
                 # Run load tasks in parallel
                 load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter),
                 load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(
                     adapter
                 ),
+                load_transformed_meter_alerts.override(
+                    task_id=f"load-transformed-alerts-{adapter.name()}"
+                )(adapter),
             ]
             >> post_process.override(task_id=f"post-process-{adapter.name()}")()
         )

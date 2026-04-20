@@ -715,6 +715,12 @@ class MetersenseAdapter(BaseAMIAdapter):
         lines = extract_outputs.load_from_file(file, raw_dataclass, allow_empty=True)
         yield from lines
 
+    def _transform_meter_alerts(self, run_id, extract_outputs):
+        """
+        Not implemented.
+        """
+        return []
+
 
 class MetersenseRawAccountServicesLoader(RawSnowflakeTableLoader):
 

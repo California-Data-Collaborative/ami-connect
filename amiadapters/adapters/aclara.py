@@ -337,6 +337,12 @@ class AclaraAdapter(BaseAMIAdapter):
         logger.info(f"Could not find meter size in description: {description}")
         return None
 
+    def _transform_meter_alerts(self, run_id, extract_outputs):
+        """
+        Not implemented.
+        """
+        return []
+
 
 def files_for_date_range(
     files: List[str], extract_range_start: datetime, extract_range_end: datetime

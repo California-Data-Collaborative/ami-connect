@@ -56,6 +56,10 @@ class MockResponse:
         self.status_code = status_code
         self.text = text
 
+    @property
+    def ok(self):
+        return self.status_code < 400
+
     def json(self):
         return self.json_data
 

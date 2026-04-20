@@ -339,6 +339,12 @@ class XylemSensusAdapter(BaseAMIAdapter):
             transformed_reads_by_key.values()
         )
 
+    def _transform_meter_alerts(self, run_id, extract_outputs):
+        """
+        Not implemented.
+        """
+        return []
+
 
 class XylemSensusBaseTableLoader(RawSnowflakeTableLoader):
 

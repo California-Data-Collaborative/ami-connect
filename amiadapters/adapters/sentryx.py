@@ -373,6 +373,12 @@ class SentryxAdapter(BaseAMIAdapter):
 
         return list(meters_by_id.values()), meter_reads
 
+    def _transform_meter_alerts(self, run_id, extract_outputs):
+        """
+        Not implemented.
+        """
+        return []
+
 
 class SentryxRawMetersLoader(RawSnowflakeTableLoader):
 

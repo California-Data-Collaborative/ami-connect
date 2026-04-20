@@ -7,7 +7,12 @@ import pytz
 from pytz.tzinfo import DstTzInfo
 
 from amiadapters.metrics.base import Metrics, seconds_since
-from amiadapters.models import GeneralMeter, GeneralMeterRead, GeneralMeterUnitOfMeasure
+from amiadapters.models import (
+    GeneralMeter,
+    GeneralMeterAlert,
+    GeneralMeterRead,
+    GeneralMeterUnitOfMeasure,
+)
 from amiadapters.configuration.models import (
     ConfiguredStorageSink,
     MeterAlertConfiguration,
@@ -283,6 +288,24 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 len(reads),
                 tags={"org_id": self.org_id},
             )
+
+    def store_transformed_meter_alerts(
+        self, run_id: str, alerts: List[GeneralMeterAlert]
+    ):
+        """
+        Store transformed meter alerts into our meter alerts tables in Snowflake.
+        """
+        with self.metrics.timed_task(
+            "snowflake_storage_sink.store_transformed_alerts",
+            tags={"org_id": self.org_id},
+        ):
+            self.metrics.incr(
+                "snowflake_storage_sink.alerts_stored",
+                len(alerts),
+                tags={"org_id": self.org_id},
+            )
+            for alert in alerts:
+                print(alert)
 
     def _upsert_meters(
         self,

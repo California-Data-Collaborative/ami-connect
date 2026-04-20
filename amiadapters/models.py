@@ -81,6 +81,29 @@ class GeneralMeter:
     location_zip: str
 
 
+@dataclasses.dataclass(frozen=True)
+class GeneralMeterAlert:
+    """
+    General model of an alert associated with a meter.
+
+    Attributes:
+        org_id: The organization that owns the meter and who we're fetching data on behalf of
+        device_id: Uniquely identifies the meter(s) we're receiving measurements for. We pick
+                   which meter identifier is the device_id for each AMI data provider.
+        alert_type: Type of alert, e.g. "continuous_flow", "high_daily_usage", etc.
+        start_time: UTC datetime when alert was triggered.
+        end_time: UTC datetime when alert ended.
+        source: Source of the alert (calculated or from meter provider)
+    """
+
+    org_id: str
+    device_id: str
+    alert_type: str
+    start_time: datetime
+    end_time: datetime | None
+    source: str
+
+
 class DataclassJSONEncoder(json.JSONEncoder):
     """
     Helps write data classes into JSON.

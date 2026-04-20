@@ -144,9 +144,13 @@ def run(
         adapter.extract_and_output(run_id, start, end)
         logger.info(f"Extracted data for {adapter.name()}")
 
-        logger.info(f"Transforming data for {adapter.name()}")
+        logger.info(f"Transforming meters and reads for {adapter.name()}")
         adapter.transform_and_output(run_id)
-        logger.info(f"Transformed data for {adapter.name()}")
+        logger.info(f"Transformed meters and reads for {adapter.name()}")
+
+        logger.info(f"Transforming meter alerts for {adapter.name()}")
+        adapter.transform_meter_alerts_and_output(run_id)
+        logger.info(f"Transformed meter alerts for {adapter.name()}")
 
         logger.info(f"Loading raw data for {adapter.name()}")
         adapter.load_raw(run_id)
@@ -155,6 +159,10 @@ def run(
         logger.info(f"Loading transformed data for {adapter.name()}")
         adapter.load_transformed(run_id)
         logger.info(f"Loaded transformed data for {adapter.name()}")
+
+        logger.info(f"Loading transformed meter alerts for {adapter.name()}")
+        adapter.load_transformed_meter_alerts(run_id)
+        logger.info(f"Loaded transformed meter alerts for {adapter.name()}")
 
         logger.info(f"Executing postprocess data for {adapter.name()}")
         adapter.post_process(run_id, start, end)
