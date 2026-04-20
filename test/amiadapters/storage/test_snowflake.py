@@ -255,6 +255,104 @@ class TestSnowflakeStorageSink(BaseTestCase):
         # Trim leading and trailing whitespace
         return normalized.strip()
 
+    def test_exec_postprocessor__creates_irrigation_tables_per_org(self):
+        """
+        Verifies that exec_postprocessor creates per-org irrigation tables
+        following the leaks pattern: CREATE IF NOT EXISTS, DELETE by date window,
+        INSERT from wavelet, and CREATE OR REPLACE for the agg table.
+        """
+        min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
+        max_date = datetime.datetime(2025, 1, 31, tzinfo=pytz.UTC)
+
+        self.snowflake_sink.exec_postprocessor("run-id", min_date, max_date)
+
+        all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
+        normalized = [self.normalize_sql(sql) for sql in all_sqls]
+
+        # Expects exactly 9 execute calls:
+        # 1 meters_score, 1 leaks CREATE, 1 leaks DELETE, 1 leaks INSERT,
+        # 1 leaks_agg, 1 irrigation CREATE, 1 irrigation DELETE,
+        # 1 irrigation INSERT, 1 irrigation_agg
+        self.assertEqual(9, self.mock_cursor.execute.call_count)
+
+        # --- irrigation detail table ---
+        irrigation_create = next(
+            (
+                s
+                for s in normalized
+                if "create table if not exists irrigation_org-id" in s.lower()
+            ),
+            None,
+        )
+        self.assertIsNotNone(
+            irrigation_create, "Should create irrigation_{org_id} table"
+        )
+        self.assertIn("flowtime_ts", irrigation_create)
+        self.assertIn("irrigation_reading_cf", irrigation_create)
+        self.assertIn("is_irrigation", irrigation_create)
+        self.assertIn("event_seq", irrigation_create)
+
+        # --- DELETE by date window ---
+        irrigation_delete = next(
+            (s for s in normalized if "delete from irrigation_org-id" in s.lower()),
+            None,
+        )
+        self.assertIsNotNone(
+            irrigation_delete, "Should DELETE from irrigation_{org_id}"
+        )
+        self.assertIn("2025-01-01", irrigation_delete)
+        self.assertIn("2025-01-31", irrigation_delete)
+
+        # --- INSERT filtered by org_id and date window ---
+        irrigation_insert = next(
+            (s for s in normalized if "insert into irrigation_org-id" in s.lower()),
+            None,
+        )
+        self.assertIsNotNone(
+            irrigation_insert, "Should INSERT into irrigation_{org_id}"
+        )
+        self.assertIn("wavelet.global_irrigation_detection", irrigation_insert)
+        self.assertIn("source = 'org-id'", irrigation_insert)
+        self.assertIn("2025-01-01", irrigation_insert)
+        self.assertIn("2025-01-31", irrigation_insert)
+        self.assertIn("conditional_change_event", irrigation_insert)
+        # source column renamed to org_id
+        self.assertIn("source as org_id", irrigation_insert.lower())
+
+        # --- agg table ---
+        irrigation_agg = next(
+            (
+                s
+                for s in normalized
+                if "create or replace table irrigation_org-id_agg" in s.lower()
+            ),
+            None,
+        )
+        self.assertIsNotNone(
+            irrigation_agg, "Should create irrigation_{org_id}_agg table"
+        )
+        self.assertIn("irrigation_reading_sum_cf", irrigation_agg)
+        self.assertIn("total_reading_sum_cf", irrigation_agg)
+        self.assertNotIn("irrigation_detection_agg", irrigation_agg)
+
+    def test_exec_postprocessor__irrigation_tables_not_shared(self):
+        """
+        Verifies that the old shared irrigation_detection_agg table is not created.
+        """
+        min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
+        max_date = datetime.datetime(2025, 1, 31, tzinfo=pytz.UTC)
+
+        self.snowflake_sink.exec_postprocessor("run-id", min_date, max_date)
+
+        all_sqls = " ".join(
+            call[0][0] for call in self.mock_cursor.execute.call_args_list
+        )
+        self.assertNotIn(
+            "irrigation_detection_agg",
+            all_sqls,
+            "Should not create the old shared irrigation_detection_agg table",
+        )
+
     def test_store_raw(self):
         self.snowflake_sink.store_raw(
             "run-id",
