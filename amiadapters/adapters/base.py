@@ -634,9 +634,13 @@ class ExtractRangeCalculator:
 
         sink = snowflake_sink[0]
         end = sink.calculate_end_of_backfill_range(self.org_id, min_date, max_date)
-        if not end:
+        if not end or end <= min_date:
             raise Exception(
                 f"No backfillable days found between {min_date} and {max_date} for {self.org_id}, consider removing this backfill from the configuration."
             )
-        start = end - timedelta(days=interval_days)
+        start = max(end - timedelta(days=interval_days), min_date)
+        if start >= end:
+            raise Exception(
+                f"No backfillable days found between {min_date} and {max_date} for {self.org_id}, consider removing this backfill from the configuration."
+            )
         return start, end
