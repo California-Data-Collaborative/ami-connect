@@ -497,8 +497,8 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             # Delete existing rows in the window, then insert fresh results
             conn.cursor().execute(f"""
                 delete from leaks_{self.org_id}
-                where flowtime_ts >= '{min_date.isoformat()}'
-                and flowtime_ts <= '{max_date.isoformat()}'
+                where flowtime_ts::date >= '{min_date.isoformat()}'
+                and flowtime_ts::date <= '{max_date.isoformat()}'
             """)
 
             ami_leaks_sql = f"""
@@ -694,8 +694,8 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             # Delete existing rows in the window, then insert fresh results
             conn.cursor().execute(f"""
                 delete from irrigation_{self.org_id}
-                where flowtime_ts >= '{min_date.isoformat()}'
-                and flowtime_ts <= '{max_date.isoformat()}'
+                where flowtime_ts::date >= '{min_date.isoformat()}'
+                and flowtime_ts::date <= '{max_date.isoformat()}'
             """)
 
             ami_irrigation_sql = f"""
