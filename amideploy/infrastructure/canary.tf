@@ -34,7 +34,7 @@ resource "aws_synthetics_canary" "airflow_healthcheck" {
   artifact_s3_location = "s3://${var.ami_connect_canaries_s3_bucket_name}/canaries/"
   execution_role_arn   = aws_iam_role.ami_connect_pipeline.arn
   handler              = "airflow_canary.handler"
-  runtime_version      = "syn-nodejs-puppeteer-12.0"
+  runtime_version      = "syn-nodejs-puppeteer-15.0"
   schedule {
     expression = "rate(5 minutes)"
   }
