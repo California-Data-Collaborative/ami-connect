@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
+from airflow.models.baseoperator import cross_downstream
 from airflow.notifications.basenotifier import BaseNotifier
 
 from amiadapters.adapters.base import BaseAMIAdapter
@@ -74,27 +75,29 @@ def ami_control_dag_factory(
             adapter.post_process(run_id, start, end)
 
         # Set sequence of tasks for this utility
-        (
-            extract.override(task_id=f"extract-{adapter.name()}")(adapter)
-            >> [
-                # Run transform tasks in parallel
-                transform.override(task_id=f"transform-{adapter.name()}")(adapter),
-                transform_meter_alerts.override(
-                    task_id=f"transform-alerts-{adapter.name()}"
-                )(adapter),
-            ]
-            >> [
-                # Run load tasks in parallel
-                load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter),
-                load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(
-                    adapter
-                ),
-                load_transformed_meter_alerts.override(
-                    task_id=f"load-transformed-alerts-{adapter.name()}"
-                )(adapter),
-            ]
-            >> post_process.override(task_id=f"post-process-{adapter.name()}")()
-        )
+        name = adapter.name()
+        extract_task = extract.override(task_id=f"extract-{name}")(adapter)
+        transform_tasks = [
+            transform.override(task_id=f"transform-{name}")(adapter),
+            transform_meter_alerts.override(task_id=f"transform-alerts-{name}")(
+                adapter
+            ),
+        ]
+        load_tasks = [
+            load_raw.override(task_id=f"load-raw-{name}")(adapter),
+            load_transformed.override(task_id=f"load-transformed-{name}")(adapter),
+            load_transformed_meter_alerts.override(
+                task_id=f"load-transformed-alerts-{name}"
+            )(adapter),
+        ]
+        post_process_task = post_process.override(task_id=f"post-process-{name}")()
+
+        # Extract happens before transforms
+        extract_task >> transform_tasks
+        # All transforms happen before loads
+        cross_downstream(transform_tasks, load_tasks)
+        # Loads happen before post processing
+        load_tasks >> post_process_task
 
         def _calculate_extract_range(
             adapter: BaseAMIAdapter,
@@ -117,4 +120,4 @@ def ami_control_dag_factory(
                 backfill_params=backfill_params,
             )
 
-    ami_control_dag()
+    return ami_control_dag()
