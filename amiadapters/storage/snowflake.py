@@ -24,6 +24,11 @@ from amiadapters.utils.conversions import map_reading
 logger = logging.getLogger(__name__)
 
 
+READINGS_TABLE_NAME = "readings"
+METERS_TABLE_NAME = "meters"
+METER_ALERTS_TABLE_NAME = "meter_alerts"
+
+
 class RawSnowflakeTableLoader(ABC):
     """
     Abstraction used during raw Snowflake loads to keep code DRY.
@@ -32,7 +37,7 @@ class RawSnowflakeTableLoader(ABC):
     @abstractmethod
     def table_name(self) -> str:
         """
-        Name of the raw data table, e.g. "subeca_account_base
+        Name of the raw data table, e.g. "subeca_account_base"
         """
         pass
 
@@ -299,20 +304,21 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             "snowflake_storage_sink.store_transformed_alerts",
             tags={"org_id": self.org_id},
         ):
+            self._verify_no_duplicate_alerts(alerts)
+            conn = self.sink_config.connection()
+            self._upsert_extracted_meter_alerts(alerts, conn)
             self.metrics.incr(
                 "snowflake_storage_sink.alerts_stored",
                 len(alerts),
                 tags={"org_id": self.org_id},
             )
-            for alert in alerts:
-                print(alert)
 
     def _upsert_meters(
         self,
         meters: List[GeneralMeter],
         conn,
         row_active_from=None,
-        table_name="meters",
+        table_name=METERS_TABLE_NAME,
     ):
         self._verify_no_duplicate_meters(meters)
 
@@ -379,6 +385,50 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         """
         conn.cursor().execute(merge_sql)
 
+    def _upsert_extracted_meter_alerts(
+        self,
+        alerts: List[GeneralMeterAlert],
+        conn,
+        meter_alerts_table_name=METER_ALERTS_TABLE_NAME,
+    ):
+        temp_table_name = "stage_extracted_meter_alerts"
+        create_temp_table_sql = f"""
+            CREATE OR REPLACE TEMPORARY TABLE {temp_table_name} (
+                ORG_ID VARCHAR(16777216) NOT NULL,
+                DEVICE_ID VARCHAR(16777216) NOT NULL,
+                NEW_ALERT_START TIMESTAMP_TZ(9) NOT NULL,
+                NEW_ALERT_END TIMESTAMP_TZ(9),
+                ALERT_TYPE VARCHAR(16777216) NOT NULL,
+                IS_ACTIVE BOOLEAN NOT NULL,
+                unique (ORG_ID, DEVICE_ID, ALERT_TYPE, NEW_ALERT_START)
+            );"""
+        conn.cursor().execute(create_temp_table_sql)
+
+        logger.info(f"Adding {len(alerts)} alerts to {temp_table_name} table.")
+
+        insert_to_temp_table_sql = f"""
+            INSERT INTO {temp_table_name} (
+                org_id, device_id, new_alert_start, new_alert_end, alert_type, is_active
+            ) 
+            VALUES (?, ?, ?, ?, ?, ?)
+        """
+        rows = [
+            (
+                alert.org_id,
+                alert.device_id,
+                alert.start_time,
+                alert.end_time,
+                alert.alert_type,
+                alert.end_time is None,
+            )
+            for alert in alerts
+        ]
+        conn.cursor().executemany(insert_to_temp_table_sql, rows)
+
+        logger.info(f"Merging {temp_table_name} into {meter_alerts_table_name} table.")
+
+        self._merge_alerts(conn, meter_alerts_table_name, temp_table_name)
+
     def exec_postprocessor(self, run_id: str, min_date: datetime, max_date: datetime):
         with self.metrics.timed_task(
             "snowflake_storage_sink.exec_postprocessor",
@@ -396,8 +446,8 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         min_date: datetime,
         max_date: datetime,
         org_id: str,
-        meter_alerts_table_name="meter_alerts",
-        readings_table_name="readings",
+        meter_alerts_table_name=METER_ALERTS_TABLE_NAME,
+        readings_table_name=READINGS_TABLE_NAME,
     ):
         threshold_streak_for_continuous_flow_hours = 24
         min_date_to_process = min_date - timedelta(
@@ -516,7 +566,8 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 m.last_flowtime, 
                 m.last_interval_value, 
                 m.last_register_value,
-                (m.last_flowtime <= l.new_alert_end) as IS_ACTIVE
+                (m.last_flowtime <= l.new_alert_end) as IS_ACTIVE,
+                'continuous_flow' as alert_type
             from leaks_deduped l
             left join (
                 SELECT 
@@ -555,9 +606,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             f"Detected {num_alerts_detected} continuous flow alerts in staging table for org_id {org_id}. Merging into {meter_alerts_table_name} table."
         )
 
-        self._merge_alerts(
-            conn, meter_alerts_table_name, "stage_continuous_flows", "continuous_flow"
-        )
+        self._merge_alerts(conn, meter_alerts_table_name, "stage_continuous_flows")
 
     def _upsert_daily_usage_threshold_alerts(
         self,
@@ -565,8 +614,8 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         min_date: datetime,
         max_date: datetime,
         org_id: str,
-        meter_alerts_table_name="meter_alerts",
-        readings_table_name="readings",
+        meter_alerts_table_name=METER_ALERTS_TABLE_NAME,
+        readings_table_name=READINGS_TABLE_NAME,
     ):
         """
         This method detects devices that have a total daily usage above a certain threshold for at least 1 day.
@@ -673,7 +722,8 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             new_alerts_with_status AS (
                 SELECT
                     s.*,
-                    (m.last_flowtime <= s.new_alert_end) as IS_ACTIVE
+                    (m.last_flowtime <= s.new_alert_end) as IS_ACTIVE,
+                    'high_daily_usage' as alert_type
                 FROM new_alerts s
                 LEFT JOIN (
                     SELECT 
@@ -718,26 +768,25 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             conn,
             meter_alerts_table_name,
             "stage_daily_usage_thresholds",
-            "high_daily_usage",
         )
 
-    def _merge_alerts(
-        self, conn, meter_alerts_table_name: str, stage_table_name: str, alert_type: str
-    ):
+    def _merge_alerts(self, conn, meter_alerts_table_name: str, stage_table_name: str):
         merge_sql = f"""
             MERGE INTO {meter_alerts_table_name} existing
             USING {stage_table_name} stage
             ON existing.org_id = stage.org_id
             AND existing.device_id = stage.device_id
-            AND existing.alert_type = '{alert_type}'
+            AND existing.alert_type = stage.alert_type
             AND (
                    (existing.start_time BETWEEN stage.new_alert_start AND stage.new_alert_end)
                 OR (existing.end_time BETWEEN stage.new_alert_start AND stage.new_alert_end)
                 -- Covers case when new alert is completely contained within the existing alert period
                 OR (stage.new_alert_start BETWEEN existing.start_time AND existing.end_time)
                 -- Active alerts have a NULL end_time, which makes BETWEEN comparisons return NULL (falsy).
-                -- Treat an active alert as overlapping if it started before the new alert period endstage.
+                -- Treat an active alert as overlapping if it started before the new alert period ends
                 OR (existing.end_time IS NULL AND existing.start_time <= stage.new_alert_end)
+                -- Treat an active alert as overlapping if the new alert is active too
+                OR (existing.end_time IS NULL AND stage.is_active)
             )
             -- still active
             WHEN MATCHED AND stage.is_active = true THEN UPDATE SET
@@ -751,7 +800,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             WHEN NOT MATCHED THEN INSERT
                     (org_id, device_id, start_time, end_time, alert_type)
                 VALUES
-                    (stage.org_id, stage.device_id, stage.new_alert_start, case when stage.is_active then null else stage.new_alert_end end, '{alert_type}')
+                    (stage.org_id, stage.device_id, stage.new_alert_start, case when stage.is_active then null else stage.new_alert_end end, stage.alert_type)
                 ;
         """
         conn.cursor().execute(merge_sql)
@@ -776,7 +825,9 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         ]
         return tuple(result)
 
-    def _upsert_reads(self, reads: List[GeneralMeterRead], conn, table_name="readings"):
+    def _upsert_reads(
+        self, reads: List[GeneralMeterRead], conn, table_name=READINGS_TABLE_NAME
+    ):
         oldest_flowtime = self._verify_no_duplicate_reads_and_return_oldest_flowtime(
             reads
         )
@@ -886,6 +937,16 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 oldest_flowtime = read.flowtime
         return oldest_flowtime
 
+    def _verify_no_duplicate_alerts(self, alerts: List[GeneralMeterAlert]):
+        seen = set()
+        for alert in alerts:
+            key = (alert.org_id, alert.device_id, alert.alert_type, alert.start_time)
+            if key in seen:
+                raise ValueError(
+                    f"Encountered duplicate alert in data for Snowflake: {key}"
+                )
+            seen.add(key)
+
     def calculate_end_of_backfill_range(
         self, org_id: str, min_date: datetime, max_date: datetime
     ) -> datetime:
@@ -975,7 +1036,7 @@ class SnowflakeMetersUniqueByDeviceIdCheck(BaseAMIDataQualityCheck):
     def __init__(
         self,
         connection,
-        meter_table_name: str = "meters",
+        meter_table_name: str = METERS_TABLE_NAME,
     ):
         self.connection = connection
         self.meter_table_name = meter_table_name
@@ -1020,7 +1081,7 @@ class SnowflakeReadingsUniqueByDeviceIdAndFlowtimeCheck(BaseAMIDataQualityCheck)
     def __init__(
         self,
         connection,
-        readings_table_name: str = "readings",
+        readings_table_name: str = READINGS_TABLE_NAME,
     ):
         super().__init__(connection)
         self.readings_table_name = readings_table_name
@@ -1059,7 +1120,7 @@ class SnowflakeReadingsHaveNoDataGapsCheck(BaseAMIDataQualityCheck):
     def __init__(
         self,
         connection,
-        readings_table_name: str = "readings",
+        readings_table_name: str = READINGS_TABLE_NAME,
     ):
         super().__init__(connection)
         self.readings_table_name = readings_table_name

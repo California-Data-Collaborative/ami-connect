@@ -168,6 +168,38 @@ class TestS3TaskOutputController(BaseTestCase):
         self.assertEqual(result[1].device_id, "2")
         self.assertEqual(result[1].register_value, 227.6)
 
+    def test_handles_empty_meters(self):
+        meters = []
+        reads = []
+        self.controller.write_transformed_meters("runid", meters)
+        # self.controller.write_transformed_meter_reads("runid", [])
+
+        # Simulate download
+        data = "\n".join(json.dumps(a, cls=GeneralModelJSONEncoder) for a in meters)
+        self.mock_s3.get_object.return_value = {
+            "Body": MagicMock(read=lambda: self._gzip(data))
+        }
+        data = "\n".join(json.dumps(a, cls=GeneralModelJSONEncoder) for a in reads)
+        self.mock_s3.get_object.return_value = {
+            "Body": MagicMock(read=lambda: self._gzip(data))
+        }
+
+        result = self.controller.read_transformed_meters("runid")
+        self.assertEqual(result, [])
+
+    def test_handles_empty_reads(self):
+        reads = []
+        self.controller.write_transformed_meter_reads("runid", [])
+
+        # Simulate download
+        data = "\n".join(json.dumps(a, cls=GeneralModelJSONEncoder) for a in reads)
+        self.mock_s3.get_object.return_value = {
+            "Body": MagicMock(read=lambda: self._gzip(data))
+        }
+
+        result = self.controller.read_transformed_meter_reads("runid")
+        self.assertEqual(result, [])
+
     def test_write_and_read_transformed_meter_alerts(self):
         alerts = [
             GeneralMeterAlert(
@@ -190,6 +222,19 @@ class TestS3TaskOutputController(BaseTestCase):
         result = self.controller.read_transformed_meter_alerts("runid")
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].device_id, "1")
+
+    def test_handles_empty_meter_alerts(self):
+        alerts = []
+        self.controller.write_transformed_meter_alerts("runid", alerts)
+
+        # Simulate download
+        data = "\n".join(json.dumps(a, cls=GeneralModelJSONEncoder) for a in alerts)
+        self.mock_s3.get_object.return_value = {
+            "Body": MagicMock(read=lambda: self._gzip(data))
+        }
+
+        result = self.controller.read_transformed_meter_alerts("runid")
+        self.assertEqual(result, [])
 
     def _gzip(self, content: str) -> bytes:
         buf = io.BytesIO()

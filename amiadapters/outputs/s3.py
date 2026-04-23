@@ -89,7 +89,10 @@ class S3TaskOutputController(BaseTaskOutputController):
         key = self._s3_key(run_id, self.TRANSFORM, "meters.json.gz")
         logger.info(f"Downloading meters from s3://{self.bucket_name}/{key}")
         text = self._download_string_from_s3(key)
-        return [GeneralMeter(**json.loads(line)) for line in text.strip().split("\n")]
+        lines = [i for i in text.strip().split("\n") if i]
+        if not lines:
+            return []
+        return [GeneralMeter(**json.loads(line)) for line in lines]
 
     def write_transformed_meter_reads(self, run_id: str, reads: List[GeneralMeterRead]):
         key = self._s3_key(run_id, self.TRANSFORM, "reads.json.gz")
@@ -101,17 +104,19 @@ class S3TaskOutputController(BaseTaskOutputController):
         key = self._s3_key(run_id, self.TRANSFORM, "reads.json.gz")
         logger.info(f"Downloading reads from s3://{self.bucket_name}/{key}")
         text = self._download_string_from_s3(key)
-        return [
-            GeneralMeterRead(**json.loads(line)) for line in text.strip().split("\n")
-        ]
+        lines = [i for i in text.strip().split("\n") if i]
+        if not lines:
+            return []
+        return [GeneralMeterRead(**json.loads(line)) for line in lines]
 
     def read_transformed_meter_alerts(self, run_id: str) -> List[GeneralMeterAlert]:
         key = self._s3_key(run_id, self.TRANSFORM, "alerts.json.gz")
         logger.info(f"Downloading alerts from s3://{self.bucket_name}/{key}")
         text = self._download_string_from_s3(key)
-        return [
-            GeneralMeterAlert(**json.loads(line)) for line in text.strip().split("\n")
-        ]
+        lines = [i for i in text.strip().split("\n") if i]
+        if not lines:
+            return []
+        return [GeneralMeterAlert(**json.loads(line)) for line in lines]
 
     def write_transformed_meter_alerts(
         self, run_id: str, alerts: List[GeneralMeterAlert]

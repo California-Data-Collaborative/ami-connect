@@ -27,9 +27,10 @@ from amiadapters.configuration.env import set_global_aws_profile, set_global_aws
 from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.configuration.models import MeterAlertConfiguration
 from amiadapters.models import (
+    DataclassJSONEncoder,
     GeneralMeter,
     GeneralMeterRead,
-    DataclassJSONEncoder,
+    GeneralMeterAlert,
     GeneralMeterUnitOfMeasure,
 )
 from amiadapters.outputs.base import ExtractOutput
@@ -680,6 +681,188 @@ class TestSnowflakeContinuousFlowAlerts(BaseSnowflakeIntegrationTestCase):
         self.assertIsNone(
             alert[0]
         )  # IS_ACTIVE should be true, so end_time should be NULL
+
+
+class TestSnowflakeExtractedAlerts(BaseSnowflakeIntegrationTestCase):
+
+    def setUp(self):
+        self.row_active_from = datetime.datetime.now(tz=pytz.UTC)
+        self.now = datetime.datetime(2024, 1, 10, 12, 0, tzinfo=pytz.UTC)
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_meters_table} LIKE meters;"
+        )
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_readings_table} LIKE readings;"
+        )
+        self.cs.execute(
+            f"CREATE OR REPLACE TEMPORARY TABLE {self.test_meter_alerts_table} LIKE meter_alerts;"
+        )
+
+    def test_creates_new_alerts(self):
+        self._assert_num_rows(self.test_meter_alerts_table, 0)
+
+        start_time = self.now - datetime.timedelta(days=5)
+        end_time = self.now - datetime.timedelta(days=2)
+
+        alerts = [
+            GeneralMeterAlert(
+                org_id="org1",
+                device_id="device1",
+                alert_type="Leak - Now",
+                start_time=start_time,
+                end_time=end_time,
+                source="Subeca",
+            ),
+            # Active alert of same type as above but different start time
+            GeneralMeterAlert(
+                org_id="org1",
+                device_id="device1",
+                alert_type="Leak - Now",
+                start_time=self.now,
+                end_time=None,
+                source="Subeca",
+            ),
+            # Same as first alert but different type
+            GeneralMeterAlert(
+                org_id="org1",
+                device_id="device1",
+                alert_type="Tamper",
+                start_time=start_time,
+                end_time=end_time,
+                source="Subeca",
+            ),
+            # Different device
+            GeneralMeterAlert(
+                org_id="org1",
+                device_id="device2",
+                alert_type="Leak - Now",
+                start_time=start_time,
+                end_time=end_time,
+                source="Subeca",
+            ),
+            # Different org
+            GeneralMeterAlert(
+                org_id="org2",
+                device_id="device1",
+                alert_type="Leak - Now",
+                start_time=start_time,
+                end_time=end_time,
+                source="Subeca",
+            ),
+        ]
+
+        self.snowflake_sink._upsert_extracted_meter_alerts(
+            alerts=alerts,
+            conn=self.conn,
+            meter_alerts_table_name=self.test_meter_alerts_table,
+        )
+
+        self._assert_num_rows(self.test_meter_alerts_table, 5)
+        self.cs.execute(
+            f"SELECT org_id, device_id, alert_type, start_time, end_time FROM {self.test_meter_alerts_table} ORDER BY org_id, device_id, alert_type, start_time"
+        )
+        alerts = self.cs.fetchall()
+
+        self.assertEqual(
+            alerts[0], ("org1", "device1", "Leak - Now", start_time, end_time)
+        )
+        self.assertEqual(
+            alerts[1], ("org1", "device1", "Leak - Now", self.now, None)
+        )  # Active alert, end_time should be NULL
+        self.assertEqual(alerts[2], ("org1", "device1", "Tamper", start_time, end_time))
+        self.assertEqual(
+            alerts[3], ("org1", "device2", "Leak - Now", start_time, end_time)
+        )
+        self.assertEqual(
+            alerts[4], ("org2", "device1", "Leak - Now", start_time, end_time)
+        )
+
+    def test_sets_existing_alert_to_inactive(self):
+        self._assert_num_rows(self.test_meter_alerts_table, 0)
+
+        start_time = self.now - datetime.timedelta(days=5)
+        end_time = self.now - datetime.timedelta(days=2)
+
+        active_alert = GeneralMeterAlert(
+            org_id="org1",
+            device_id="device1",
+            alert_type="Leak - Now",
+            start_time=start_time,
+            end_time=None,
+            source="Subeca",
+        )
+        self.snowflake_sink._upsert_extracted_meter_alerts(
+            alerts=[active_alert],
+            conn=self.conn,
+            meter_alerts_table_name=self.test_meter_alerts_table,
+        )
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+
+        alert_but_now_inactive = GeneralMeterAlert(
+            org_id="org1",
+            device_id="device1",
+            alert_type="Leak - Now",
+            start_time=start_time,
+            end_time=end_time,
+            source="Subeca",
+        )
+        self.snowflake_sink._upsert_extracted_meter_alerts(
+            alerts=[alert_but_now_inactive],
+            conn=self.conn,
+            meter_alerts_table_name=self.test_meter_alerts_table,
+        )
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+
+        self.cs.execute(
+            f"SELECT org_id, device_id, alert_type, start_time, end_time FROM {self.test_meter_alerts_table} ORDER BY org_id, device_id, alert_type, start_time"
+        )
+        alerts = self.cs.fetchall()
+        self.assertEqual(
+            alerts[0], ("org1", "device1", "Leak - Now", start_time, end_time)
+        )
+
+    def test_preserves_existing_alert(self):
+        self._assert_num_rows(self.test_meter_alerts_table, 0)
+
+        start_time = self.now - datetime.timedelta(days=5)
+
+        active_alert = GeneralMeterAlert(
+            org_id="org1",
+            device_id="device1",
+            alert_type="Leak - Now",
+            start_time=start_time,
+            end_time=None,
+            source="Subeca",
+        )
+        self.snowflake_sink._upsert_extracted_meter_alerts(
+            alerts=[active_alert],
+            conn=self.conn,
+            meter_alerts_table_name=self.test_meter_alerts_table,
+        )
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+
+        # Upsert it again, should have the same row as before
+        self.snowflake_sink._upsert_extracted_meter_alerts(
+            alerts=[active_alert],
+            conn=self.conn,
+            meter_alerts_table_name=self.test_meter_alerts_table,
+        )
+        self._assert_num_rows(self.test_meter_alerts_table, 1)
+
+    def test_catches_duplicate_alerts(self):
+        alert = GeneralMeterAlert(
+            org_id="org1",
+            device_id="device1",
+            alert_type="Leak - Now",
+            start_time=self.now - datetime.timedelta(days=5),
+            end_time=None,
+            source="Subeca",
+        )
+        with self.assertRaises(ValueError):
+            self.snowflake_sink._verify_no_duplicate_alerts(
+                # Duplicate alerts
+                alerts=[alert, alert],
+            )
 
 
 class TestSnowflakeDataQualityChecks(BaseSnowflakeIntegrationTestCase):

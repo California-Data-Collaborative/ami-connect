@@ -15,7 +15,8 @@ jobs:
     runs-on: self-hosted
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      # Get the latest deploy files from amideploy/deploy
+      - uses: actions/checkout@v5
 
       - name: Sync deploy files
         run: |
@@ -31,5 +32,5 @@ jobs:
           AMI_CONNECT_NEPTUNE_REPO_URL: ${{ secrets.AMI_CONNECT_NEPTUNE_REPO_URL }}
           FULL_RESTART: ${{ github.event_name == 'workflow_dispatch' && inputs.full_restart || 'false' }}
         run: |
-          cd /home/ec2-user/build
+          cd /home/ec2-user/build/repo
           bash remote-deploy.sh
