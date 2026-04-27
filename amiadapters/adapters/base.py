@@ -634,6 +634,9 @@ class ExtractRangeCalculator:
 
         sink = snowflake_sink[0]
         end = sink.calculate_end_of_backfill_range(self.org_id, min_date, max_date)
+        # Ensure min_date is tz-aware if end is (Snowflake returns tz-aware timestamps)
+        if end and end.tzinfo is not None and min_date.tzinfo is None:
+            min_date = min_date.replace(tzinfo=end.tzinfo)
         if not end or end <= min_date:
             raise Exception(
                 f"No backfillable days found between {min_date} and {max_date} for {self.org_id}, consider removing this backfill from the configuration."
