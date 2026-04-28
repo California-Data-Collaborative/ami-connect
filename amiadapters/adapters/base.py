@@ -634,6 +634,7 @@ class ExtractRangeCalculator:
 
         sink = snowflake_sink[0]
         end = sink.calculate_end_of_backfill_range(self.org_id, min_date, max_date)
+
         # Normalize to naive datetimes for comparison. These values represent
         # calendar dates but arrive as date, naive datetime, or tz-aware datetime
         # depending on the Snowflake column type and query path.
