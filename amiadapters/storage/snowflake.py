@@ -360,9 +360,49 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
 
             conn = self.sink_config.connection()
 
+            # Ensure meters_score table exists (no-op after first run)
+            conn.cursor().execute(f"""
+                create table if not exists meters_score_{self.org_id} (
+                    org_id              text,
+                    device_id           text,
+                    class_full_name     text,
+                    first_read          timestamp_ntz,
+                    last_read           timestamp_ntz,
+                    last_read_hours     float,
+                    observations        number(18,0),
+                    hours_in_period     float,
+                    read_freq           float,
+                    unread_freq         float,
+                    stuck_events        number(18,0),
+                    stuck_hours         float,
+                    duration_hours_thr  float,
+                    total_usage         float,
+                    used_hours          float,
+                    idle_hours          float,
+                    avg_hourly_usage    float,
+                    unaccounted         float,
+                    z_last_read         float,
+                    z_unread_freq       float,
+                    z_stuck_hours       float,
+                    z_stuck_events      float,
+                    z_unaccounted       float,
+                    score_last_read     float,
+                    score_unread_freq   float,
+                    score_stuck_hours   float,
+                    score_stuck_events  float,
+                    score_unaccounted   float,
+                    score               float
+                )
+            """)
+
+            # Delete existing rows for this org, then insert fresh results
+            conn.cursor().execute(f"""
+                delete from meters_score_{self.org_id}
+                where org_id = '{self.org_id}'
+            """)
+
             ami_meters_score_sql = f"""
-            create or replace table meters_score_{self.org_id}
-            as
+            insert into meters_score_{self.org_id}
             with cte as
             (
                 select org_id
@@ -464,6 +504,31 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             from z_scores
             """
             conn.cursor().execute(ami_meters_score_sql)
+
+            ami_meters_score_agg_sql = f"""
+                create or replace table meters_score_{self.org_id}_agg
+                as
+                select
+                    org_id
+                    , class_full_name
+                    , array_agg(device_id)          as device_ids
+                    , array_agg(score)              as scores
+                    , array_agg(score_last_read)    as scores_last_read
+                    , array_agg(score_unread_freq)  as scores_unread_freq
+                    , array_agg(score_stuck_hours)  as scores_stuck_hours
+                    , array_agg(score_stuck_events) as scores_stuck_events
+                    , array_agg(score_unaccounted)  as scores_unaccounted
+                    , avg(score)                    as avg_score
+                    , stddev(score)                 as stddev_score
+                    , avg(score_last_read)          as avg_score_last_read
+                    , avg(score_unread_freq)        as avg_score_unread_freq
+                    , avg(score_stuck_hours)        as avg_score_stuck_hours
+                    , avg(score_stuck_events)       as avg_score_stuck_events
+                    , avg(score_unaccounted)        as avg_score_unaccounted
+                from meters_score_{self.org_id}
+                group by org_id, class_full_name
+            """
+            conn.cursor().execute(ami_meters_score_agg_sql)
 
             # Ensure leaks table exists (no-op after first run)
             conn.cursor().execute(f"""
