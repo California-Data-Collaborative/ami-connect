@@ -645,6 +645,7 @@ class ExtractRangeCalculator:
             if isinstance(val, date):
                 return datetime.combine(val, time(0, 0))
             return val
+
         end = _to_naive_dt(end)
         min_date = _to_naive_dt(min_date)
         if not end or end <= min_date:
