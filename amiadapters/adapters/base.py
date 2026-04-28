@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 import logging
 from typing import List, Tuple
 
@@ -634,9 +634,19 @@ class ExtractRangeCalculator:
 
         sink = snowflake_sink[0]
         end = sink.calculate_end_of_backfill_range(self.org_id, min_date, max_date)
-        # Ensure min_date is tz-aware if end is (Snowflake returns tz-aware timestamps)
-        if end and end.tzinfo is not None and min_date.tzinfo is None:
-            min_date = min_date.replace(tzinfo=end.tzinfo)
+        # Normalize to naive datetimes for comparison. These values represent
+        # calendar dates but arrive as date, naive datetime, or tz-aware datetime
+        # depending on the Snowflake column type and query path.
+        def _to_naive_dt(val):
+            if val is None:
+                return val
+            if isinstance(val, datetime):
+                return val.replace(tzinfo=None)
+            if isinstance(val, date):
+                return datetime.combine(val, time(0, 0))
+            return val
+        end = _to_naive_dt(end)
+        min_date = _to_naive_dt(min_date)
         if not end or end <= min_date:
             raise Exception(
                 f"No backfillable days found between {min_date} and {max_date} for {self.org_id}, consider removing this backfill from the configuration."
