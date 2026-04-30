@@ -190,7 +190,12 @@ def _create_superset_session(
         raise RuntimeError(
             f"Superset login failed (status {me_resp.status_code}): {me_resp.text[:300]}"
         )
-    user = me_resp.json()["result"]
+    me_data = me_resp.json()
+    if "result" not in me_data:
+        raise RuntimeError(
+            f"Superset login returned unexpected shape (status {me_resp.status_code}): {me_resp.text[:300]}"
+        )
+    user = me_data["result"]
     logger.info(f"Authenticated as {user['username']}")
 
     # Step 5: CSRF token
