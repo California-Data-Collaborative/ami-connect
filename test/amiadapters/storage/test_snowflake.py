@@ -269,11 +269,67 @@ class TestSnowflakeStorageSink(BaseTestCase):
         all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
         normalized = [self.normalize_sql(sql) for sql in all_sqls]
 
-        # Expects exactly 9 execute calls:
-        # 1 meters_score, 1 leaks CREATE, 1 leaks DELETE, 1 leaks INSERT,
-        # 1 leaks_agg, 1 irrigation CREATE, 1 irrigation DELETE,
-        # 1 irrigation INSERT, 1 irrigation_agg
-        self.assertEqual(9, self.mock_cursor.execute.call_count)
+        # Expects exactly 12 execute calls:
+        # 1 meters_score CREATE, 1 meters_score DELETE, 1 meters_score INSERT,
+        # 1 meters_score_agg,
+        # 1 leaks CREATE, 1 leaks DELETE, 1 leaks INSERT, 1 leaks_agg,
+        # 1 irrigation CREATE, 1 irrigation DELETE, 1 irrigation INSERT, 1 irrigation_agg
+        self.assertEqual(12, self.mock_cursor.execute.call_count)
+
+        # --- meters_score detail table ---
+        meters_score_create = next(
+            (
+                s
+                for s in normalized
+                if "create table if not exists meters_score_org-id" in s.lower()
+            ),
+            None,
+        )
+        self.assertIsNotNone(
+            meters_score_create, "Should create meters_score_{org_id} table"
+        )
+        self.assertIn("class_full_name", meters_score_create)
+        self.assertIn("score", meters_score_create)
+        self.assertIn("stuck_hours", meters_score_create)
+
+        # --- DELETE by org_id ---
+        meters_score_delete = next(
+            (s for s in normalized if "delete from meters_score_org-id" in s.lower()),
+            None,
+        )
+        self.assertIsNotNone(
+            meters_score_delete, "Should DELETE from meters_score_{org_id}"
+        )
+        self.assertIn("org_id = 'org-id'", meters_score_delete)
+
+        # --- INSERT from readings ---
+        meters_score_insert = next(
+            (s for s in normalized if "insert into meters_score_org-id" in s.lower()),
+            None,
+        )
+        self.assertIsNotNone(
+            meters_score_insert, "Should INSERT into meters_score_{org_id}"
+        )
+        self.assertIn("ami_connect.readings", meters_score_insert)
+        self.assertIn("z_scores", meters_score_insert)
+        self.assertIn("2025-01-01", meters_score_insert)
+        self.assertIn("2025-01-31", meters_score_insert)
+
+        # --- agg table ---
+        meters_score_agg = next(
+            (
+                s
+                for s in normalized
+                if "create or replace table meters_score_org-id_agg" in s.lower()
+            ),
+            None,
+        )
+        self.assertIsNotNone(
+            meters_score_agg, "Should create meters_score_{org_id}_agg table"
+        )
+        self.assertIn("array_agg", meters_score_agg)
+        self.assertIn("avg_score", meters_score_agg)
+        self.assertIn("class_full_name", meters_score_agg)
 
         # --- irrigation detail table ---
         irrigation_create = next(
