@@ -91,6 +91,8 @@ KEYCLOAK_BASE = "https://cloud.xylem.com/xgs/auth/realms/xgsum"
 DELAY_SECONDS = 2
 MAX_AUTH_ATTEMPTS = 3
 AUTH_BACKOFF_BASE = 10
+MAX_SERVER_ATTEMPTS = 3
+SERVER_BACKOFF_BASE = 10
 CSRF_REFRESH_INTERVAL = 10
 
 
@@ -204,6 +206,39 @@ def _create_superset_session(
     return session
 
 
+def _create_superset_session_with_retry(
+    datalake_url: str,
+    superset_url: str,
+    client_id: str,
+    username: str,
+    password: str,
+) -> requests.Session:
+    """Wrap _create_superset_session with retry-with-backoff on transient failures.
+
+    Vendor-side flakes have produced 401 from /api/v1/me/ even after a successful
+    Keycloak handshake. A short backoff and retry gets through most of these.
+    """
+    last_exc = None
+    for attempt in range(MAX_AUTH_ATTEMPTS + 1):
+        if attempt > 0:
+            delay = AUTH_BACKOFF_BASE * (2 ** (attempt - 1))
+            logger.info(
+                f"Backing off {delay}s before auth retry "
+                f"(attempt {attempt + 1}/{MAX_AUTH_ATTEMPTS + 1})"
+            )
+            time.sleep(delay)
+        try:
+            return _create_superset_session(
+                datalake_url, superset_url, client_id, username, password
+            )
+        except (RuntimeError, requests.exceptions.RequestException) as e:
+            logger.warning(
+                f"Auth attempt {attempt + 1}/{MAX_AUTH_ATTEMPTS + 1} failed: {e}"
+            )
+            last_exc = e
+    raise last_exc
+
+
 def _refresh_csrf(session: requests.Session, superset_url: str) -> None:
     """Refresh the CSRF token on an existing session."""
     csrf_resp = session.get(
@@ -291,7 +326,7 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
         extract_range_start: datetime,
         extract_range_end: datetime,
     ) -> ExtractOutput:
-        self._session = _create_superset_session(
+        self._session = _create_superset_session_with_retry(
             self.datalake_url,
             self.superset_url,
             self.client_id,
@@ -365,6 +400,7 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
     def _query(self, sql: str) -> List[dict]:
         """Execute a SQL query via the Superset SQL Lab API with session management."""
         auth_failures = 0
+        server_failures = 0
 
         while True:
             # Refresh CSRF periodically
@@ -393,6 +429,36 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
                 self._session = self._reauth(auth_failures - 1)
                 self._requests_since_csrf = 0
                 continue
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+            ) as e:
+                server_failures += 1
+                logger.warning(f"Connection error ({type(e).__name__}): {e}")
+                if server_failures > MAX_SERVER_ATTEMPTS:
+                    raise
+                delay = SERVER_BACKOFF_BASE * (2 ** (server_failures - 1))
+                logger.info(
+                    f"Backing off {delay}s before retry "
+                    f"(attempt {server_failures}/{MAX_SERVER_ATTEMPTS})"
+                )
+                time.sleep(delay)
+                continue
+
+            if 500 <= resp.status_code < 600:
+                server_failures += 1
+                logger.warning(
+                    f"Server error HTTP {resp.status_code}: {resp.text[:300]}"
+                )
+                if server_failures > MAX_SERVER_ATTEMPTS:
+                    resp.raise_for_status()
+                delay = SERVER_BACKOFF_BASE * (2 ** (server_failures - 1))
+                logger.info(
+                    f"Backing off {delay}s before retry "
+                    f"(attempt {server_failures}/{MAX_SERVER_ATTEMPTS})"
+                )
+                time.sleep(delay)
+                continue
 
             if _session_expired(resp):
                 auth_failures += 1
@@ -413,6 +479,7 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
             resp.raise_for_status()
             result = resp.json()
             auth_failures = 0
+            server_failures = 0
 
             if result.get("status") == "error":
                 msg = result.get("error") or result.get("message") or "unknown"
@@ -433,7 +500,7 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
             time.sleep(delay)
         else:
             logger.info("Re-authenticating")
-        return _create_superset_session(
+        return _create_superset_session_with_retry(
             self.datalake_url,
             self.superset_url,
             self.client_id,

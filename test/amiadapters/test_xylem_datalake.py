@@ -1,8 +1,14 @@
 import json
+from unittest.mock import MagicMock, patch
+
+import requests
 
 from amiadapters.outputs.base import ExtractOutput
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
-from amiadapters.adapters.xylem_datalake import XylemDatalakeAdapter
+from amiadapters.adapters.xylem_datalake import (
+    XylemDatalakeAdapter,
+    _create_superset_session_with_retry,
+)
 from test.base_test_case import BaseTestCase
 
 
@@ -235,3 +241,114 @@ class TestXylemDatalakeAdapter(BaseTestCase):
 
         result = self.adapter._parse_flowtime("2026-04-14 08:00:00")
         self.assertEqual(result, datetime(2026, 4, 14, 8, 0, 0))
+
+
+def _query_response(
+    status_code, json_data=None, text="", content_type="application/json"
+):
+    resp = MagicMock(spec=requests.Response)
+    resp.status_code = status_code
+    resp.headers = {"Content-Type": content_type}
+    resp.text = text
+    resp.json.return_value = json_data if json_data is not None else {}
+    if 400 <= status_code < 600:
+        resp.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            f"{status_code} Error", response=resp
+        )
+    else:
+        resp.raise_for_status.return_value = None
+    return resp
+
+
+class TestXylemDatalakeQueryRetry(BaseTestCase):
+    """Tests for retry behavior in _query and the auth retry wrapper."""
+
+    def setUp(self):
+        self.adapter = XylemDatalakeAdapter(
+            org_id="test_org",
+            org_timezone="America/Los_Angeles",
+            pipeline_configuration=None,
+            configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
+            configured_metrics=self.TEST_METRICS_CONFIGURATION,
+            agency_code="hlsbo",
+            database_id=1,
+            client_id="test-client-id",
+            username="test",
+            password="test",
+            configured_sinks=[],
+        )
+        self.adapter._session = MagicMock()
+        self.adapter._requests_since_csrf = 0
+
+    @patch("amiadapters.adapters.xylem_datalake.time.sleep")
+    def test_query_retries_on_5xx_then_succeeds(self, _mock_sleep):
+        success = _query_response(
+            200, json_data={"status": "success", "data": [{"x": 1}]}
+        )
+        self.adapter._session.post.side_effect = [
+            _query_response(500, text="boom"),
+            _query_response(502, text="bad gateway"),
+            success,
+        ]
+        rows = self.adapter._query("SELECT 1")
+        self.assertEqual(rows, [{"x": 1}])
+        self.assertEqual(self.adapter._session.post.call_count, 3)
+
+    @patch("amiadapters.adapters.xylem_datalake.time.sleep")
+    def test_query_raises_after_max_5xx_attempts(self, _mock_sleep):
+        self.adapter._session.post.return_value = _query_response(500, text="boom")
+        with self.assertRaises(requests.exceptions.HTTPError):
+            self.adapter._query("SELECT 1")
+
+    @patch("amiadapters.adapters.xylem_datalake.time.sleep")
+    def test_query_retries_on_connection_error_then_succeeds(self, _mock_sleep):
+        success = _query_response(
+            200, json_data={"status": "success", "data": [{"x": 1}]}
+        )
+        self.adapter._session.post.side_effect = [
+            requests.exceptions.ConnectionError("dns failure"),
+            requests.exceptions.Timeout("read timeout"),
+            success,
+        ]
+        rows = self.adapter._query("SELECT 1")
+        self.assertEqual(rows, [{"x": 1}])
+        self.assertEqual(self.adapter._session.post.call_count, 3)
+
+
+class TestCreateSupersetSessionWithRetry(BaseTestCase):
+    """Tests for the auth retry wrapper."""
+
+    @patch("amiadapters.adapters.xylem_datalake.time.sleep")
+    @patch("amiadapters.adapters.xylem_datalake._create_superset_session")
+    def test_returns_session_on_first_success(self, mock_create, _mock_sleep):
+        sentinel = MagicMock(name="session")
+        mock_create.return_value = sentinel
+        result = _create_superset_session_with_retry(
+            "https://dl", "https://sup", "client", "user", "pw"
+        )
+        self.assertIs(result, sentinel)
+        self.assertEqual(mock_create.call_count, 1)
+
+    @patch("amiadapters.adapters.xylem_datalake.time.sleep")
+    @patch("amiadapters.adapters.xylem_datalake._create_superset_session")
+    def test_retries_then_succeeds(self, mock_create, _mock_sleep):
+        sentinel = MagicMock(name="session")
+        mock_create.side_effect = [
+            RuntimeError("Superset login returned unexpected shape (status 401)"),
+            RuntimeError("Superset login returned unexpected shape (status 401)"),
+            sentinel,
+        ]
+        result = _create_superset_session_with_retry(
+            "https://dl", "https://sup", "client", "user", "pw"
+        )
+        self.assertIs(result, sentinel)
+        self.assertEqual(mock_create.call_count, 3)
+
+    @patch("amiadapters.adapters.xylem_datalake.time.sleep")
+    @patch("amiadapters.adapters.xylem_datalake._create_superset_session")
+    def test_raises_after_max_attempts(self, mock_create, _mock_sleep):
+        mock_create.side_effect = RuntimeError("persistent failure")
+        with self.assertRaises(RuntimeError):
+            _create_superset_session_with_retry(
+                "https://dl", "https://sup", "client", "user", "pw"
+            )
