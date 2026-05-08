@@ -472,3 +472,27 @@ class TestSnowflakeStorageSink(BaseTestCase):
             reads[1].flowtime,
             oldest_flowtime,
         )
+
+    def test_calculate_end_of_backfill_range__returns_min_flowtime(self):
+        expected_min = datetime.datetime(2024, 11, 29, 19, 0, tzinfo=pytz.UTC)
+        self.mock_cursor.execute.return_value.fetchall.return_value = [(expected_min,)]
+
+        result = self.snowflake_sink.calculate_end_of_backfill_range(
+            "some_org",
+            datetime.datetime(2023, 1, 1),
+            datetime.datetime(2026, 4, 23),
+        )
+
+        self.assertEqual(expected_min, result)
+
+    def test_calculate_end_of_backfill_range__returns_max_date_when_no_readings(self):
+        max_date = datetime.datetime(2026, 4, 23)
+        self.mock_cursor.execute.return_value.fetchall.return_value = [(None,)]
+
+        result = self.snowflake_sink.calculate_end_of_backfill_range(
+            "some_org",
+            datetime.datetime(2023, 1, 1),
+            max_date,
+        )
+
+        self.assertEqual(max_date, result)
