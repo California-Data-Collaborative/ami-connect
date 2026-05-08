@@ -1005,16 +1005,18 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         # heuristic that got stuck on orgs whose leading edge had
         # below-threshold per-day read volume (legitimate ramp-up at the
         # start of vendor data).
-        result = conn.cursor().execute(
+        cursor = conn.cursor()
+        cursor.execute(
             """
             SELECT MIN(flowtime) FROM readings
             WHERE org_id = ? AND flowtime > ? AND flowtime < ?
             """,
             (org_id, min_date, max_date),
-        ).fetchall()
-        if not result or result[0][0] is None:
+        )
+        row = cursor.fetchone()
+        if row is None or row[0] is None:
             return max_date
-        return result[0][0]
+        return row[0]
 
 
 class SnowflakeMetersUniqueByDeviceIdCheck(BaseAMIDataQualityCheck):
