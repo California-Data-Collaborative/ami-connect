@@ -215,6 +215,15 @@ class BaseAMIAdapter(ABC):
         with self._base_adapter_metrics.load_transformed_timer():
             meters = self.output_controller.read_transformed_meters(run_id)
             reads = self.output_controller.read_transformed_meter_reads(run_id)
+            if not meters or not reads:
+                raise Exception(
+                    f"Extract for {self.org_id} (run_id={run_id}) produced "
+                    f"{len(meters)} meters and {len(reads)} reads. "
+                    f"If this is a backfill DAG that has reached the vendor's data floor, "
+                    f"decommission it with: "
+                    f"`python cli.py config remove-backfill {self.org_id} <start_date> <end_date> --profile <profile>`. "
+                    f"Otherwise this likely indicates a vendor outage or authentication failure."
+                )
             for sink in self.storage_sinks:
                 sink.store_transformed(run_id, meters, reads)
 

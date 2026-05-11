@@ -146,3 +146,13 @@ class TestLocalTaskOutputController(BaseTestCase):
         self.assertEqual(reads_out[0].device_id, "1")
         self.assertEqual(reads_out[0].register_value, 123.4)
         self.assertEqual(reads_out[1].device_id, "2")
+
+    def test_read_transformed_meters__empty_file_returns_empty_list(self):
+        self.controller.write_transformed_meters("run123", [])
+        result = self.controller.read_transformed_meters("run123")
+        self.assertEqual([], result)
+
+    def test_read_transformed_meter_reads__empty_file_returns_empty_list(self):
+        self.controller.write_transformed_meter_reads("run123", [])
+        result = self.controller.read_transformed_meter_reads("run123")
+        self.assertEqual([], result)

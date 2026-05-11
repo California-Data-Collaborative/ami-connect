@@ -65,7 +65,12 @@ class LocalTaskOutputController(BaseTaskOutputController):
         logger.info(f"Reading meters from {path}")
         with open(path, "r") as f:
             text = f.read()
-            meters = [GeneralMeter(**json.loads(d)) for d in text.strip().split("\n")]
+            if not text.strip():
+                meters = []
+            else:
+                meters = [
+                    GeneralMeter(**json.loads(d)) for d in text.strip().split("\n")
+                ]
         logger.info(f"Read {len(meters)} meters from {path}")
         return meters
 
@@ -84,9 +89,12 @@ class LocalTaskOutputController(BaseTaskOutputController):
         logger.info(f"Reading meter reads from {path}")
         with open(path, "r") as f:
             text = f.read()
-            reads = [
-                GeneralMeterRead(**json.loads(d)) for d in text.strip().split("\n")
-            ]
+            if not text.strip():
+                reads = []
+            else:
+                reads = [
+                    GeneralMeterRead(**json.loads(d)) for d in text.strip().split("\n")
+                ]
         logger.info(f"Read {len(reads)} meter reads from {path}")
         return reads
 
