@@ -168,6 +168,20 @@ class TestS3TaskOutputController(BaseTestCase):
         self.assertEqual(result[1].device_id, "2")
         self.assertEqual(result[1].register_value, 227.6)
 
+    def test_read_transformed_meters__empty_file_returns_empty_list(self):
+        self.mock_s3.get_object.return_value = {
+            "Body": MagicMock(read=lambda: self._gzip(""))
+        }
+        result = self.controller.read_transformed_meters("runid")
+        self.assertEqual([], result)
+
+    def test_read_transformed_meter_reads__empty_file_returns_empty_list(self):
+        self.mock_s3.get_object.return_value = {
+            "Body": MagicMock(read=lambda: self._gzip(""))
+        }
+        result = self.controller.read_transformed_meter_reads("runid")
+        self.assertEqual([], result)
+
     def _gzip(self, content: str) -> bytes:
         buf = io.BytesIO()
         with gzip.GzipFile(fileobj=buf, mode="wb") as gz:

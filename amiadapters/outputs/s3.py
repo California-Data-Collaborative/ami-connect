@@ -89,6 +89,8 @@ class S3TaskOutputController(BaseTaskOutputController):
         key = self._s3_key(run_id, self.TRANSFORM, "meters.json.gz")
         logger.info(f"Downloading meters from s3://{self.bucket_name}/{key}")
         text = self._download_string_from_s3(key)
+        if not text.strip():
+            return []
         return [GeneralMeter(**json.loads(line)) for line in text.strip().split("\n")]
 
     def write_transformed_meter_reads(self, run_id: str, reads: List[GeneralMeterRead]):
@@ -101,6 +103,8 @@ class S3TaskOutputController(BaseTaskOutputController):
         key = self._s3_key(run_id, self.TRANSFORM, "reads.json.gz")
         logger.info(f"Downloading reads from s3://{self.bucket_name}/{key}")
         text = self._download_string_from_s3(key)
+        if not text.strip():
+            return []
         return [
             GeneralMeterRead(**json.loads(line)) for line in text.strip().split("\n")
         ]

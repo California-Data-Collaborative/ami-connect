@@ -279,3 +279,68 @@ class TestExtractRangeCalculator(BaseTestCase):
             self.calculator.calculate_extract_range(
                 None, None, backfill_params=backfill_params
             )
+
+
+class TestLoadTransformed(BaseTestCase):
+
+    def setUp(self):
+        self.adapter = Beacon360Adapter(
+            api_user="user",
+            api_password="pass",
+            use_cache=False,
+            pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
+            org_id="test-org",
+            org_timezone=pytz.timezone("Europe/Rome"),
+            configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
+            configured_metrics=self.TEST_METRICS_CONFIGURATION,
+            configured_sinks=[],
+        )
+        self.adapter.output_controller = MagicMock()
+        self.sink = MagicMock()
+        self.adapter.storage_sinks = [self.sink]
+
+    def test_load_transformed__happy_path_calls_sink(self):
+        self.adapter.output_controller.read_transformed_meters.return_value = [
+            MagicMock()
+        ]
+        self.adapter.output_controller.read_transformed_meter_reads.return_value = [
+            MagicMock()
+        ]
+
+        self.adapter.load_transformed("run-1")
+
+        self.sink.store_transformed.assert_called_once()
+
+    def test_load_transformed__raises_when_meters_empty(self):
+        self.adapter.output_controller.read_transformed_meters.return_value = []
+        self.adapter.output_controller.read_transformed_meter_reads.return_value = [
+            MagicMock()
+        ]
+
+        with self.assertRaises(Exception) as cm:
+            self.adapter.load_transformed("run-1")
+
+        self.assertIn("remove-backfill", str(cm.exception))
+        self.sink.store_transformed.assert_not_called()
+
+    def test_load_transformed__raises_when_reads_empty(self):
+        self.adapter.output_controller.read_transformed_meters.return_value = [
+            MagicMock()
+        ]
+        self.adapter.output_controller.read_transformed_meter_reads.return_value = []
+
+        with self.assertRaises(Exception) as cm:
+            self.adapter.load_transformed("run-1")
+
+        self.assertIn("remove-backfill", str(cm.exception))
+        self.sink.store_transformed.assert_not_called()
+
+    def test_load_transformed__raises_when_both_empty(self):
+        self.adapter.output_controller.read_transformed_meters.return_value = []
+        self.adapter.output_controller.read_transformed_meter_reads.return_value = []
+
+        with self.assertRaises(Exception) as cm:
+            self.adapter.load_transformed("run-1")
+
+        self.assertIn("remove-backfill", str(cm.exception))
+        self.sink.store_transformed.assert_not_called()
