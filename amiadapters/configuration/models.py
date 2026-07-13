@@ -286,7 +286,7 @@ class XylemSensusSecrets(SourceSecretsBase):
 
 
 @dataclass
-class RosevilleSecrets(SourceSecretsBase):
+class ItronRosevilleSecrets(SourceSecretsBase):
     # The source bucket lives in the CaDC AWS account (not the ami-connect
     # account), so the pipeline authenticates with a read-only IAM user's keys.
     aws_access_key_id: str
@@ -633,7 +633,7 @@ class XylemSensusSourceConfig(SourceConfigBase):
 
 
 @dataclass(frozen=True)
-class RosevilleSourceConfig(SourceConfigBase):
+class ItronRosevilleSourceConfig(SourceConfigBase):
     s3_bucket: str
     s3_prefix: str
     s3_region: str
@@ -727,10 +727,10 @@ class ConfiguredAMISourceTypes(Enum):
         XylemSensusSecrets,
         [ConfiguredStorageSinkType.SNOWFLAKE],
     )
-    ROSEVILLE = SourceSchema(
-        "roseville",
-        RosevilleSourceConfig,
-        RosevilleSecrets,
+    ITRON_ROSEVILLE = SourceSchema(
+        "itron_roseville",
+        ItronRosevilleSourceConfig,
+        ItronRosevilleSecrets,
         [ConfiguredStorageSinkType.SNOWFLAKE],
     )
 

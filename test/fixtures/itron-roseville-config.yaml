@@ -1,5 +1,5 @@
 sources:
-- type: roseville
+- type: itron_roseville
   org_id: my_utility
   timezone: America/Los_Angeles
   s3_bucket: my-bucket

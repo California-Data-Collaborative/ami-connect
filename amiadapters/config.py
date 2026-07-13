@@ -8,8 +8,8 @@ import yaml
 from amiadapters.adapters.aclara import AclaraAdapter
 from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.adapters.beacon import Beacon360Adapter
+from amiadapters.adapters.itron_roseville import ItronRosevilleAdapter
 from amiadapters.adapters.metersense import MetersenseAdapter
-from amiadapters.adapters.roseville import RosevilleAdapter
 from amiadapters.adapters.sentryx import SentryxAdapter
 from amiadapters.adapters.subeca import SubecaAdapter
 from amiadapters.adapters.xylem_datalake import XylemDatalakeAdapter
@@ -422,9 +422,9 @@ class AMIAdapterConfiguration:
                             source.sinks,
                         )
                     )
-                case ConfiguredAMISourceTypes.ROSEVILLE.value.type:
+                case ConfiguredAMISourceTypes.ITRON_ROSEVILLE.value.type:
                     adapters.append(
-                        RosevilleAdapter(
+                        ItronRosevilleAdapter(
                             source.org_id,
                             source.timezone,
                             self._pipeline_configuration,

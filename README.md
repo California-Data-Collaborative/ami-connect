@@ -18,7 +18,7 @@ Here are the adapters in this project:
 | Xylem/Sensus for Moulton Niguel | Complete.      | Snowflake         | [Link](./docs/adapters/xylem_moulton_niguel.md) |
 | Subeca           | Complete               | Snowflake         | [Link](./docs/adapters/subeca.md)               |
 | Neptune 360      | Complete               | Snowflake         | [Link](./docs/adapters/neptune.md)              |
-| Roseville (Itron via S3 drop) | Complete  | Snowflake         | [Link](./docs/adapters/roseville.md)            |
+| Itron for Roseville | Complete            | Snowflake         | [Link](./docs/adapters/itron_roseville.md)      |
 | Xylem/Sensus     | Planned Q1 2026        | Snowflake         | n/a                                             |
 | Harmony          | Planned                | n/a               | n/a                                             |
 

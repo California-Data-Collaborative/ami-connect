@@ -1,15 +1,19 @@
-# Roseville
+# Itron Roseville
 
-The Roseville adapter reads City of Roseville's Itron AMI data from CSV files that
-Roseville pushes (via Informatica) into a CaDC-owned S3 prefix. It is the first
-adapter whose source is a utility-pushed S3 file drop rather than a vendor
-API/SFTP/database.
+The Itron Roseville adapter reads City of Roseville's Itron AMI data from CSV
+files that Roseville pushes (via Informatica) into a CaDC-owned S3 prefix. It is
+the first adapter whose source is a utility-pushed S3 file drop rather than a
+vendor API/SFTP/database — the transport-level pieces that aren't specific to
+Roseville (cross-account client, subfolder-safe listing, filename date-range
+selection, CSV download) live in `amiadapters/adapters/s3_drop.py` for reuse by
+future S3-drop sources.
 
 This adapter was built specially for Roseville and is not compatible with other
 utilities. The CSVs are custom database views built by Roseville IT (their AMI
 team pipes Itron data onto Roseville-hosted servers), NOT Itron's native
 ChoiceConnect export format — an Itron utility onboarding through Itron's
-standard hosted-SFTP path would need a different adapter.
+standard hosted-SFTP path would need a different adapter (likely reusing
+`s3_drop.py` only if that utility also delivers via a CaDC S3 drop).
 
 ## Data
 
@@ -50,7 +54,7 @@ Notable data properties:
 Example:
 
 ```
-python cli.py config add-source cadc_roseville roseville America/Los_Angeles --config s3_bucket=cadc-ami --config s3_prefix=rosevillecityof/ --config s3_region=us-east-1 --sinks my_snowflake
+python cli.py config add-source cadc_roseville itron_roseville America/Los_Angeles --config s3_bucket=cadc-ami --config s3_prefix=rosevillecityof/ --config s3_region=us-east-1 --sinks my_snowflake
 ```
 
 ## Secrets
@@ -61,7 +65,7 @@ read-only IAM user (scoped to the prefix) whose keys are stored in this source's
 secrets:
 
 ```
-python cli.py config update-secret cadc_roseville --source-type roseville --secret aws_access_key_id=AKIA... --secret aws_secret_access_key=...
+python cli.py config update-secret cadc_roseville --source-type itron_roseville --secret aws_access_key_id=AKIA... --secret aws_secret_access_key=...
 ```
 
 ## Limitations
@@ -73,7 +77,7 @@ python cli.py config update-secret cadc_roseville --source-type roseville --secr
   (framework behavior: empty meters/reads raise) — this makes a missed delivery
   visible rather than silent.
 - Raw base tables must be created in Snowflake before the first run
-  (`sql/roseville-base.sql`).
+  (`sql/itron-roseville-base.sql`).
 - DST fall-back: timestamps are wall-clock Pacific with no offset, so the
   repeated 01:00 hour each November yields two indistinguishable rows per
   meter, one of which overwrites the other (surfaced by the transform's

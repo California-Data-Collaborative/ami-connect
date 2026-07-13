@@ -1,18 +1,20 @@
-import csv
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-import io
 import json
 import logging
 import re
 from typing import List, Tuple
 
-import boto3
-
 from amiadapters.adapters.base import (
     BaseAMIAdapter,
     GeneralMeterUnitOfMeasure,
     ScheduledExtract,
+)
+from amiadapters.adapters.s3_drop import (
+    download_csv_rows,
+    list_drop_files,
+    s3_client_from_keys,
+    select_files_for_range,
 )
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.outputs.base import ExtractOutput
@@ -38,7 +40,7 @@ FILENAME_PATTERN = re.compile(
 
 
 @dataclass
-class RosevilleRegisterRead:
+class ItronRosevilleRegisterRead:
     """
     Representation of a row in a Register CSV delivered by Roseville.
     Register reads are cumulative meter readings at ~8-hour cadence.
@@ -57,7 +59,7 @@ class RosevilleRegisterRead:
 
 
 @dataclass
-class RosevilleIntervalRead:
+class ItronRosevilleIntervalRead:
     """
     Representation of a row in an Interval CSV delivered by Roseville.
     Interval reads are hourly consumption; the Timestamp marks the END of the
@@ -77,14 +79,16 @@ class RosevilleIntervalRead:
     Read_Units: str
 
 
-class RosevilleAdapter(BaseAMIAdapter):
+class ItronRosevilleAdapter(BaseAMIAdapter):
     """
     AMI Adapter for City of Roseville's Itron data.
 
     Roseville IT exports two CSV views of Itron AMI data — Register (cumulative
     reads, 8-hour cadence) and Interval (hourly consumption) — and delivers them
     via Informatica into a CaDC-owned S3 prefix. This is the first adapter whose
-    source is a utility-pushed S3 file drop rather than a vendor API/SFTP/DB.
+    source is a utility-pushed S3 file drop rather than a vendor API/SFTP/DB;
+    the transport-level pieces that are not Roseville-specific live in
+    amiadapters/adapters/s3_drop.py for reuse by future S3-drop sources.
 
     This adapter was built specially for Roseville and is not compatible with
     other utilities: the CSVs are Roseville's own database views, NOT Itron's
@@ -164,11 +168,11 @@ class RosevilleAdapter(BaseAMIAdapter):
             configured_task_output_controller,
             configured_metrics,
             configured_sinks,
-            ROSEVILLE_RAW_SNOWFLAKE_LOADER,
+            ITRON_ROSEVILLE_RAW_SNOWFLAKE_LOADER,
         )
 
     def name(self) -> str:
-        return f"roseville-{self.org_id}"
+        return f"itron-roseville-{self.org_id}"
 
     def scheduled_extracts(self) -> List[ScheduledExtract]:
         """
@@ -184,11 +188,8 @@ class RosevilleAdapter(BaseAMIAdapter):
             # The bucket lives in the CaDC AWS account, not the ami-connect
             # account, so the EC2 instance role can't read it. We authenticate
             # with a read-only IAM user's keys from this source's secrets.
-            self._s3_client = boto3.client(
-                "s3",
-                region_name=self.s3_region,
-                aws_access_key_id=self.aws_access_key_id,
-                aws_secret_access_key=self.aws_secret_access_key,
+            self._s3_client = s3_client_from_keys(
+                self.s3_region, self.aws_access_key_id, self.aws_secret_access_key
             )
         return self._s3_client
 
@@ -203,39 +204,23 @@ class RosevilleAdapter(BaseAMIAdapter):
         )
         s3 = self._get_s3_client()
 
-        last_modified_by_key = {}
-        paginator = s3.get_paginator("list_objects_v2")
-        # Delimiter="/" excludes keys in subfolders, e.g. an archive/ folder
-        # of old files, which would otherwise be re-ingested by prefix listing.
-        for page in paginator.paginate(
-            Bucket=self.s3_bucket, Prefix=self.s3_prefix, Delimiter="/"
-        ):
-            for obj in page.get("Contents", []):
-                # ListObjectsV2 always returns LastModified
-                last_modified_by_key[obj["Key"]] = obj["LastModified"]
-
-        keys_by_type = keys_for_date_range(
-            list(last_modified_by_key.keys()), extract_range_start, extract_range_end
+        files = list_drop_files(s3, self.s3_bucket, self.s3_prefix)
+        keys_by_type = select_files_for_range(
+            files, FILENAME_PATTERN, extract_range_start, extract_range_end
         )
-        # Process files oldest-delivery-first so that when overlapping files
-        # carry the same (meter, timestamp) — Roseville re-sends a rolling
-        # correction window — the most recently delivered value wins in
-        # transform. Sorting by S3 LastModified, not filename.
-        for file_type in keys_by_type:
-            keys_by_type[file_type].sort(key=lambda k: last_modified_by_key[k])
         logger.info(
-            f"Found {len(last_modified_by_key)} keys, matched register={keys_by_type['register']} interval={keys_by_type['interval']}"
+            f"Found {len(files)} keys, matched register={keys_by_type.get('register', [])} interval={keys_by_type.get('interval', [])}"
         )
 
         register_rows = []
-        for key in keys_by_type["register"]:
+        for key in keys_by_type.get("register", []):
             register_rows.extend(
-                self._download_and_parse_csv(s3, key, RosevilleRegisterRead)
+                download_csv_rows(s3, self.s3_bucket, key, ItronRosevilleRegisterRead)
             )
         interval_rows = []
-        for key in keys_by_type["interval"]:
+        for key in keys_by_type.get("interval", []):
             interval_rows.extend(
-                self._download_and_parse_csv(s3, key, RosevilleIntervalRead)
+                download_csv_rows(s3, self.s3_bucket, key, ItronRosevilleIntervalRead)
             )
 
         return ExtractOutput(
@@ -249,27 +234,14 @@ class RosevilleAdapter(BaseAMIAdapter):
             }
         )
 
-    def _download_and_parse_csv(self, s3, key: str, row_type) -> List:
-        logger.info(f"Downloading s3://{self.s3_bucket}/{key}")
-        response = s3.get_object(Bucket=self.s3_bucket, Key=key)
-        # utf-8-sig transparently strips a UTF-8 BOM if present (common in
-        # Windows/Informatica exports); a BOM would otherwise corrupt the
-        # first CSV header name and crash the row dataclass construction.
-        text = response["Body"].read().decode("utf-8-sig")
-        rows = []
-        for row in csv.DictReader(io.StringIO(text)):
-            rows.append(row_type(**row))
-        logger.info(f"Parsed {len(rows)} rows from {key}")
-        return rows
-
     def _transform(
         self, run_id: str, extract_outputs: ExtractOutput
     ) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
         register_reads = extract_outputs.load_from_file(
-            "register.json", RosevilleRegisterRead, allow_empty=True
+            "register.json", ItronRosevilleRegisterRead, allow_empty=True
         )
         interval_reads = extract_outputs.load_from_file(
-            "interval.json", RosevilleIntervalRead, allow_empty=True
+            "interval.json", ItronRosevilleIntervalRead, allow_empty=True
         )
 
         # Last occurrence wins so that meter attributes (e.g. Location_ID)
@@ -408,7 +380,9 @@ class RosevilleAdapter(BaseAMIAdapter):
     def _parse_timestamp(self, timestamp_str: str) -> datetime:
         """
         Parse Roseville's "MM/DD/YYYY HH:MM:SS.ffffff" Pacific-local timestamps
-        into timezone-aware datetimes.
+        into timezone-aware datetimes. Blank values return None (callers skip
+        or null the field); a malformed non-blank value raises, deliberately —
+        a wholesale format change should fail loudly, not silently drop rows.
         """
         if not timestamp_str:
             return None
@@ -430,108 +404,46 @@ class RosevilleAdapter(BaseAMIAdapter):
         return normalized
 
 
-def keys_for_date_range(
-    keys: List[str], range_start: datetime, range_end: datetime
-) -> dict:
-    """
-    Given S3 keys from Roseville's prefix, return {"register": [...], "interval": [...]}
-    with the keys whose filename date range overlaps the extract range.
-
-    Filenames carry either a month suffix (rosevillecityof_Register_202607.csv)
-    or a date-range suffix (rosevillecityof_Interval_20260616_20260619.csv). A
-    file is selected if its date range overlaps [range_start, range_end]. Files
-    whose names don't match the pattern are logged and skipped.
-
-    Scheduled runs deliver naive range bounds (datetime.now() server time), but
-    manually triggered runs can carry offsets (the Airflow UI params pass
-    through datetime.fromisoformat unmodified). Filename dates are naive wall
-    dates, so we drop any offset and compare wall-clock-to-wall-clock — the
-    fuzzy multi-day window absorbs the hour-level slop.
-    """
-    if range_start.tzinfo is not None:
-        range_start = range_start.replace(tzinfo=None)
-    if range_end.tzinfo is not None:
-        range_end = range_end.replace(tzinfo=None)
-    result = {"register": [], "interval": []}
-    for key in keys:
-        filename = key.split("/")[-1]
-        match = FILENAME_PATTERN.search(filename)
-        if not match:
-            logger.info(f"Skipping unrecognized file: {key}")
-            continue
-        try:
-            file_start, file_end = _date_range_from_filename(match.group("dates"))
-        except Exception as e:
-            logger.warning(f"Skipping file {key}, could not parse dates: {str(e)}")
-            continue
-        if file_start <= range_end and range_start <= file_end:
-            result[match.group("type").lower()].append(key)
-        else:
-            logger.info(
-                f"Skipping file outside extract range ({file_start} to {file_end}): {key}"
-            )
-    return result
-
-
-def _date_range_from_filename(dates: str) -> Tuple[datetime, datetime]:
-    """
-    Parse a filename date token into an inclusive [start, end] datetime range.
-    "202607" (YYYYMM) covers the whole month; "20260616_20260619" covers the
-    named days through end of the last day.
-    """
-    if "_" in dates:
-        start_str, end_str = dates.split("_")
-        start = datetime.strptime(start_str, "%Y%m%d")
-        end = datetime.strptime(end_str, "%Y%m%d") + timedelta(days=1)
-    else:
-        start = datetime.strptime(dates, "%Y%m")
-        if start.month == 12:
-            end = start.replace(year=start.year + 1, month=1)
-        else:
-            end = start.replace(month=start.month + 1)
-    return start, end
-
-
-class RosevilleRegisterBaseTableLoader(RawSnowflakeTableLoader):
+class ItronRosevilleRegisterBaseTableLoader(RawSnowflakeTableLoader):
 
     def table_name(self) -> str:
-        return "ROSEVILLE_REGISTER_BASE"
+        return "ITRON_ROSEVILLE_REGISTER_BASE"
 
     def columns(self) -> List[str]:
-        return list(RosevilleRegisterRead.__dataclass_fields__.keys())
+        return list(ItronRosevilleRegisterRead.__dataclass_fields__.keys())
 
     def unique_by(self) -> List[str]:
         return ["meter_serial_number", "timestamp"]
 
     def prepare_raw_data(self, extract_outputs: ExtractOutput):
         raw_data = extract_outputs.load_from_file(
-            "register.json", RosevilleRegisterRead, allow_empty=True
+            "register.json", ItronRosevilleRegisterRead, allow_empty=True
         )
         return [
             tuple(i.__getattribute__(name) for name in self.columns()) for i in raw_data
         ]
 
 
-class RosevilleIntervalBaseTableLoader(RawSnowflakeTableLoader):
+class ItronRosevilleIntervalBaseTableLoader(RawSnowflakeTableLoader):
 
     def table_name(self) -> str:
-        return "ROSEVILLE_INTERVAL_BASE"
+        return "ITRON_ROSEVILLE_INTERVAL_BASE"
 
     def columns(self) -> List[str]:
-        return list(RosevilleIntervalRead.__dataclass_fields__.keys())
+        return list(ItronRosevilleIntervalRead.__dataclass_fields__.keys())
 
     def unique_by(self) -> List[str]:
         return ["meter_serial_number", "timestamp"]
 
     def prepare_raw_data(self, extract_outputs: ExtractOutput):
         raw_data = extract_outputs.load_from_file(
-            "interval.json", RosevilleIntervalRead, allow_empty=True
+            "interval.json", ItronRosevilleIntervalRead, allow_empty=True
         )
         return [
             tuple(i.__getattribute__(name) for name in self.columns()) for i in raw_data
         ]
 
 
-ROSEVILLE_RAW_SNOWFLAKE_LOADER = RawSnowflakeLoader.with_table_loaders(
-    [RosevilleRegisterBaseTableLoader(), RosevilleIntervalBaseTableLoader()]
+ITRON_ROSEVILLE_RAW_SNOWFLAKE_LOADER = RawSnowflakeLoader.with_table_loaders(
+    [ItronRosevilleRegisterBaseTableLoader(), ItronRosevilleIntervalBaseTableLoader()]
 )

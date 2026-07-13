@@ -1,17 +1,18 @@
+import json
 from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytz
 
-from amiadapters.adapters.roseville import (
+from amiadapters.adapters.itron_roseville import (
     REGISTER_ERROR_SENTINEL,
-    RosevilleAdapter,
-    RosevilleIntervalBaseTableLoader,
-    RosevilleIntervalRead,
-    RosevilleRegisterBaseTableLoader,
-    RosevilleRegisterRead,
-    keys_for_date_range,
+    ItronRosevilleAdapter,
+    ItronRosevilleIntervalBaseTableLoader,
+    ItronRosevilleIntervalRead,
+    ItronRosevilleRegisterBaseTableLoader,
+    ItronRosevilleRegisterRead,
 )
+from amiadapters.models import DataclassJSONEncoder
 from amiadapters.outputs.base import ExtractOutput
 from test.base_test_case import BaseTestCase
 
@@ -30,11 +31,11 @@ def csv_row(
     return f"{timestamp},{read_value},{meter_serial_number},{endpoint_id},{location_id},{meter_install_date},{read_units}"
 
 
-class TestRosevilleAdapter(BaseTestCase):
+class TestItronRosevilleAdapter(BaseTestCase):
 
     def setUp(self):
         self.mock_s3_client = MagicMock()
-        self.adapter = RosevilleAdapter(
+        self.adapter = ItronRosevilleAdapter(
             "test-org",
             pytz.timezone("America/Los_Angeles"),
             self.TEST_PIPELINE_CONFIGURATION,
@@ -100,10 +101,10 @@ class TestRosevilleAdapter(BaseTestCase):
         )
 
         register_rows = result.load_from_file(
-            "register.json", RosevilleRegisterRead, allow_empty=True
+            "register.json", ItronRosevilleRegisterRead, allow_empty=True
         )
         interval_rows = result.load_from_file(
-            "interval.json", RosevilleIntervalRead, allow_empty=True
+            "interval.json", ItronRosevilleIntervalRead, allow_empty=True
         )
         self.assertEqual(2, len(register_rows))
         self.assertEqual(1, len(interval_rows))
@@ -131,7 +132,7 @@ class TestRosevilleAdapter(BaseTestCase):
             "run-1", datetime(2026, 6, 17), datetime(2026, 6, 19)
         )
         register_rows = result.load_from_file(
-            "register.json", RosevilleRegisterRead, allow_empty=True
+            "register.json", ItronRosevilleRegisterRead, allow_empty=True
         )
         self.assertEqual(1, len(register_rows))
         self.assertEqual(1, self.mock_s3_client.get_object.call_count)
@@ -145,7 +146,7 @@ class TestRosevilleAdapter(BaseTestCase):
             "run-1", datetime(2026, 6, 17), datetime(2026, 6, 19)
         )
         register_rows = result.load_from_file(
-            "register.json", RosevilleRegisterRead, allow_empty=True
+            "register.json", ItronRosevilleRegisterRead, allow_empty=True
         )
         self.assertEqual(1, len(register_rows))
         self.assertEqual("06/17/2026 16:00:00.000000", register_rows[0].Timestamp)
@@ -170,7 +171,7 @@ class TestRosevilleAdapter(BaseTestCase):
         self.assertEqual([old_key, new_key], downloaded)
 
     def test_prefix_without_trailing_slash_is_normalized(self):
-        adapter = RosevilleAdapter(
+        adapter = ItronRosevilleAdapter(
             "test-org",
             pytz.timezone("America/Los_Angeles"),
             self.TEST_PIPELINE_CONFIGURATION,
@@ -263,19 +264,6 @@ class TestRosevilleAdapter(BaseTestCase):
         self.assertIsNone(reads[0].register_value)
         self.assertEqual(0.0, reads[0].interval_value)
 
-    def test_transform_keeps_zero_interval_values(self):
-        extract_outputs = self._extract_outputs(
-            register_rows=[],
-            interval_rows=[
-                self.interval_read_factory(
-                    Timestamp="06/17/2026 16:00:00.000000", Read_Value="0.0"
-                )
-            ],
-        )
-        meters, reads = self.adapter._transform("run-1", extract_outputs)
-        self.assertEqual(1, len(reads))
-        self.assertEqual(0.0, reads[0].interval_value)
-
     def test_transform_excludes_interval_error_sentinel(self):
         extract_outputs = self._extract_outputs(
             register_rows=[],
@@ -330,6 +318,19 @@ class TestRosevilleAdapter(BaseTestCase):
         self.assertEqual(1, len(meters))
         self.assertEqual("3054011_3", meters[0].location_id)
 
+    def test_transform_keeps_zero_interval_values(self):
+        extract_outputs = self._extract_outputs(
+            register_rows=[],
+            interval_rows=[
+                self.interval_read_factory(
+                    Timestamp="06/17/2026 16:00:00.000000", Read_Value="0.0"
+                )
+            ],
+        )
+        meters, reads = self.adapter._transform("run-1", extract_outputs)
+        self.assertEqual(1, len(reads))
+        self.assertEqual(0.0, reads[0].interval_value)
+
     def test_transform_creates_meter_from_interval_only_data(self):
         extract_outputs = self._extract_outputs(
             register_rows=[],
@@ -378,7 +379,7 @@ class TestRosevilleAdapter(BaseTestCase):
         ]:
             self.assertEqual(
                 expected,
-                RosevilleAdapter._normalize_unit(unit),
+                ItronRosevilleAdapter._normalize_unit(unit),
                 f"unexpected normalization for {unit}",
             )
 
@@ -391,7 +392,7 @@ class TestRosevilleAdapter(BaseTestCase):
         self.assertIsNone(self.adapter._parse_timestamp(""))
         self.assertIsNone(self.adapter._parse_timestamp(None))
 
-    def register_read_factory(self, **kwargs) -> RosevilleRegisterRead:
+    def register_read_factory(self, **kwargs) -> ItronRosevilleRegisterRead:
         defaults = dict(
             Timestamp="06/17/2026 16:00:00.000000",
             Read_Value="43490.000000000",
@@ -402,9 +403,9 @@ class TestRosevilleAdapter(BaseTestCase):
             Read_Units="CF_WAT",
         )
         defaults.update(kwargs)
-        return RosevilleRegisterRead(**defaults)
+        return ItronRosevilleRegisterRead(**defaults)
 
-    def interval_read_factory(self, **kwargs) -> RosevilleIntervalRead:
+    def interval_read_factory(self, **kwargs) -> ItronRosevilleIntervalRead:
         defaults = dict(
             Timestamp="06/17/2026 16:00:00.000000",
             Read_Value="1.0",
@@ -415,13 +416,9 @@ class TestRosevilleAdapter(BaseTestCase):
             Read_Units="CF_WAT",
         )
         defaults.update(kwargs)
-        return RosevilleIntervalRead(**defaults)
+        return ItronRosevilleIntervalRead(**defaults)
 
     def _extract_outputs(self, register_rows, interval_rows) -> ExtractOutput:
-        import json
-
-        from amiadapters.models import DataclassJSONEncoder
-
         return ExtractOutput(
             {
                 "register.json": "\n".join(
@@ -434,77 +431,11 @@ class TestRosevilleAdapter(BaseTestCase):
         )
 
 
-class TestKeysForDateRange(BaseTestCase):
-
-    def test_month_suffix_overlaps(self):
-        keys = ["p/rosevillecityof_Register_202607.csv"]
-        result = keys_for_date_range(keys, datetime(2026, 7, 10), datetime(2026, 7, 12))
-        self.assertEqual(keys, result["register"])
-
-    def test_month_suffix_outside_range(self):
-        keys = ["p/rosevillecityof_Register_202605.csv"]
-        result = keys_for_date_range(keys, datetime(2026, 7, 10), datetime(2026, 7, 12))
-        self.assertEqual([], result["register"])
-
-    def test_date_range_suffix(self):
-        cases = [
-            # (filename dates, range start, range end, expect match)
-            ("20260616_20260619", datetime(2026, 6, 18), datetime(2026, 6, 20), True),
-            ("20260616_20260619", datetime(2026, 6, 19), datetime(2026, 6, 21), True),
-            # Boundary-inclusive: a file named ..._20260619 can carry reads
-            # stamped 06/20 00:00 (interval timestamps mark the END of the
-            # measured hour), so a range starting exactly at 06/20 matches.
-            ("20260616_20260619", datetime(2026, 6, 20), datetime(2026, 6, 22), True),
-            ("20260616_20260619", datetime(2026, 6, 21), datetime(2026, 6, 23), False),
-            ("20260616_20260619", datetime(2026, 6, 14), datetime(2026, 6, 15), False),
-            ("20260616_20260619", datetime(2026, 6, 14), datetime(2026, 6, 16), True),
-        ]
-        for dates, start, end, expected in cases:
-            keys = [f"p/rosevillecityof_Interval_{dates}.csv"]
-            result = keys_for_date_range(keys, start, end)
-            self.assertEqual(
-                expected,
-                len(result["interval"]) == 1,
-                f"unexpected result for {dates} in [{start}, {end}]",
-            )
-
-    def test_routes_types_and_skips_unrecognized(self):
-        keys = [
-            "p/rosevillecityof_Register_202607.csv",
-            "p/rosevillecityof_Interval_202607.csv",
-            "p/testAddress.csv",
-            "p/rosevillecityof_usage_202606.csv",
-        ]
-        result = keys_for_date_range(keys, datetime(2026, 7, 1), datetime(2026, 7, 3))
-        self.assertEqual(["p/rosevillecityof_Register_202607.csv"], result["register"])
-        self.assertEqual(["p/rosevillecityof_Interval_202607.csv"], result["interval"])
-
-    def test_case_insensitive(self):
-        keys = ["p/rosevillecityof_REGISTER_202607.csv"]
-        result = keys_for_date_range(keys, datetime(2026, 7, 1), datetime(2026, 7, 3))
-        self.assertEqual(keys, result["register"])
-
-    def test_december_month_suffix(self):
-        keys = ["p/rosevillecityof_Register_202612.csv"]
-        result = keys_for_date_range(keys, datetime(2026, 12, 30), datetime(2027, 1, 2))
-        self.assertEqual(keys, result["register"])
-
-    def test_timezone_aware_range_bounds_do_not_crash(self):
-        # Manual Airflow runs can deliver offset-bearing datetimes
-        keys = ["p/rosevillecityof_Register_20260616_20260619.csv"]
-        result = keys_for_date_range(
-            keys,
-            datetime(2026, 6, 17, tzinfo=pytz.UTC),
-            datetime(2026, 6, 19, tzinfo=pytz.UTC),
-        )
-        self.assertEqual(keys, result["register"])
-
-
-class TestRosevilleRawLoaders(BaseTestCase):
+class TestItronRosevilleRawLoaders(BaseTestCase):
 
     def test_register_loader(self):
-        loader = RosevilleRegisterBaseTableLoader()
-        self.assertEqual("ROSEVILLE_REGISTER_BASE", loader.table_name())
+        loader = ItronRosevilleRegisterBaseTableLoader()
+        self.assertEqual("ITRON_ROSEVILLE_REGISTER_BASE", loader.table_name())
         self.assertEqual(
             [
                 "Timestamp",
@@ -520,26 +451,22 @@ class TestRosevilleRawLoaders(BaseTestCase):
         self.assertEqual(["meter_serial_number", "timestamp"], loader.unique_by())
 
     def test_interval_loader(self):
-        loader = RosevilleIntervalBaseTableLoader()
-        self.assertEqual("ROSEVILLE_INTERVAL_BASE", loader.table_name())
+        loader = ItronRosevilleIntervalBaseTableLoader()
+        self.assertEqual("ITRON_ROSEVILLE_INTERVAL_BASE", loader.table_name())
         self.assertEqual(["meter_serial_number", "timestamp"], loader.unique_by())
 
     def test_unique_by_matches_lowercased_columns(self):
         for loader in [
-            RosevilleRegisterBaseTableLoader(),
-            RosevilleIntervalBaseTableLoader(),
+            ItronRosevilleRegisterBaseTableLoader(),
+            ItronRosevilleIntervalBaseTableLoader(),
         ]:
             lowercased = [c.lower() for c in loader.columns()]
             for key in loader.unique_by():
                 self.assertIn(key, lowercased)
 
     def test_prepare_raw_data_tuple_order_matches_columns(self):
-        loader = RosevilleRegisterBaseTableLoader()
-        import json
-
-        from amiadapters.models import DataclassJSONEncoder
-
-        row = RosevilleRegisterRead(
+        loader = ItronRosevilleRegisterBaseTableLoader()
+        row = ItronRosevilleRegisterRead(
             Timestamp="06/17/2026 16:00:00.000000",
             Read_Value="43490.0",
             Meter_Serial_Number="63735693",
