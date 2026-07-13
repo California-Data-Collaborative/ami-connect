@@ -1,26 +1,26 @@
 """
-Shared helpers for "S3 drop-off" AMI sources.
+Shared helpers for "S3 drop-off" AMI sources: sources where a utility or
+vendor pushes data files into an S3 prefix that the pipeline then reads,
+rather than the pipeline pulling from a vendor API/SFTP/database.
 
-CaDC's standard intake pattern for utilities that can push files: the utility
-delivers CSVs into a CaDC-owned S3 prefix (see the CaDC AMI Data Onboarding
-Instructions), with a timestamp or date range in each filename to differentiate
-files over time. The first source using this pattern is City of Roseville
-(itron_roseville.py); these helpers hold the parts that are NOT specific to any
-one utility so the next S3-drop adapter can reuse them.
+These helpers hold the transport-level mechanics that are not specific to any
+one source, so adapters for S3-drop sources can compose them (see
+itron_roseville.py for the first consumer):
 
-Conventions these helpers encode:
-- The drop prefix may contain subfolders (e.g. archive/ for superseded files);
-  listing uses Delimiter="/" so only top-level keys are ever considered.
-- Filename date tokens are either "YYYYMM" (a whole month) or
-  "YYYYMMDD_YYYYMMDD" (an inclusive day range). A file is selected for an
-  extract when its date range overlaps the extract range; overlap is
+- Listing a drop prefix without descending into subfolders, so a source can
+  keep e.g. an archive/ folder of superseded files that is never re-ingested.
+- Selecting files whose filename-encoded date range overlaps an extract
+  range. Supported filename date tokens are "YYYYMM" (a whole month) and
+  "YYYYMMDD_YYYYMMDD" (an inclusive day range); overlap is
   boundary-inclusive because a file's last reads may be stamped at the
   boundary instant (e.g. hour-ending timestamps at midnight).
-- Files are processed oldest-LastModified-first so that when overlapping
-  deliveries carry the same logical row (e.g. a rolling correction window),
-  the most recently delivered value wins downstream.
-- The drop bucket may live in a different AWS account than the pipeline, in
-  which case the source's secrets carry a read-only IAM keypair.
+- Ordering selected files oldest-LastModified-first so that when overlapping
+  deliveries carry the same logical row (e.g. a source that re-sends a
+  rolling correction window), the most recently delivered value wins
+  downstream.
+- Building a client from an IAM keypair for drop buckets that live in a
+  different AWS account than the pipeline.
+- Downloading a CSV file into per-row dataclasses.
 """
 
 import csv
