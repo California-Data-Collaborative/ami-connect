@@ -5,6 +5,12 @@ Roseville pushes (via Informatica) into a CaDC-owned S3 prefix. It is the first
 adapter whose source is a utility-pushed S3 file drop rather than a vendor
 API/SFTP/database.
 
+This adapter was built specially for Roseville and is not compatible with other
+utilities. The CSVs are custom database views built by Roseville IT (their AMI
+team pipes Itron data onto Roseville-hosted servers), NOT Itron's native
+ChoiceConnect export format — an Itron utility onboarding through Itron's
+standard hosted-SFTP path would need a different adapter.
+
 ## Data
 
 Two file types with an identical 7-column schema

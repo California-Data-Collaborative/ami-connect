@@ -86,6 +86,22 @@ class RosevilleAdapter(BaseAMIAdapter):
     via Informatica into a CaDC-owned S3 prefix. This is the first adapter whose
     source is a utility-pushed S3 file drop rather than a vendor API/SFTP/DB.
 
+    This adapter was built specially for Roseville and is not compatible with
+    other utilities: the CSVs are Roseville's own database views, NOT Itron's
+    native ChoiceConnect export format. An Itron utility onboarding through
+    Itron's standard hosted-SFTP path (e.g. Montecito's setup) would need a
+    different adapter.
+
+    Identifier mapping (each adapter picks its device_id, see GeneralMeter):
+    - device_id = meter_id = Meter_Serial_Number. Every read row carries the
+      serial, meter:endpoint:location is 1:1 in the data, and a physical meter
+      swap correctly starts a new device under the METERS SCD2 history.
+    - endpoint_id = EndpointID, Roseville's Itron radio identifier (an OID,
+      prefix 2.16.840.1.114416 = Itron's registered arc). Same convention as
+      xylem_moulton_niguel, which maps its Itron radio fields ert_id ->
+      endpoint_id; that adapter keys reads by radio (encid) instead because
+      MNWD's reads tables only carry the radio id.
+
     Notable properties of the feed:
     - Timestamps are Pacific local time, format "MM/DD/YYYY HH:MM:SS.ffffff"
       (Roseville confirmed all timestamps are Pacific, 2026-06-03).
