@@ -1,0 +1,17 @@
+sources:
+- type: roseville
+  org_id: my_utility
+  timezone: America/Los_Angeles
+  s3_bucket: my-bucket
+  s3_prefix: my-prefix/
+  s3_region: us-east-1
+  sinks:
+  - my_snowflake_instance
+
+sinks:
+- type: snowflake
+  id: my_snowflake_instance
+
+task_output:
+  type: local
+  output_folder: outputs
