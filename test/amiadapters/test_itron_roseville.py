@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytz
 
 from amiadapters.adapters.itron_roseville import (
-    REGISTER_ERROR_SENTINEL,
+    READ_VALUE_ERROR_THRESHOLD,
     ItronRosevilleAdapter,
     ItronRosevilleIntervalBaseTableLoader,
     ItronRosevilleIntervalRead,
@@ -238,12 +238,12 @@ class TestItronRosevilleAdapter(BaseTestCase):
         self.assertEqual(2.0, by_flowtime[9].interval_value)
         self.assertIsNone(by_flowtime[9].register_value)
 
-    def test_transform_excludes_register_error_sentinel_but_keeps_interval(self):
+    def test_transform_excludes_register_error_codes_but_keeps_interval(self):
         extract_outputs = self._extract_outputs(
             register_rows=[
                 self.register_read_factory(
                     Timestamp="06/17/2026 16:00:00.000000",
-                    Read_Value=str(REGISTER_ERROR_SENTINEL),
+                    Read_Value="4294967294",  # 2**32 - 2, the observed fault code
                     Meter_Serial_Number="60603374",
                 )
             ],
@@ -264,11 +264,11 @@ class TestItronRosevilleAdapter(BaseTestCase):
         self.assertIsNone(reads[0].register_value)
         self.assertEqual(0.0, reads[0].interval_value)
 
-    def test_transform_excludes_interval_error_sentinel(self):
+    def test_transform_excludes_interval_error_codes(self):
         extract_outputs = self._extract_outputs(
             register_rows=[],
             interval_rows=[
-                self.interval_read_factory(Read_Value=str(REGISTER_ERROR_SENTINEL)),
+                self.interval_read_factory(Read_Value="4294967294"),
                 self.interval_read_factory(
                     Timestamp="06/17/2026 17:00:00.000000", Read_Value="2.0"
                 ),
@@ -277,6 +277,50 @@ class TestItronRosevilleAdapter(BaseTestCase):
         meters, reads = self.adapter._transform("run-1", extract_outputs)
         self.assertEqual(1, len(reads))
         self.assertEqual(2.0, reads[0].interval_value)
+
+    def test_transform_excludes_values_at_or_above_error_threshold(self):
+        # Fault codes are a threshold, not one magic number: 2**32 - 1 and the
+        # threshold itself are excluded; the largest plausible real register
+        # (well below the threshold) survives.
+        extract_outputs = self._extract_outputs(
+            register_rows=[
+                self.register_read_factory(Read_Value="4294967295"),  # 2**32 - 1
+                self.register_read_factory(
+                    Timestamp="06/17/2026 08:00:00.000000",
+                    Read_Value=str(READ_VALUE_ERROR_THRESHOLD),
+                ),
+                self.register_read_factory(
+                    Timestamp="06/17/2026 00:00:00.000000", Read_Value="97830982"
+                ),
+            ],
+            interval_rows=[],
+        )
+        meters, reads = self.adapter._transform("run-1", extract_outputs)
+        self.assertEqual(1, len(reads))
+        self.assertEqual(97830982.0, reads[0].register_value)
+
+    def test_normalize_unit_strips_commodity_suffix(self):
+        # _WAT is Itron's commodity suffix; the remaining unit goes through
+        # map_reading, so GAL_WAT converts to CF and garbage still raises.
+        extract_outputs = self._extract_outputs(
+            register_rows=[],
+            interval_rows=[
+                self.interval_read_factory(Read_Value="7.48052", Read_Units="GAL_WAT")
+            ],
+        )
+        meters, reads = self.adapter._transform("run-1", extract_outputs)
+        self.assertEqual(1, len(reads))
+        self.assertAlmostEqual(1.0, reads[0].interval_value, places=6)
+        self.assertEqual("CF", reads[0].interval_unit)
+
+    def test_transform_counts_missing_device_id(self):
+        extract_outputs = self._extract_outputs(
+            register_rows=[self.register_read_factory(Meter_Serial_Number="")],
+            interval_rows=[self.interval_read_factory(Read_Value="2.0")],
+        )
+        meters, reads = self.adapter._transform("run-1", extract_outputs)
+        self.assertEqual(1, len(reads))  # blank-serial row skipped, not fatal
+        self.assertEqual(1, len(meters))
 
     def test_transform_skips_reads_with_blank_timestamp(self):
         extract_outputs = self._extract_outputs(

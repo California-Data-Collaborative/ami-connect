@@ -7,7 +7,6 @@ from typing import List, Tuple
 
 from amiadapters.adapters.base import (
     BaseAMIAdapter,
-    GeneralMeterUnitOfMeasure,
     ScheduledExtract,
 )
 from amiadapters.adapters.s3_drop import (
@@ -23,12 +22,15 @@ from amiadapters.storage.snowflake import RawSnowflakeLoader, RawSnowflakeTableL
 logger = logging.getLogger(__name__)
 
 
-# Itron emits 4294967294 (2**32 - 2) as the register Read_Value for faulted
-# register channels. In the 2026-07 full extract this appeared on 296 rows across
-# 68 meters (register file only, never interval). We keep these rows in the raw
-# extract and base tables for the historical record, but exclude them from
+# Itron emits max-value error codes from a 32-bit register for faulted
+# channels: 4294967294 (2**32 - 2) was observed on 296 rows across 68 meters
+# in the 2026-07 full extract (register file only), and neighboring codes like
+# 2**32 - 1 are equally plausible. Real values sit orders of magnitude lower
+# (largest genuine register in 485k rows: ~97.8M CF), so anything at or above
+# this threshold is a fault code, not a reading. Rows are kept in the raw
+# extract and base tables for the historical record but excluded from
 # transformed reads so impossible values never reach READINGS.
-REGISTER_ERROR_SENTINEL = 4294967294.0
+READ_VALUE_ERROR_THRESHOLD = 4_000_000_000.0
 
 # Filenames look like rosevillecityof_Register_202607.csv (month suffix) or,
 # per our request to Roseville, rosevillecityof_Interval_20260616_20260619.csv
@@ -109,7 +111,9 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
     Notable properties of the feed:
     - Timestamps are Pacific local time, format "MM/DD/YYYY HH:MM:SS.ffffff"
       (Roseville confirmed all timestamps are Pacific, 2026-06-03).
-    - Read_Units is "CF_WAT" (cubic feet, water); translated to CF.
+    - Read_Units carries an Itron commodity suffix ("CF_WAT" = cubic feet,
+      water); the suffix is stripped and the remaining unit normalized via
+      map_reading.
     - account_id is permanently unavailable (Roseville's AMI system does not
       receive account info from CIS, confirmed 2026-06-10). Location_ID equals
       Cayenta's SERVICE_POINT ("{LOCATION_NO}_{SERVICE_SEQUENCE}") and is the
@@ -271,8 +275,9 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
 
         reads_by_device_and_time = {}
         counters = {
-            "sentinel": 0,
+            "error_code_value": 0,
             "no_flowtime": 0,
+            "missing_device_id": 0,
             "unparseable_value": 0,
             "overwritten_differing": 0,
         }
@@ -280,6 +285,7 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
         for raw in interval_reads:
             device_id = raw.Meter_Serial_Number
             if not device_id:
+                counters["missing_device_id"] += 1
                 continue
             flowtime = self._parse_timestamp(raw.Timestamp)
             if flowtime is None:
@@ -316,6 +322,7 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
         for raw in register_reads:
             device_id = raw.Meter_Serial_Number
             if not device_id:
+                counters["missing_device_id"] += 1
                 continue
             flowtime = self._parse_timestamp(raw.Timestamp)
             if flowtime is None:
@@ -328,8 +335,16 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
                 value, self._normalize_unit(raw.Read_Units)
             )
             if (device_id, flowtime) in reads_by_device_and_time:
+                existing = reads_by_device_and_time[(device_id, flowtime)]
+                if (
+                    existing.register_value is not None
+                    and existing.register_value != register_value
+                ):
+                    # Same observability as the interval loop: a re-delivered
+                    # correction (or DST collision) overwriting a differing value
+                    counters["overwritten_differing"] += 1
                 read = replace(
-                    reads_by_device_and_time[(device_id, flowtime)],
+                    existing,
                     register_value=register_value,
                     register_unit=register_unit,
                 )
@@ -363,17 +378,18 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
         """
         Parse a Read_Value into a float, or None if the row should be skipped.
         Non-numeric values (blank, error tokens) are counted and skipped rather
-        than failing the whole run. The Itron faulted-channel sentinel is
-        excluded on BOTH file types — it has only been observed in register
-        files, but it is equally impossible as an hourly interval value.
+        than failing the whole run. Values at or above the fault-code threshold
+        are excluded on BOTH file types — fault codes have only been observed
+        in register files, but they are equally impossible as hourly interval
+        values.
         """
         try:
             value = float(value_str)
         except (TypeError, ValueError):
             counters["unparseable_value"] += 1
             return None
-        if value == REGISTER_ERROR_SENTINEL:
-            counters["sentinel"] += 1
+        if value >= READ_VALUE_ERROR_THRESHOLD:
+            counters["error_code_value"] += 1
             return None
         return value
 
@@ -392,15 +408,21 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
     @staticmethod
     def _normalize_unit(unit: str) -> str:
         """
-        Roseville tags water reads as "CF_WAT" (cubic feet, water). Translate to
-        the CF unit that map_reading recognizes; pass anything else through so
-        map_reading raises on genuinely unknown units.
+        Roseville tags read units with an Itron commodity suffix: "CF_WAT" is
+        cubic feet of water (Itron systems also serve gas and electric).
+        Strip the "_WAT" suffix and pass the remaining unit to map_reading,
+        which still raises on genuinely unknown units — so a future "GAL_WAT"
+        maps cleanly while garbage keeps failing loudly.
         """
         if unit is None:
             return None
         normalized = unit.strip().upper()
-        if normalized == "CF_WAT":
-            return GeneralMeterUnitOfMeasure.CUBIC_FEET
+        if normalized.endswith("_WAT"):
+            normalized = normalized[: -len("_WAT")]
+        if normalized == "GAL":
+            # map_reading's vocabulary is GALLON/GALLONS (same aliasing as
+            # xylem_datalake._normalize_unit)
+            return "GALLON"
         return normalized
 
 

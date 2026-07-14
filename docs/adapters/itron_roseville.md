@@ -41,9 +41,10 @@ Notable data properties:
   receive account information from their CIS. `Location_ID` equals Cayenta's
   `SERVICE_POINT` (`{LOCATION_NO}_{SERVICE_SEQUENCE}`), which is the join key to
   Roseville billing data on the CaDC side.
-- Faulted register channels report the error sentinel `4294967294` (2^32 - 2) as
-  `Read_Value`. These rows are preserved in the raw base tables but excluded
-  from transformed reads.
+- Faulted channels report 32-bit max-value error codes as `Read_Value`
+  (`4294967294` = 2^32 - 2 observed; neighboring codes plausible). Values at
+  or above 4×10⁹ — orders of magnitude beyond any real reading — are
+  preserved in the raw base tables but excluded from transformed reads.
 
 ## Configuration
 
