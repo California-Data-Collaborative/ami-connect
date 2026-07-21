@@ -5,15 +5,16 @@ files that Roseville pushes (via Informatica) into a CaDC-owned S3 prefix. It is
 the first adapter whose source is a utility-pushed S3 file drop rather than a
 vendor API/SFTP/database — the transport-level pieces that aren't specific to
 Roseville (cross-account client, subfolder-safe listing, filename date-range
-selection, CSV download) live in `amiadapters/adapters/s3_drop.py` for reuse by
-future S3-drop sources.
+selection, CSV download) are module-level helpers at the bottom of
+`amiadapters/adapters/itron_roseville.py`, to be extracted into a shared module
+if a second S3-drop source appears.
 
 This adapter was built specially for Roseville and is not compatible with other
 utilities. The CSVs are custom database views built by Roseville IT (their AMI
 team pipes Itron data onto Roseville-hosted servers), NOT Itron's native
 ChoiceConnect export format — an Itron utility onboarding through Itron's
-standard hosted-SFTP path would need a different adapter (likely reusing
-`s3_drop.py` only if that utility also delivers via a CaDC S3 drop).
+standard hosted-SFTP path would need a different adapter (reusing the S3-drop
+helpers only if that utility also delivers via a CaDC S3 drop).
 
 ## Data
 
