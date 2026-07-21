@@ -182,8 +182,7 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
         """
         Roseville pushes a file per day covering a rolling ~3-day window. We use
         a 4-day extract window so a file pushed late (or a day skipped on our
-        side) is still picked up by filename-date overlap; re-processing is
-        idempotent via MERGE upserts.
+        side) is still picked up by filename-date overlap.
         """
         return [ScheduledExtract(interval=timedelta(days=4))]
 
