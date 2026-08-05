@@ -283,6 +283,10 @@ class XylemDatalakeSecrets(SourceSecretsBase):
 class XylemSensusSecrets(SourceSecretsBase):
     sftp_user: str
     sftp_password: str
+    # Read-only keypair for the cross-account crosswalk fetch; only needed
+    # when the source config sets the crosswalk_s3_* fields.
+    crosswalk_aws_access_key_id: str = None
+    crosswalk_aws_secret_access_key: str = None
 
 
 def get_secrets_class_type(source_type: str):
@@ -622,6 +626,12 @@ class XylemSensusSourceConfig(SourceConfigBase):
     sftp_remote_data_directory: str
     sftp_local_download_directory: str
     sftp_known_hosts_str: str
+    # Optional billing crosswalk (meter_id -> account/location) in S3,
+    # produced by the utility's billing parser. Read cross-account with the
+    # keypair in this source's secrets.
+    crosswalk_s3_region: str = None
+    crosswalk_s3_bucket: str = None
+    crosswalk_s3_key: str = None
 
 
 class SourceSchema:

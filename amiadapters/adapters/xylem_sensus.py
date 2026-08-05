@@ -1,17 +1,19 @@
 import csv
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
+import io
 import logging
 import json
 import os
-from typing import List, Set, Tuple
+import re
+import tempfile
+from typing import Dict, List, Optional, Tuple
 
+import boto3
 import paramiko
 import pytz
-from pytz.tzinfo import DstTzInfo
 
 from amiadapters.adapters.base import BaseAMIAdapter
-from amiadapters.configuration.models import SftpConfiguration
 from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
 from amiadapters.storage.snowflake import RawSnowflakeLoader, RawSnowflakeTableLoader
 from amiadapters.outputs.base import ExtractOutput
@@ -19,10 +21,28 @@ from amiadapters.outputs.base import ExtractOutput
 logger = logging.getLogger(__name__)
 
 
+###############################################################################
+# CMEP record parsing
+#
+# CMEP is the California Metering Exchange Protocol, the flat-file format
+# Sensus/Xylem use for scheduled data transfers. These functions and
+# dataclasses are deliberately module-level and adapter-agnostic: if a second
+# consumer appears (another utility's CMEP drop, or an AlarmReport/MLA01
+# parser — see the RNI Extended CMEP Specs Reference Manual), extract this
+# section into its own module. Kept in-file until that second consumer exists.
+#
+# See MEPMD01 section of
+# https://www.sce.com/sites/default/files/inline-files/14%2B-%2BCalifornia%2BMetering%2BExchange%2BProtocol%2B-%2BV4.1-022013_AA.pdf
+###############################################################################
+
+CMEP_INTERVAL_DATA_RECORD_TYPE = "MEPMD01"
+
+
 @dataclass
-class XylemSensusRead:
+class CmepRead:
     """
-    Sensus single reading
+    A single reading within a CMEP record: a timestamp, a protocol
+    quality/status code (e.g. "R0"), and a value.
     """
 
     time: str
@@ -31,11 +51,11 @@ class XylemSensusRead:
 
 
 @dataclass
-class XylemSensusMeterAndReads:
+class CmepMeterAndReads:
     """
-    Sensus CMEP-formatted record that includes meter info and hourly readings.
-
-    See MEPMD01 section of https://www.sce.com/sites/default/files/inline-files/14%2B-%2BCalifornia%2BMetering%2BExchange%2BProtocol%2B-%2BV4.1-022013_AA.pdf
+    One CMEP MEPMD01 record: meter/transmission metadata plus that meter's
+    readings for one channel. The `units` field identifies the channel, e.g.
+    "CF" for hourly interval values and "CFREG" for cumulative register reads.
     """
 
     record_type: str
@@ -52,28 +72,126 @@ class XylemSensusMeterAndReads:
     calculation_constant: str
     interval: str
     quantity: str
-    reads: list[XylemSensusRead]
+    reads: List[CmepRead]
 
     @classmethod
     def from_json_file(cls, extract_output: ExtractOutput, filename: str) -> List:
         """
         Parses instances from JSON file, including nested reads.
         """
-        raw_meters_with_reads = extract_output.load_from_file(
-            filename, XylemSensusMeterAndReads
-        )
+        raw_meters_with_reads = extract_output.load_from_file(filename, cls)
         for raw_meter in raw_meters_with_reads:
-            raw_meter: XylemSensusMeterAndReads = raw_meter
+            raw_meter: CmepMeterAndReads = raw_meter
             reads = []
             for read in raw_meter.reads:
-                reads.append(XylemSensusRead(**read))
+                reads.append(CmepRead(**read))
             raw_meter.reads = reads
         return raw_meters_with_reads
 
 
+def parse_cmep_row(row: List[str]) -> CmepMeterAndReads:
+    """
+    Parses a single row in a CMEP-formatted file. The protocol puts all of a
+    meter's readings for one channel on a single line: 14 metadata fields,
+    then (timestamp, code, value) triplets. Field 13 says how many triplets
+    follow.
+
+    Raises on any structural violation — a malformed file should fail the run
+    loudly rather than load partially.
+    """
+    if row[0] != CMEP_INTERVAL_DATA_RECORD_TYPE:
+        raise Exception(f"Unrecognized report format: {row[0]}")
+
+    if len(row) < 15:
+        raise Exception(f"Row does not match MEPMD01 format: {row}")
+
+    quantity_index = 13
+    number_of_reads = int(row[quantity_index]) if row[quantity_index] else 0
+    expected_length = quantity_index + 1 + (number_of_reads * 3)
+    if len(row) < expected_length:
+        raise Exception(
+            f"Row declares {number_of_reads} readings but is truncated: {row}"
+        )
+    reads = []
+    for i in range(number_of_reads):
+        start_of_read = quantity_index + 1 + (i * 3)
+        date_time_text, code, quantity = (
+            row[start_of_read],
+            row[start_of_read + 1],
+            row[start_of_read + 2],
+        )
+        if not date_time_text:
+            # This is a valid state according to protocol - we'd need to calculate the date from the row's base date time plus intervals
+            # We've punted on handling it. For now, throw an error if it comes up.
+            raise Exception("No date time text for reading, which we do not support")
+        reads.append(CmepRead(time=date_time_text, code=code, quantity=quantity))
+
+    return CmepMeterAndReads(
+        record_type=row[0],
+        record_version=row[1],
+        sender_id=row[2],
+        sender_customer_id=row[3],
+        receiver_id=row[4],
+        receiver_customer_id=row[5],
+        time_stamp=row[6],
+        meter_id=row[7],
+        purpose=row[8],
+        commodity=row[9],
+        units=row[10],
+        calculation_constant=row[11],
+        interval=row[12],
+        quantity=row[13],
+        reads=reads,
+    )
+
+
+###############################################################################
+# Adapter
+###############################################################################
+
+# Sensus drop filenames look like STAHO_IntervalReport_202606030815.txt:
+# a utility prefix, the report type, and a YYYYMMDDHHMM generation stamp.
+FILENAME_TIMESTAMP_PATTERN = re.compile(r"_IntervalReport_(\d{12})\.txt$")
+
+
+def files_for_date_range(
+    files: List[str], extract_range_start: datetime, extract_range_end: datetime
+) -> List[str]:
+    """
+    Filter server filenames to those with data in the given date range.
+
+    A file stamped day D carries readings from roughly D-1 08:00 through
+    D 07:00 local, plus catch-up rows for meters whose earlier deliveries
+    were missed — so readings for a given day arrive in the file stamped the
+    NEXT day, and we select stamps in [start, end + 1 day]. Catch-up copies
+    of a day's readings can also appear in files later than that window;
+    ongoing daily runs pick those up as they fetch newer files.
+    """
+    result = []
+    for filename in files:
+        match = FILENAME_TIMESTAMP_PATTERN.search(filename)
+        if not match:
+            logger.info(
+                f"Skipping file {filename}: does not match IntervalReport naming convention"
+            )
+            continue
+        stamp_day = datetime.strptime(match.group(1), "%Y%m%d%H%M").date()
+        first_day = extract_range_start.date()
+        last_day = (extract_range_end + timedelta(days=1)).date()
+        if first_day <= stamp_day <= last_day:
+            result.append(filename)
+    return result
+
+
 class XylemSensusAdapter(BaseAMIAdapter):
     """
-    AMI Adapter that uses SFTP to retrieve Xylem Sensus data.
+    AMI Adapter for Xylem/Sensus CMEP files delivered to an SFTP drop.
+
+    Optionally stamps account_id/location_id onto meters and reads from a
+    billing crosswalk file in S3 (columns meter_id,account_id,location_id),
+    produced by the utility's billing parser. Meters absent from the
+    crosswalk load with null ids; a configured-but-missing or malformed
+    crosswalk fails the run.
     """
 
     def __init__(
@@ -87,9 +205,15 @@ class XylemSensusAdapter(BaseAMIAdapter):
         sftp_known_hosts_str,
         sftp_user,
         sftp_password,
+        crosswalk_s3_region,
+        crosswalk_s3_bucket,
+        crosswalk_s3_key,
+        crosswalk_aws_access_key_id,
+        crosswalk_aws_secret_access_key,
         configured_task_output_controller,
         configured_metrics,
         configured_sinks,
+        s3_client=None,
     ):
         self.sftp_host = sftp_host
         self.sftp_user = sftp_user
@@ -97,6 +221,15 @@ class XylemSensusAdapter(BaseAMIAdapter):
         self.sftp_meter_and_reads_folder = sftp_remote_data_directory
         self.local_download_directory = sftp_local_download_directory
         self.known_hosts = sftp_known_hosts_str
+        self.crosswalk_s3_region = crosswalk_s3_region
+        self.crosswalk_s3_bucket = crosswalk_s3_bucket
+        self.crosswalk_s3_key = crosswalk_s3_key
+        self.crosswalk_aws_access_key_id = crosswalk_aws_access_key_id
+        self.crosswalk_aws_secret_access_key = crosswalk_aws_secret_access_key
+        # Injectable for tests. In production this stays None until the
+        # crosswalk is fetched — adapters are constructed at Airflow DAG-parse
+        # time, so the constructor must not do network or client setup work.
+        self._s3_client = s3_client
         super().__init__(
             org_id,
             org_timezone,
@@ -116,143 +249,92 @@ class XylemSensusAdapter(BaseAMIAdapter):
         extract_range_start: datetime,
         extract_range_end: datetime,
     ) -> ExtractOutput:
+        logger.info(
+            f"Connecting to Xylem Sensus SFTP for data between {extract_range_start} and {extract_range_end}"
+        )
+        downloaded_files = []
+        try:
+            with paramiko.SSHClient() as ssh:
+                # Prepare known hosts
+                tmp = tempfile.NamedTemporaryFile()
+                tmp.write(self.known_hosts.encode("utf-8"))
+                tmp.flush()
+                ssh.load_host_keys(tmp.name)
 
-        with open("/Users/matthewdowell/Desktop/south-tahoe.csv", "r") as f:
-            reader = csv.reader(f, delimiter=",")
-            result = []
-            for row in reader:
-                xylem_meter_and_reads = self._parse_cmep_row(row)
-                result.append(xylem_meter_and_reads)
+                # Perform sftp
+                ssh.connect(
+                    self.sftp_host,
+                    username=self.sftp_user,
+                    password=self.sftp_password,
+                    look_for_keys=False,
+                    allow_agent=False,
+                )
+                with ssh.open_sftp() as sftp:
+                    downloaded_files = (
+                        self._download_meter_and_read_files_for_date_range(
+                            sftp, extract_range_start, extract_range_end
+                        )
+                    )
 
-        # logger.info(
-        #     f"Connecting to Xylem Sensus SFTP for data between {extract_range_start} and {extract_range_end}"
-        # )
-        # downloaded_files = []
-        # try:
-        #     with paramiko.SSHClient() as ssh:
-        #         ssh.load_host_keys(self.local_known_hosts_file)
-        #         ssh.connect(
-        #             self.sftp_host,
-        #             username=self.sftp_user,
-        #             password=self.sftp_password,
-        #             look_for_keys=False,
-        #             allow_agent=False,
-        #         )
-        #         with ssh.open_sftp() as sftp:
-        #             downloaded_files = (
-        #                 self._download_meter_and_read_files_for_date_range(
-        #                     sftp, extract_range_start, extract_range_end
-        #                 )
-        #             )
+            meters_and_reads = self._parse_downloaded_files(downloaded_files)
+            output = "\n".join(
+                json.dumps(i, cls=DataclassJSONEncoder) for i in meters_and_reads
+            )
+        finally:
+            for f in downloaded_files:
+                logger.info(f"Cleaning up downloaded file {f}")
+                os.remove(f)
 
-        #     meters_and_reads = self._parse_downloaded_files(downloaded_files)
-        #     output = "\n".join(meters_and_reads)
-        # finally:
-        #     for f in downloaded_files:
-        #         logger.info(f"Cleaning up downloaded file {f}")
-        #         os.remove(f)
-        output = "\n".join(json.dumps(i, cls=DataclassJSONEncoder) for i in result)
         return ExtractOutput({"meters_and_reads.json": output})
 
-    def _parse_cmep_row(self, row: list[str]) -> XylemSensusMeterAndReads:
-        """
-        Parses a single row in a CMEP-formatted file.
-
-        See CMEP docs linked elsewhere in this file for explanation of protocol, which
-        puts all of a meter's reads on a single line.
-        """
-        if row[0] != "MEPMD01":
-            raise Exception(f"Unrecognized report format: {row[0]}")
-
-        if len(row) < 15:
-            raise Exception(f"Row does not match MEPMD01 format: {row}")
-
-        # The 13th (and last non-reading item) in the row says how many readings will follow in that row
-        # Readings come in groups of three values. So if there are 5 readings, then 15 values will follow.
-        quantity_index = 13
-        number_of_reads = int(row[quantity_index]) if row[quantity_index] else 0
-        reads = []
-        for i in range(number_of_reads):
-            start_of_read = quantity_index + 1 + (i * 3)
-            date_time_text, code, quantity = (
-                row[start_of_read],
-                row[start_of_read + 1],
-                row[start_of_read + 2],
-            )
-            if not date_time_text:
-                # This is a valid state according to protocol - we'd need to calculate the date from the row's base date time plus intervals
-                # We've punted on handling it. For now, throw an error if it comes up.
-                raise Exception(
-                    "No date time text for reading, which we do not support"
-                )
-            reads.append(
-                XylemSensusRead(time=date_time_text, code=code, quantity=quantity)
-            )
-
-        return XylemSensusMeterAndReads(
-            record_type=row[0],
-            record_version=row[1],
-            sender_id=row[2],
-            sender_customer_id=row[3],
-            receiver_id=row[4],
-            receiver_customer_id=row[5],
-            time_stamp=row[6],
-            meter_id=row[7],
-            purpose=row[8],
-            commodity=row[9],
-            units=row[10],
-            calculation_constant=row[11],
-            interval=row[12],
-            quantity=row[13],
-            reads=reads,
+    def _download_meter_and_read_files_for_date_range(
+        self,
+        sftp: paramiko.SFTPClient,
+        extract_range_start: datetime,
+        extract_range_end: datetime,
+    ) -> List[str]:
+        downloaded_files = []
+        all_files_on_server = sftp.listdir(self.sftp_meter_and_reads_folder)
+        logger.info(f"Found {len(all_files_on_server)} total files on server")
+        files_to_download = files_for_date_range(
+            all_files_on_server, extract_range_start, extract_range_end
         )
+        if not files_to_download:
+            raise Exception(
+                f"No files found on server for range {extract_range_start} to {extract_range_end}"
+            )
+        os.makedirs(self.local_download_directory, exist_ok=True)
+        for file in files_to_download:
+            local_file = f"{self.local_download_directory}/{file}"
+            downloaded_files.append(local_file)
+            logger.info(
+                f"Downloading {file} from SFTP at {self.sftp_host} to {local_file}"
+            )
+            sftp.get(self.sftp_meter_and_reads_folder + "/" + file, local_file)
+        return downloaded_files
 
-    # def _download_meter_and_read_files_for_date_range(
-    #     self,
-    #     sftp: paramiko.SFTPClient,
-    #     extract_range_start: datetime,
-    #     extract_range_end: datetime,
-    # ) -> List[str]:
-    #     downloaded_files = []
-    #     all_files_on_server = sftp.listdir(self.sftp_meter_and_reads_folder)
-    #     logger.info(f"Found {len(all_files_on_server)} total files on server")
-    #     files_to_download = files_for_date_range(
-    #         all_files_on_server, extract_range_start, extract_range_end
-    #     )
-    #     if not files_to_download:
-    #         raise Exception(
-    #             f"No files found on server for range {extract_range_start} to {extract_range_end}"
-    #         )
-    #     os.makedirs(self.local_download_directory, exist_ok=True)
-    #     for file in files_to_download:
-    #         local_csv = f"{self.local_download_directory}/{file}"
-    #         downloaded_files.append(local_csv)
-    #         logger.info(
-    #             f"Downloading {file} from FTP at {self.sftp_host} to {local_csv}"
-    #         )
-    #         sftp.get(self.sftp_meter_and_reads_folder + "/" + file, local_csv)
-    #     return downloaded_files
-
-    # def _parse_downloaded_files(self, files: List[str]) -> Generator[str, None, None]:
-    #     for csv_file in files:
-    #         with open(csv_file, newline="", encoding="utf-8") as f:
-    #             csv_reader = csv.DictReader(f, delimiter=",")
-    #             for data in csv_reader:
-    #                 meter_and_read = XylemSensusMeterAndRead(**data)
-    #                 yield json.dumps(meter_and_read, cls=DataclassJSONEncoder)
+    def _parse_downloaded_files(self, files: List[str]) -> List[CmepMeterAndReads]:
+        result = []
+        for cmep_file in files:
+            with open(cmep_file, newline="", encoding="utf-8") as f:
+                for row in csv.reader(f):
+                    result.append(parse_cmep_row(row))
+        return result
 
     def _transform(
         self, run_id: str, extract_outputs: ExtractOutput
     ) -> Tuple[List[GeneralMeter], List[GeneralMeterRead]]:
-        raw_meters_with_reads = XylemSensusMeterAndReads.from_json_file(
+        raw_meters_with_reads = CmepMeterAndReads.from_json_file(
             extract_outputs, "meters_and_reads.json"
         )
+
+        crosswalk = self._load_crosswalk()
 
         transformed_meters_by_device_id = {}
         transformed_reads_by_key = {}
 
         for raw_meter_with_reads in raw_meters_with_reads:
-            raw_meter_with_reads: XylemSensusMeterAndReads = raw_meter_with_reads
+            raw_meter_with_reads: CmepMeterAndReads = raw_meter_with_reads
 
             device_id = raw_meter_with_reads.meter_id
             if not device_id:
@@ -275,19 +357,24 @@ class XylemSensusAdapter(BaseAMIAdapter):
                 )
                 continue
 
-            # TODO ask CaDC about receiver_id and receiver_customer_id. In sample, both have 3210 unique values out of the 3213 rows
-            # TODO so they might be correlated. Confirm it's a good account ID. Is there a location vs account distinction?
-            account_id = raw_meter_with_reads.receiver_customer_id
-            location_id = None
-            meter_id = raw_meter_with_reads.meter_id
-            endpoint_id = None
+            # The CMEP feed carries no billing identifiers (receiver_customer_id
+            # duplicates the meter id), so account and location come from the
+            # configured crosswalk. Meters absent from the crosswalk load with
+            # null ids and become linkable when the crosswalk refreshes.
+            if crosswalk is not None and device_id in crosswalk:
+                account_id, location_id = crosswalk[device_id]
+            else:
+                account_id, location_id = None, None
+            # 1:1 with meter_id in observed data; believed to be the FlexNet
+            # radio (MXU) id, unconfirmed by the vendor.
+            endpoint_id = raw_meter_with_reads.receiver_id
 
             meter = GeneralMeter(
                 org_id=self.org_id,
                 device_id=device_id,
                 account_id=account_id,
                 location_id=location_id,
-                meter_id=meter_id,
+                meter_id=device_id,
                 endpoint_id=endpoint_id,
                 meter_install_date=None,
                 meter_size=None,
@@ -309,33 +396,116 @@ class XylemSensusAdapter(BaseAMIAdapter):
 
             transformed_meters_by_device_id[device_id] = meter
 
-            # Interval reads
+            units = raw_meter_with_reads.units
+            if units not in ("CF", "CFREG"):
+                raise ValueError(
+                    f"Unrecognized CMEP units {units} for meter {device_id}"
+                )
+
             for raw_read in raw_meter_with_reads.reads:
-                flowtime = datetime.strptime(raw_read.time, "%Y%m%d%H%M")
-                interval_value, interval_unit = self.map_reading(
-                    float(raw_read.quantity),
-                    raw_meter_with_reads.units,
+                flowtime = self._localize(
+                    datetime.strptime(raw_read.time, "%Y%m%d%H%M")
                 )
-                read = GeneralMeterRead(
-                    org_id=self.org_id,
-                    device_id=device_id,
-                    account_id=account_id,
-                    location_id=location_id,
-                    flowtime=flowtime,
-                    register_value=None,
-                    register_unit=None,
-                    interval_value=interval_value,
-                    interval_unit=interval_unit,
-                    battery=None,
-                    install_date=None,
-                    connection=None,
-                    estimated=1 if raw_read.code == "E" else 0,
-                )
-                transformed_reads_by_key[(device_id, flowtime)] = read
+                key = (device_id, flowtime)
+                # Both channels arrive in cubic feet; CFREG marks the
+                # cumulative register channel, CF the hourly interval channel.
+                value, unit = self.map_reading(float(raw_read.quantity), "CF")
+                estimated = 1 if raw_read.code == "E" else 0
+
+                if key in transformed_reads_by_key:
+                    # Join this channel onto the read from the other channel
+                    # at the same flowtime (e.g. the register read at 07:00
+                    # joins the 07:00 interval read). Same pattern as the
+                    # Metersense adapter.
+                    old_read = transformed_reads_by_key[key]
+                    if units == "CF":
+                        read = replace(
+                            old_read, interval_value=value, interval_unit=unit
+                        )
+                    else:
+                        read = replace(
+                            old_read, register_value=value, register_unit=unit
+                        )
+                else:
+                    read = GeneralMeterRead(
+                        org_id=self.org_id,
+                        device_id=device_id,
+                        account_id=account_id,
+                        location_id=location_id,
+                        flowtime=flowtime,
+                        register_value=value if units == "CFREG" else None,
+                        register_unit=unit if units == "CFREG" else None,
+                        interval_value=value if units == "CF" else None,
+                        interval_unit=unit if units == "CF" else None,
+                        battery=None,
+                        install_date=None,
+                        connection=None,
+                        estimated=estimated,
+                    )
+                transformed_reads_by_key[key] = read
 
         return list(transformed_meters_by_device_id.values()), list(
             transformed_reads_by_key.values()
         )
+
+    def _localize(self, naive: datetime) -> datetime:
+        """
+        Attach the org's timezone to a naive feed timestamp. Returned
+        datetimes should never be naive, per BaseAMIAdapter convention.
+        """
+        tz = (
+            pytz.timezone(self.org_timezone)
+            if isinstance(self.org_timezone, str)
+            else self.org_timezone
+        )
+        return tz.localize(naive)
+
+    def _load_crosswalk(self) -> Optional[Dict[str, Tuple[str, str]]]:
+        """
+        Fetch the billing crosswalk from S3 and return meter_id ->
+        (account_id, location_id). Returns None when no crosswalk is
+        configured for this org. Raises when a configured crosswalk is
+        missing, empty, or malformed: proceeding without it would load reads
+        with null ids that later duplicate against correctly-linked re-loads.
+        """
+        if not self.crosswalk_s3_bucket or not self.crosswalk_s3_key:
+            logger.info(f"No billing crosswalk configured for {self.org_id}")
+            return None
+
+        client = self._s3_client
+        if client is None:
+            client = boto3.client(
+                "s3",
+                region_name=self.crosswalk_s3_region,
+                aws_access_key_id=self.crosswalk_aws_access_key_id,
+                aws_secret_access_key=self.crosswalk_aws_secret_access_key,
+            )
+        obj = client.get_object(
+            Bucket=self.crosswalk_s3_bucket, Key=self.crosswalk_s3_key
+        )
+        body = obj["Body"].read().decode("utf-8")
+
+        reader = csv.DictReader(io.StringIO(body))
+        expected_columns = {"meter_id", "account_id", "location_id"}
+        if set(reader.fieldnames or []) != expected_columns:
+            raise ValueError(
+                f"Crosswalk at s3://{self.crosswalk_s3_bucket}/{self.crosswalk_s3_key} "
+                f"has columns {reader.fieldnames}, expected {sorted(expected_columns)}"
+            )
+        crosswalk = {}
+        for row in reader:
+            meter_id = row["meter_id"].strip()
+            account_id = row["account_id"].strip()
+            location_id = row["location_id"].strip()
+            if not (meter_id and account_id and location_id):
+                raise ValueError(f"Malformed crosswalk row: {row}")
+            crosswalk[meter_id] = (account_id, location_id)
+        if not crosswalk:
+            raise ValueError(
+                f"Crosswalk at s3://{self.crosswalk_s3_bucket}/{self.crosswalk_s3_key} is empty"
+            )
+        logger.info(f"Loaded billing crosswalk with {len(crosswalk)} meter keys")
+        return crosswalk
 
 
 class XylemSensusBaseTableLoader(RawSnowflakeTableLoader):
@@ -344,13 +514,15 @@ class XylemSensusBaseTableLoader(RawSnowflakeTableLoader):
         return "XYLEM_SENSUS_METER_AND_READS_BASE"
 
     def columns(self) -> List[str]:
-        return list(XylemSensusMeterAndReads.__dataclass_fields__.keys())
+        return list(CmepMeterAndReads.__dataclass_fields__.keys())
 
     def unique_by(self) -> List[str]:
-        return ["meter_id", "time_stamp"]
+        # units distinguishes a meter's interval (CF) and register (CFREG)
+        # channel rows, which share meter_id and time_stamp within a file.
+        return ["meter_id", "time_stamp", "units"]
 
     def prepare_raw_data(self, extract_outputs):
-        raw_data = XylemSensusMeterAndReads.from_json_file(
+        raw_data = CmepMeterAndReads.from_json_file(
             extract_outputs, "meters_and_reads.json"
         )
         result = []
@@ -358,26 +530,3 @@ class XylemSensusBaseTableLoader(RawSnowflakeTableLoader):
             i.reads = json.dumps(i.reads, cls=DataclassJSONEncoder)
             result.append(tuple(i.__getattribute__(col) for col in self.columns()))
         return result
-
-
-# TODO DRY this out from Aclara code if we're going to use it
-def files_for_date_range(
-    files: List[str], extract_range_start: datetime, extract_range_end: datetime
-) -> List[str]:
-    """
-    Given a list of filenames on the Aclara server in the form "CaDC_Readings_05062024.csv", filter
-    to the files with data in the given date range.
-    """
-    result = []
-    for filename in files:
-        try:
-            # e.g. CaDC_Readings_05062024.csv
-            date_str = filename[-12:-4]
-            date = datetime.strptime(date_str, "%m%d%Y")
-            if extract_range_start <= date <= extract_range_end:
-                result.append(filename)
-        except Exception as e:
-            logger.info(
-                f"Skipping file {filename} because failed to determine if date is in range: {str(e)}"
-            )
-    return result
