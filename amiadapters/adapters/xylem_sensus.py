@@ -580,8 +580,7 @@ class XylemSensusBaseTableLoader(RawSnowflakeTableLoader):
         # a file - so it distinguishes files, not rows. units distinguishes a
         # meter's interval (CF) and register (CFREG) channel rows, and
         # first_read_time distinguishes a meter's multiple same-channel rows
-        # (catch-up deliveries covering disjoint windows; 59 meters had 2-5
-        # CF rows in one observed real file).
+        # (catch-up deliveries covering disjoint windows).
         return ["meter_id", "time_stamp", "units", "first_read_time"]
 
     def prepare_raw_data(self, extract_outputs):
