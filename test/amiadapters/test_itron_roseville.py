@@ -555,7 +555,7 @@ class TestItronRosevilleRawLoaders(BaseTestCase):
 # A generic two-type pattern, structured like a real adapter's (named groups
 # "type" and "dates") but deliberately not any specific utility's.
 PATTERN = re.compile(
-    r"(?P<type>register|interval)_(?P<dates>\d{8}_\d{8}|\d{8}|\d{6})\.csv$",
+    r"(?P<type>register|interval)_(?P<dates>\d{8}_\d{8}|\d{8}(?:_\d{4}|_\d{6})?|\d{6})\.csv$",
     re.IGNORECASE,
 )
 
@@ -646,6 +646,18 @@ class TestSelectFilesForRange(BaseTestCase):
                 f"unexpected result for [{start}, {end}]",
             )
 
+    def test_run_date_suffix_with_time_of_day(self):
+        # Another literal production name; the HHMM part doesn't shift coverage.
+        files = {"p/rosevillecityof_Interval_20260805_0923.csv": LM}
+        result = select_files_for_range(
+            files, PATTERN, datetime(2026, 8, 4), datetime(2026, 8, 6)
+        )
+        self.assertEqual(list(files), result["interval"])
+        result = select_files_for_range(
+            files, PATTERN, datetime(2026, 8, 7), datetime(2026, 8, 9)
+        )
+        self.assertEqual({}, result)
+
     def test_routes_types_and_skips_unrecognized(self):
         files = {
             "p/agency_Register_202607.csv": LM,
@@ -718,6 +730,16 @@ class TestDateRangeFromFilename(BaseTestCase):
         start, end = date_range_from_filename("20260803")
         self.assertEqual(datetime(2026, 7, 30), start)
         self.assertEqual(datetime(2026, 8, 4), end)
+
+    def test_run_date_with_hhmm(self):
+        start, end = date_range_from_filename("20260805_0923")
+        self.assertEqual(datetime(2026, 8, 1), start)
+        self.assertEqual(datetime(2026, 8, 6), end)
+
+    def test_run_date_with_hhmmss(self):
+        start, end = date_range_from_filename("20260805_092454")
+        self.assertEqual(datetime(2026, 8, 1), start)
+        self.assertEqual(datetime(2026, 8, 6), end)
 
 
 class TestDownloadCsvRows(BaseTestCase):

@@ -32,12 +32,11 @@ READ_VALUE_ERROR_THRESHOLD = 4_000_000_000.0
 
 # Filenames look like rosevillecityof_Register_202607.csv (month suffix),
 # rosevillecityof_Interval_20260616_20260619.csv (date-range suffix), or
-# rosevillecityof_Interval_20260803.csv (run-date suffix — the format
-# Roseville's Informatica jobs settled on in 2026-08 after their S3 V2
-# connector proved unable to emit a date range). Matched against the S3
-# key's basename.
+# rosevillecityof_Interval_20260805_0923.csv (run-date suffix — the daily
+# production job's format, whose optional time-of-day part has varied
+# between absent, HHMM, and HHMMSS). Matched against the S3 key's basename.
 FILENAME_PATTERN = re.compile(
-    r"(?P<type>register|interval)_(?P<dates>\d{8}_\d{8}|\d{8}|\d{6})\.csv$",
+    r"(?P<type>register|interval)_(?P<dates>\d{8}_\d{8}|\d{8}(?:_\d{4}|_\d{6})?|\d{6})\.csv$",
     re.IGNORECASE,
 )
 
@@ -568,26 +567,28 @@ def date_range_from_filename(dates: str) -> Tuple[datetime, datetime]:
     """
     Parse a filename date token into an inclusive [start, end] datetime range.
     "202607" (YYYYMM) covers the whole month; "20260616_20260619" covers the
-    named days through the end of the last day; "20260803" (YYYYMMDD) is the
-    run date of Roseville's daily job, whose file carries a rolling ~3-day
-    window of reads ending on the run date — covered here as the 4 prior
-    days through the end of the run date so cadence drift can't slip a day
-    of reads past the overlap check.
+    named days through the end of the last day; "20260803" or "20260805_0923"
+    (YYYYMMDD run date, with or without a time-of-day suffix) names the run
+    date of Roseville's daily job, whose file carries a rolling ~3-day window
+    of reads ending on the run date — covered here as the 4 prior days
+    through the end of the run date so cadence drift can't slip a day of
+    reads past the overlap check.
     """
     if "_" in dates:
         start_str, end_str = dates.split("_")
-        start = datetime.strptime(start_str, "%Y%m%d")
-        end = datetime.strptime(end_str, "%Y%m%d") + timedelta(days=1)
-    elif len(dates) == 8:
+        if len(end_str) == 8:
+            start = datetime.strptime(start_str, "%Y%m%d")
+            end = datetime.strptime(end_str, "%Y%m%d") + timedelta(days=1)
+            return start, end
+        dates = start_str  # run date plus time of day; only the date matters
+    if len(dates) == 8:
         run_date = datetime.strptime(dates, "%Y%m%d")
-        start = run_date - timedelta(days=4)
-        end = run_date + timedelta(days=1)
+        return run_date - timedelta(days=4), run_date + timedelta(days=1)
+    start = datetime.strptime(dates, "%Y%m")
+    if start.month == 12:
+        end = start.replace(year=start.year + 1, month=1)
     else:
-        start = datetime.strptime(dates, "%Y%m")
-        if start.month == 12:
-            end = start.replace(year=start.year + 1, month=1)
-        else:
-            end = start.replace(month=start.month + 1)
+        end = start.replace(month=start.month + 1)
     return start, end
 
 
