@@ -73,6 +73,11 @@ class CmepMeterAndReads:
     interval: str
     quantity: str
     reads: List[CmepRead]
+    # Derived: timestamp of the row's first reading. time_stamp is the
+    # file-generation stamp shared by every row in a file, so a meter's
+    # multiple same-channel rows (catch-up deliveries for disjoint windows)
+    # need this to stay distinct in the raw table's dedup key.
+    first_read_time: str = ""
 
     @classmethod
     def from_json_file(cls, extract_output: ExtractOutput, filename: str) -> List:
@@ -108,9 +113,10 @@ def parse_cmep_row(row: List[str]) -> CmepMeterAndReads:
     quantity_index = 13
     number_of_reads = int(row[quantity_index]) if row[quantity_index] else 0
     expected_length = quantity_index + 1 + (number_of_reads * 3)
-    if len(row) < expected_length:
+    if len(row) != expected_length:
         raise Exception(
-            f"Row declares {number_of_reads} readings but is truncated: {row}"
+            f"Row declares {number_of_reads} readings but has {len(row)} fields "
+            f"instead of {expected_length}: {row[:14]}..."
         )
     reads = []
     for i in range(number_of_reads):
@@ -142,6 +148,7 @@ def parse_cmep_row(row: List[str]) -> CmepMeterAndReads:
         interval=row[12],
         quantity=row[13],
         reads=reads,
+        first_read_time=reads[0].time if reads else "",
     )
 
 
@@ -179,8 +186,10 @@ def files_for_date_range(
         first_day = extract_range_start.date()
         last_day = (extract_range_end + timedelta(days=1)).date()
         if first_day <= stamp_day <= last_day:
-            result.append(filename)
-    return result
+            result.append((match.group(1), filename))
+    # Oldest first, so when overlapping files re-deliver a (meter, hour) the
+    # newest file's value deterministically wins in the transform.
+    return [filename for _, filename in sorted(result)]
 
 
 class XylemSensusAdapter(BaseAMIAdapter):
@@ -402,25 +411,53 @@ class XylemSensusAdapter(BaseAMIAdapter):
                     f"Unrecognized CMEP units {units} for meter {device_id}"
                 )
 
+            # Occurrence count per naive timestamp within this row, to
+            # disambiguate the repeated wall-clock hour on DST fall-back days.
+            naive_time_occurrences = {}
             for raw_read in raw_meter_with_reads.reads:
-                flowtime = self._localize(
-                    datetime.strptime(raw_read.time, "%Y%m%d%H%M")
-                )
+                # CMEP read codes observed in the live feed: R0 (recorded
+                # read) and N32 (no-read placeholder carrying 0 on the
+                # interval channel or a stale value on the register channel).
+                # Load actual measurements only: R* = recorded, E* = estimated
+                # per CMEP; N* placeholders are skipped so that missing hours
+                # look missing instead of loading as phantom zero consumption.
+                # Any other code is unknown - fail loudly.
+                code = (raw_read.code or "").upper()
+                if code.startswith("N"):
+                    continue
+                if code.startswith("R"):
+                    estimated = 0
+                elif code.startswith("E"):
+                    estimated = 1
+                else:
+                    raise ValueError(
+                        f"Unrecognized CMEP read code {raw_read.code} for meter {device_id}"
+                    )
+
+                naive = datetime.strptime(raw_read.time, "%Y%m%d%H%M")
+                occurrence = naive_time_occurrences.get(naive, 0)
+                naive_time_occurrences[naive] = occurrence + 1
+                flowtime = self._localize(naive, occurrence)
                 key = (device_id, flowtime)
                 # Both channels arrive in cubic feet; CFREG marks the
                 # cumulative register channel, CF the hourly interval channel.
                 value, unit = self.map_reading(float(raw_read.quantity), "CF")
-                estimated = 1 if raw_read.code == "E" else 0
 
                 if key in transformed_reads_by_key:
                     # Join this channel onto the read from the other channel
                     # at the same flowtime (e.g. the register read at 07:00
                     # joins the 07:00 interval read). Same pattern as the
-                    # Metersense adapter.
+                    # Metersense adapter. The estimated flag always reflects
+                    # the interval channel when an interval value exists:
+                    # an incoming interval read carries its flag in, an
+                    # incoming register read never overrides it.
                     old_read = transformed_reads_by_key[key]
                     if units == "CF":
                         read = replace(
-                            old_read, interval_value=value, interval_unit=unit
+                            old_read,
+                            interval_value=value,
+                            interval_unit=unit,
+                            estimated=estimated,
                         )
                     else:
                         read = replace(
@@ -448,17 +485,26 @@ class XylemSensusAdapter(BaseAMIAdapter):
             transformed_reads_by_key.values()
         )
 
-    def _localize(self, naive: datetime) -> datetime:
+    def _localize(self, naive: datetime, occurrence: int = 0) -> datetime:
         """
         Attach the org's timezone to a naive feed timestamp. Returned
         datetimes should never be naive, per BaseAMIAdapter convention.
+
+        On DST fall-back days the feed repeats one wall-clock hour; reads
+        arrive chronologically, so the first occurrence of an ambiguous
+        timestamp is the DST instant and the second is standard time. A
+        nonexistent timestamp (spring-forward gap) raises - the feed should
+        never produce one.
         """
         tz = (
             pytz.timezone(self.org_timezone)
             if isinstance(self.org_timezone, str)
             else self.org_timezone
         )
-        return tz.localize(naive)
+        try:
+            return tz.localize(naive, is_dst=None)
+        except pytz.exceptions.AmbiguousTimeError:
+            return tz.localize(naive, is_dst=(occurrence == 0))
 
     def _load_crosswalk(self) -> Optional[Dict[str, Tuple[str, str]]]:
         """
@@ -468,9 +514,22 @@ class XylemSensusAdapter(BaseAMIAdapter):
         missing, empty, or malformed: proceeding without it would load reads
         with null ids that later duplicate against correctly-linked re-loads.
         """
-        if not self.crosswalk_s3_bucket or not self.crosswalk_s3_key:
+        crosswalk_fields = {
+            "crosswalk_s3_region": self.crosswalk_s3_region,
+            "crosswalk_s3_bucket": self.crosswalk_s3_bucket,
+            "crosswalk_s3_key": self.crosswalk_s3_key,
+        }
+        missing = [name for name, value in crosswalk_fields.items() if not value]
+        if len(missing) == len(crosswalk_fields):
             logger.info(f"No billing crosswalk configured for {self.org_id}")
             return None
+        if missing:
+            # A partially configured crosswalk is an operator error, not an
+            # unconfigured org - treating it as the latter would silently
+            # load the whole fleet with null ids.
+            raise ValueError(
+                f"Crosswalk partially configured for {self.org_id}: missing {missing}"
+            )
 
         client = self._s3_client
         if client is None:
@@ -517,9 +576,13 @@ class XylemSensusBaseTableLoader(RawSnowflakeTableLoader):
         return list(CmepMeterAndReads.__dataclass_fields__.keys())
 
     def unique_by(self) -> List[str]:
-        # units distinguishes a meter's interval (CF) and register (CFREG)
-        # channel rows, which share meter_id and time_stamp within a file.
-        return ["meter_id", "time_stamp", "units"]
+        # time_stamp is the file-generation stamp, identical for every row in
+        # a file - so it distinguishes files, not rows. units distinguishes a
+        # meter's interval (CF) and register (CFREG) channel rows, and
+        # first_read_time distinguishes a meter's multiple same-channel rows
+        # (catch-up deliveries covering disjoint windows; 59 meters had 2-5
+        # CF rows in one observed real file).
+        return ["meter_id", "time_stamp", "units", "first_read_time"]
 
     def prepare_raw_data(self, extract_outputs):
         raw_data = CmepMeterAndReads.from_json_file(
