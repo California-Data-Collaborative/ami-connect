@@ -8,6 +8,7 @@ import yaml
 from amiadapters.adapters.aclara import AclaraAdapter
 from amiadapters.adapters.base import BaseAMIAdapter
 from amiadapters.adapters.beacon import Beacon360Adapter
+from amiadapters.adapters.itron_roseville import ItronRosevilleAdapter
 from amiadapters.adapters.metersense import MetersenseAdapter
 from amiadapters.adapters.sentryx import SentryxAdapter
 from amiadapters.adapters.subeca import SubecaAdapter
@@ -416,6 +417,22 @@ class AMIAdapterConfiguration:
                             source.sftp_known_hosts_str,
                             source.secrets.sftp_user,
                             source.secrets.sftp_password,
+                            source.task_output_controller,
+                            source.metrics,
+                            source.sinks,
+                        )
+                    )
+                case ConfiguredAMISourceTypes.ITRON_ROSEVILLE.value.type:
+                    adapters.append(
+                        ItronRosevilleAdapter(
+                            source.org_id,
+                            source.timezone,
+                            self._pipeline_configuration,
+                            source.s3_bucket,
+                            source.s3_prefix,
+                            source.s3_region,
+                            source.secrets.aws_access_key_id,
+                            source.secrets.aws_secret_access_key,
                             source.task_output_controller,
                             source.metrics,
                             source.sinks,

@@ -13,6 +13,7 @@ from amiadapters.config import (
     find_secrets_yaml,
 )
 from amiadapters.configuration.models import NoopMetricsConfiguration
+from amiadapters.adapters.itron_roseville import ItronRosevilleAdapter
 from amiadapters.adapters.metersense import MetersenseAdapter
 from amiadapters.adapters.sentryx import SentryxAdapter
 from amiadapters.adapters.subeca import SubecaAdapter
@@ -153,6 +154,30 @@ class TestConfig(BaseTestCase):
         self.assertEqual([], config._backfills)
         self.assertIsNone(config.on_failure_sns_notifier())
 
+    def test_can_instantiate_itron_roseville_via_yaml(self):
+        config = AMIAdapterConfiguration.from_yaml(
+            self.get_fixture_path("itron-roseville-config.yaml"),
+            self.get_fixture_path("itron-roseville-secrets.yaml"),
+        )
+        self.assertEqual(1, len(config._sources))
+        source = config._sources[0]
+        self.assertEqual("itron_roseville", source.type)
+        self.assertEqual("my_utility", source.org_id)
+        self.assertEqual("America/Los_Angeles", str(source.timezone))
+        self.assertEqual("outputs", source.task_output_controller.output_folder)
+        self.assertEqual("my-bucket", source.s3_bucket)
+        self.assertEqual("my-prefix/", source.s3_prefix)
+        self.assertEqual("us-east-1", source.s3_region)
+        self.assertEqual("my_key_id", source.secrets.aws_access_key_id)
+        self.assertEqual("my_secret_key", source.secrets.aws_secret_access_key)
+        self.assertEqual(1, len(source.sinks))
+        self.assertEqual([], config._backfills)
+        self.assertIsNone(config.on_failure_sns_notifier())
+
+        adapters = config.adapters()
+        self.assertEqual(1, len(adapters))
+        self.assertEqual("itron-roseville-my_utility", adapters[0].name())
+
     def test_can_instantiate_backfills_from_yaml(self):
         config = AMIAdapterConfiguration.from_yaml(
             self.get_fixture_path("beacon-360-config.yaml"),
@@ -180,9 +205,10 @@ class TestConfig(BaseTestCase):
         )
         adapters = config.adapters()
 
-        self.assertEqual(7, len(adapters))
+        self.assertEqual(8, len(adapters))
         self.assertIn(AclaraAdapter, map(lambda a: type(a), adapters))
         self.assertIn(Beacon360Adapter, map(lambda a: type(a), adapters))
+        self.assertIn(ItronRosevilleAdapter, map(lambda a: type(a), adapters))
         self.assertIn(MetersenseAdapter, map(lambda a: type(a), adapters))
         self.assertIn(SentryxAdapter, map(lambda a: type(a), adapters))
         self.assertIn(SubecaAdapter, map(lambda a: type(a), adapters))

@@ -285,6 +285,14 @@ class XylemSensusSecrets(SourceSecretsBase):
     sftp_password: str
 
 
+@dataclass
+class ItronRosevilleSecrets(SourceSecretsBase):
+    # The source bucket lives in the CaDC AWS account (not the ami-connect
+    # account), so the pipeline authenticates with a read-only IAM user's keys.
+    aws_access_key_id: str
+    aws_secret_access_key: str
+
+
 def get_secrets_class_type(source_type: str):
     return ConfiguredAMISourceTypes.get_secret_type_for_source_type(source_type)
 
@@ -624,6 +632,21 @@ class XylemSensusSourceConfig(SourceConfigBase):
     sftp_known_hosts_str: str
 
 
+@dataclass(frozen=True)
+class ItronRosevilleSourceConfig(SourceConfigBase):
+    s3_bucket: str
+    s3_prefix: str
+    s3_region: str
+
+    def validate(self):
+        super().validate()
+        self._require(
+            "s3_bucket",
+            "s3_prefix",
+            "s3_region",
+        )
+
+
 class SourceSchema:
     """
     Definition of a source, its secrets configuration and which types of storage
@@ -702,6 +725,12 @@ class ConfiguredAMISourceTypes(Enum):
         "xylem_sensus",
         XylemSensusSourceConfig,
         XylemSensusSecrets,
+        [ConfiguredStorageSinkType.SNOWFLAKE],
+    )
+    ITRON_ROSEVILLE = SourceSchema(
+        "itron_roseville",
+        ItronRosevilleSourceConfig,
+        ItronRosevilleSecrets,
         [ConfiguredStorageSinkType.SNOWFLAKE],
     )
 

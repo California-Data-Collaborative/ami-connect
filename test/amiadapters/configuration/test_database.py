@@ -116,6 +116,19 @@ class TestDatabase(BaseTestCase):
                         }
                     ),
                 },
+                {
+                    "id": 8,
+                    "type": "itron_roseville",
+                    "org_id": "my_itron_roseville_utility",
+                    "timezone": "America/Los_Angeles",
+                    "config": json.dumps(
+                        {
+                            "s3_bucket": "my-bucket",
+                            "s3_prefix": "my-prefix/",
+                            "s3_region": "us-east-1",
+                        }
+                    ),
+                },
             ]
         elif table_name == "configuration_sinks":
             return [{"id": "my_snowflake_instance", "type": "snowflake"}]
@@ -128,6 +141,7 @@ class TestDatabase(BaseTestCase):
                 {"source_id": 5, "sink_id": "my_snowflake_instance"},
                 {"source_id": 6, "sink_id": "my_snowflake_instance"},
                 {"source_id": 7, "sink_id": "my_snowflake_instance"},
+                {"source_id": 8, "sink_id": "my_snowflake_instance"},
             ]
         elif table_name == "configuration_sink_checks":
             return [
