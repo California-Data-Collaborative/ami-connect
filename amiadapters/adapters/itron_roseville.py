@@ -30,11 +30,14 @@ logger = logging.getLogger(__name__)
 # transformed reads so impossible values never reach READINGS.
 READ_VALUE_ERROR_THRESHOLD = 4_000_000_000.0
 
-# Filenames look like rosevillecityof_Register_202607.csv (month suffix) or,
-# per our request to Roseville, rosevillecityof_Interval_20260616_20260619.csv
-# (date-range suffix). Matched against the S3 key's basename.
+# Filenames look like rosevillecityof_Register_202607.csv (month suffix),
+# rosevillecityof_Interval_20260616_20260619.csv (date-range suffix), or
+# rosevillecityof_Interval_20260803.csv (run-date suffix — the format
+# Roseville's Informatica jobs settled on in 2026-08 after their S3 V2
+# connector proved unable to emit a date range). Matched against the S3
+# key's basename.
 FILENAME_PATTERN = re.compile(
-    r"(?P<type>register|interval)_(?P<dates>\d{6}|\d{8}_\d{8})\.csv$",
+    r"(?P<type>register|interval)_(?P<dates>\d{8}_\d{8}|\d{8}|\d{6})\.csv$",
     re.IGNORECASE,
 )
 
@@ -565,12 +568,20 @@ def date_range_from_filename(dates: str) -> Tuple[datetime, datetime]:
     """
     Parse a filename date token into an inclusive [start, end] datetime range.
     "202607" (YYYYMM) covers the whole month; "20260616_20260619" covers the
-    named days through the end of the last day.
+    named days through the end of the last day; "20260803" (YYYYMMDD) is the
+    run date of Roseville's daily job, whose file carries a rolling ~3-day
+    window of reads ending on the run date — covered here as the 4 prior
+    days through the end of the run date so cadence drift can't slip a day
+    of reads past the overlap check.
     """
     if "_" in dates:
         start_str, end_str = dates.split("_")
         start = datetime.strptime(start_str, "%Y%m%d")
         end = datetime.strptime(end_str, "%Y%m%d") + timedelta(days=1)
+    elif len(dates) == 8:
+        run_date = datetime.strptime(dates, "%Y%m%d")
+        start = run_date - timedelta(days=4)
+        end = run_date + timedelta(days=1)
     else:
         start = datetime.strptime(dates, "%Y%m")
         if start.month == 12:

@@ -555,7 +555,7 @@ class TestItronRosevilleRawLoaders(BaseTestCase):
 # A generic two-type pattern, structured like a real adapter's (named groups
 # "type" and "dates") but deliberately not any specific utility's.
 PATTERN = re.compile(
-    r"(?P<type>register|interval)_(?P<dates>\d{6}|\d{8}_\d{8})\.csv$",
+    r"(?P<type>register|interval)_(?P<dates>\d{8}_\d{8}|\d{8}|\d{6})\.csv$",
     re.IGNORECASE,
 )
 
@@ -626,6 +626,26 @@ class TestSelectFilesForRange(BaseTestCase):
                 f"unexpected result for {dates} in [{start}, {end}]",
             )
 
+    def test_run_date_suffix(self):
+        cases = [
+            # (range start, range end, expect match) against a file whose
+            # run-date suffix 20260803 covers [07/30, 08/04).
+            (datetime(2026, 8, 2), datetime(2026, 8, 4), True),
+            (datetime(2026, 8, 4), datetime(2026, 8, 6), True),
+            (datetime(2026, 8, 5), datetime(2026, 8, 7), False),
+            (datetime(2026, 7, 26), datetime(2026, 7, 30), True),
+            (datetime(2026, 7, 24), datetime(2026, 7, 28), False),
+        ]
+        # The literal name Roseville's daily job produces in production.
+        files = {"p/rosevillecityof_Interval_20260803.csv": LM}
+        for start, end, expected in cases:
+            result = select_files_for_range(files, PATTERN, start, end)
+            self.assertEqual(
+                expected,
+                len(result.get("interval", [])) == 1,
+                f"unexpected result for [{start}, {end}]",
+            )
+
     def test_routes_types_and_skips_unrecognized(self):
         files = {
             "p/agency_Register_202607.csv": LM,
@@ -693,6 +713,11 @@ class TestDateRangeFromFilename(BaseTestCase):
         start, end = date_range_from_filename("20260616_20260619")
         self.assertEqual(datetime(2026, 6, 16), start)
         self.assertEqual(datetime(2026, 6, 20), end)
+
+    def test_run_date(self):
+        start, end = date_range_from_filename("20260803")
+        self.assertEqual(datetime(2026, 7, 30), start)
+        self.assertEqual(datetime(2026, 8, 4), end)
 
 
 class TestDownloadCsvRows(BaseTestCase):
