@@ -341,6 +341,9 @@ class XylemSensusAdapter(BaseAMIAdapter):
 
         transformed_meters_by_device_id = {}
         transformed_reads_by_key = {}
+        # Last naive timestamp seen per (device_id, units), for DST fall-back
+        # disambiguation - see the comment where it is used below.
+        previous_naive_read = {}
 
         for raw_meter_with_reads in raw_meters_with_reads:
             raw_meter_with_reads: CmepMeterAndReads = raw_meter_with_reads
@@ -411,9 +414,6 @@ class XylemSensusAdapter(BaseAMIAdapter):
                     f"Unrecognized CMEP units {units} for meter {device_id}"
                 )
 
-            # Occurrence count per naive timestamp within this row, to
-            # disambiguate the repeated wall-clock hour on DST fall-back days.
-            naive_time_occurrences = {}
             for raw_read in raw_meter_with_reads.reads:
                 # CMEP data quality flags (spec section MEPMD01): empty = OK
                 # and validated, "R" = raw/unvalidated, "E" = estimated,
@@ -426,6 +426,30 @@ class XylemSensusAdapter(BaseAMIAdapter):
                 # fabricate consumption. Any other code is unknown - fail
                 # loudly rather than guess at its meaning.
                 code = (raw_read.code or "").upper()
+                naive = datetime.strptime(raw_read.time, "%Y%m%d%H%M")
+
+                # On a DST fall-back day one wall-clock hour is sent twice.
+                # Readings run in chronological order, so a timestamp that
+                # repeats the one immediately before it - for this meter and
+                # channel - is the second (standard time) occurrence. This is
+                # tracked per meter and channel rather than per record because
+                # CMEP caps a record at 48 readings, so a catch-up backlog can
+                # split the pair across two records. It is deliberately a
+                # comparison against the previous reading rather than a count
+                # of how often a timestamp has been seen: a later file
+                # re-delivering the same day must localize it the same way,
+                # not treat every reading as another occurrence.
+                repeat_key = (device_id, units)
+                occurrence = 1 if previous_naive_read.get(repeat_key) == naive else 0
+                # Recorded even for skipped readings below, so that a
+                # placeholder in the first ambiguous hour still marks the
+                # surviving second one as standard time.
+                previous_naive_read[repeat_key] = naive
+
+                # N rows are skipped: they carry a filler value (0 on the
+                # interval channel, a stale reading on the register channel)
+                # for hours the network never heard, and loading them would
+                # fabricate consumption.
                 if code.startswith("N"):
                     continue
                 if code == "" or code.startswith(("R", "A")):
@@ -437,10 +461,9 @@ class XylemSensusAdapter(BaseAMIAdapter):
                         f"Unrecognized CMEP read code {raw_read.code} for meter {device_id}"
                     )
 
-                naive = datetime.strptime(raw_read.time, "%Y%m%d%H%M")
-                occurrence = naive_time_occurrences.get(naive, 0)
-                naive_time_occurrences[naive] = occurrence + 1
                 flowtime = self._localize(naive, occurrence)
+                if flowtime is None:
+                    continue
                 key = (device_id, flowtime)
                 # Both channels arrive in cubic feet; CFREG marks the
                 # cumulative register channel, CF the hourly interval channel.
@@ -488,16 +511,19 @@ class XylemSensusAdapter(BaseAMIAdapter):
             transformed_reads_by_key.values()
         )
 
-    def _localize(self, naive: datetime, occurrence: int = 0) -> datetime:
+    def _localize(self, naive: datetime, occurrence: int = 0) -> Optional[datetime]:
         """
         Attach the org's timezone to a naive feed timestamp. Returned
         datetimes should never be naive, per BaseAMIAdapter convention.
 
-        On DST fall-back days the feed repeats one wall-clock hour; reads
-        arrive chronologically, so the first occurrence of an ambiguous
-        timestamp is the DST instant and the second is standard time. A
-        nonexistent timestamp (spring-forward gap) raises - the feed should
-        never produce one.
+        On a DST fall-back day the feed repeats one wall-clock hour: the
+        caller passes occurrence 0 for the first of the pair (daylight time)
+        and 1 for the second (standard time).
+
+        A timestamp in the spring-forward gap names an hour that does not
+        exist in this timezone, so there is no correct instant to load it at.
+        Returns None and logs, dropping that one reading, rather than raising
+        and failing every meter in the run over one unrepresentable hour.
         """
         tz = (
             pytz.timezone(self.org_timezone)
@@ -508,6 +534,12 @@ class XylemSensusAdapter(BaseAMIAdapter):
             return tz.localize(naive, is_dst=None)
         except pytz.exceptions.AmbiguousTimeError:
             return tz.localize(naive, is_dst=(occurrence == 0))
+        except pytz.exceptions.NonExistentTimeError:
+            logger.warning(
+                f"Skipping reading at {naive}: that local time does not exist "
+                f"in {self.org_timezone} (daylight saving time gap)"
+            )
+            return None
 
     def _load_crosswalk(self) -> Optional[Dict[str, Tuple[str, str]]]:
         """

@@ -382,6 +382,87 @@ class TestXylemSensusAdapter(BaseTestCase):
         )
         self.assertEqual(register_values[1] - register_values[0], interval_sum)
 
+        # The two 01:00 readings must land on the two distinct UTC instants,
+        # in order: 08:00 UTC is 01:00 PDT, 09:00 UTC is 01:00 PST. Asserting
+        # the instants (not just that 25 exist) is what catches an inverted
+        # daylight/standard assignment.
+        by_utc = {
+            r.flowtime.astimezone(pytz.UTC): r.interval_value for r in interval_reads
+        }
+        first, second = (
+            datetime(2026, 11, 1, 8, 0, tzinfo=pytz.UTC),
+            datetime(2026, 11, 1, 9, 0, tzinfo=pytz.UTC),
+        )
+        self.assertIn(first, by_utc)
+        self.assertIn(second, by_utc)
+        # values run 1..25 in order, so the earlier instant holds the lower one
+        self.assertLess(by_utc[first], by_utc[second])
+
+    def test_transform_dst_fall_back_when_pair_splits_across_records(self):
+        # CMEP caps a record at 48 readings, so a catch-up backlog can split
+        # the ambiguous pair across two records for the same meter.
+        head = (
+            "MEPMD01,20080501,SENSUS,STAHO:133000,13169370,B74741489,202611010815,"
+            "B74741489,OK,W,CF,1.0,00000100,2,202611010000,R0,11,202611010100,R0,12"
+        )
+        tail = (
+            "MEPMD01,20080501,SENSUS,STAHO:133000,13169370,B74741489,202611010815,"
+            "B74741489,OK,W,CF,1.0,00000100,2,202611010100,R0,13,202611010200,R0,14"
+        )
+        adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
+        _, reads = adapter._transform(
+            "runid", cmep_rows_to_extract_output([head, tail])
+        )
+
+        self.assertEqual(4, len(reads))
+        by_utc = {r.flowtime.astimezone(pytz.UTC): r.interval_value for r in reads}
+        self.assertEqual(12.0, by_utc[datetime(2026, 11, 1, 8, 0, tzinfo=pytz.UTC)])
+        self.assertEqual(13.0, by_utc[datetime(2026, 11, 1, 9, 0, tzinfo=pytz.UTC)])
+
+    def test_transform_dst_fall_back_when_first_hour_is_a_placeholder(self):
+        # A skipped N reading in the first ambiguous hour must still mark the
+        # surviving second one as standard time.
+        row = (
+            "MEPMD01,20080501,SENSUS,STAHO:133000,13169370,B74741489,202611010815,"
+            "B74741489,OK,W,CF,1.0,00000100,3,202611010000,R0,11,202611010100,N32,0,"
+            "202611010100,R0,13"
+        )
+        adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
+        _, reads = adapter._transform("runid", cmep_rows_to_extract_output([row]))
+
+        self.assertEqual(2, len(reads))
+        by_utc = {r.flowtime.astimezone(pytz.UTC): r.interval_value for r in reads}
+        self.assertEqual(13.0, by_utc[datetime(2026, 11, 1, 9, 0, tzinfo=pytz.UTC)])
+        self.assertNotIn(datetime(2026, 11, 1, 8, 0, tzinfo=pytz.UTC), by_utc)
+
+    def test_transform_redelivered_day_localizes_identically(self):
+        # A later file re-delivering the same fall-back day must produce the
+        # same two instants, not shift everything by an occurrence.
+        cf, cfreg = build_dst_fallback_rows()
+        adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
+        _, once = adapter._transform("run1", cmep_rows_to_extract_output([cfreg, cf]))
+        _, twice = adapter._transform(
+            "run2", cmep_rows_to_extract_output([cfreg, cf, cfreg, cf])
+        )
+        self.assertEqual(
+            sorted(r.flowtime for r in once), sorted(r.flowtime for r in twice)
+        )
+
+    def test_transform_skips_nonexistent_spring_forward_hour(self):
+        # 2026-03-08 02:00 does not exist in Pacific time. That one reading is
+        # dropped; the rest of the run must survive.
+        row = (
+            "MEPMD01,20080501,SENSUS,STAHO:133000,13169370,B74741489,202603080815,"
+            "B74741489,OK,W,CF,1.0,00000100,3,202603080100,R0,5,202603080200,R0,6,"
+            "202603080300,R0,7"
+        )
+        adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
+        meters, reads = adapter._transform("runid", cmep_rows_to_extract_output([row]))
+
+        self.assertEqual(1, len(meters))
+        self.assertEqual(2, len(reads))
+        self.assertEqual({5.0, 7.0}, {r.interval_value for r in reads})
+
     def test_transform_multi_meter_reads_stay_with_their_meter(self):
         # All ~15k meters share every hourly flowtime in production; reads
         # must be keyed per meter, not per timestamp.
