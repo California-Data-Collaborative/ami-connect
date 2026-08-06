@@ -343,6 +343,20 @@ class TestXylemSensusAdapter(BaseTestCase):
         self.assertEqual(5.0, boundary.interval_value)
         self.assertEqual(62743.0, boundary.register_value)
 
+    def test_transform_loads_spec_defined_codes(self):
+        # CMEP defines an empty flag as "OK and validated" and "A" as an
+        # adjustment; both are real values, neither is an estimate.
+        adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
+        for code, expected_estimated in [("", 0), ("A", 0), ("E0", 1), ("R0", 0)]:
+            row = BARE_ID_CF_ROW.replace(",R0,3,", f",{code},3,")
+            _, reads = adapter._transform("runid", cmep_rows_to_extract_output([row]))
+            self.assertEqual(2, len(reads), f"code {code!r} should load")
+            first = min(reads, key=lambda r: r.flowtime)
+            self.assertEqual(3.0, first.interval_value, f"code {code!r} value")
+            self.assertEqual(
+                expected_estimated, first.estimated, f"code {code!r} estimated flag"
+            )
+
     def test_transform_raises_on_unknown_read_code(self):
         adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
         output = cmep_rows_to_extract_output(

@@ -415,17 +415,20 @@ class XylemSensusAdapter(BaseAMIAdapter):
             # disambiguate the repeated wall-clock hour on DST fall-back days.
             naive_time_occurrences = {}
             for raw_read in raw_meter_with_reads.reads:
-                # CMEP read codes observed in the live feed: R0 (recorded
-                # read) and N32 (no-read placeholder carrying 0 on the
-                # interval channel or a stale value on the register channel).
-                # Load actual measurements only: R* = recorded, E* = estimated
-                # per CMEP; N* placeholders are skipped so that missing hours
-                # look missing instead of loading as phantom zero consumption.
-                # Any other code is unknown - fail loudly.
+                # CMEP data quality flags (spec section MEPMD01): empty = OK
+                # and validated, "R" = raw/unvalidated, "E" = estimated,
+                # "A" = adjustment, "N" = no value sent for this interval.
+                # Sensus emits the letter with a numeric suffix (this feed
+                # uses R0 and N32), so match on the leading letter.
+                # N rows are skipped: they carry a filler value (0 on the
+                # interval channel, a stale reading on the register channel)
+                # for hours the network never heard, and loading them would
+                # fabricate consumption. Any other code is unknown - fail
+                # loudly rather than guess at its meaning.
                 code = (raw_read.code or "").upper()
                 if code.startswith("N"):
                     continue
-                if code.startswith("R"):
+                if code == "" or code.startswith(("R", "A")):
                     estimated = 0
                 elif code.startswith("E"):
                     estimated = 1
