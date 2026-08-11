@@ -340,6 +340,9 @@ class XylemSensusAdapter(BaseAMIAdapter):
         crosswalk = self._load_crosswalk()
 
         transformed_meters_by_device_id = {}
+        # File-generation stamp of the row each stored meter came from, for
+        # the metadata-change handling below.
+        meter_source_stamps = {}
         transformed_reads_by_key = {}
         # Last naive timestamp seen per (device_id, units), for DST fall-back
         # disambiguation - see the comment where it is used below.
@@ -401,12 +404,34 @@ class XylemSensusAdapter(BaseAMIAdapter):
                 device_id in transformed_meters_by_device_id
                 and meter != transformed_meters_by_device_id[device_id]
             ):
-                # We expect duplicate rows for some devices, but they should be identical besides the readings
-                raise Exception(
-                    f"Found duplicate meters that do not match for device_id {device_id}"
+                # A meter's rows within one file share a generation instant
+                # (time_stamp is the file stamp), so two conflicting views in
+                # the SAME file are a genuine feed inconsistency: fail loudly.
+                # Across files, metadata can legitimately change - e.g. a
+                # radio swap changes receiver_id, and so endpoint_id. Files
+                # iterate oldest-first, so keep the newer file's view - the
+                # same newest-file-wins rule used for re-delivered readings -
+                # and log what changed. Only the final state loads from one
+                # extract; changes between runs are versioned in METERS.
+                previous_meter = transformed_meters_by_device_id[device_id]
+                previous_stamp = meter_source_stamps[device_id]
+                current_stamp = raw_meter_with_reads.time_stamp
+                if current_stamp == previous_stamp:
+                    raise Exception(
+                        f"Found duplicate meters that do not match for device_id {device_id}"
+                    )
+                changed = ", ".join(
+                    f"{field}: {getattr(previous_meter, field)!r} -> {getattr(meter, field)!r}"
+                    for field in meter.__dataclass_fields__
+                    if getattr(meter, field) != getattr(previous_meter, field)
+                )
+                logger.warning(
+                    f"Meter metadata changed for device_id {device_id} between "
+                    f"file stamps {previous_stamp} and {current_stamp}: {changed}"
                 )
 
             transformed_meters_by_device_id[device_id] = meter
+            meter_source_stamps[device_id] = raw_meter_with_reads.time_stamp
 
             units = raw_meter_with_reads.units
             if units not in ("CF", "CFREG"):

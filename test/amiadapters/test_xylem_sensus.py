@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import logging
 from datetime import datetime
 
 import pytz
@@ -484,6 +485,63 @@ class TestXylemSensusAdapter(BaseTestCase):
         bare_meter_boundary = {r.flowtime: r for r in by_device["68567673"]}[boundary]
         self.assertEqual(13.0, big_meter_boundary.interval_value)
         self.assertEqual(4.0, bare_meter_boundary.interval_value)
+
+    def test_transform_keeps_newest_meter_when_metadata_changes_across_files(self):
+        # A radio (MXU) swap changes receiver_id from one day's file to the
+        # next (observed on real meter B90093296, 2026-06-17). Files iterate
+        # oldest-first, so the newer file's view wins - the same rule as
+        # re-delivered readings - with a warning, and the batch must not fail.
+        swapped = REAL_CF_ROW.replace("202606031515", "202606041515").replace(
+            "13169370", "57895784"
+        )
+        adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
+        output = cmep_rows_to_extract_output([REAL_CF_ROW, REAL_CFREG_ROW, swapped])
+        # BaseTestCase silences logging for all tests; the warning is part of
+        # this behavior's contract, so re-enable it here.
+        logging.disable(logging.NOTSET)
+        self.addCleanup(logging.disable, logging.CRITICAL)
+        with self.assertLogs(
+            "amiadapters.adapters.xylem_sensus", level="WARNING"
+        ) as logs:
+            meters, reads = adapter._transform("runid", output)
+
+        self.assertEqual(1, len(meters))
+        self.assertEqual("57895784", meters[0].endpoint_id)
+        # The swapped row re-delivers the same 24 hours; no reads are lost
+        # or duplicated by the meter overwrite.
+        self.assertEqual(25, len(reads))
+        warning = "\n".join(logs.output)
+        self.assertIn("B74741489", warning)
+        self.assertIn("endpoint_id", warning)
+        self.assertIn("'13169370' -> '57895784'", warning)
+
+    def test_transform_raises_on_conflicting_meters_within_one_file(self):
+        # A meter's rows within one file share a generation instant, so two
+        # contradictory views in the SAME file are a genuine feed
+        # inconsistency, not change over time: still fail loudly.
+        conflicting = REAL_CFREG_ROW.replace(",1.0,", ",2.0,")
+        adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
+        output = cmep_rows_to_extract_output([REAL_CF_ROW, conflicting])
+        with self.assertRaisesRegex(Exception, "duplicate meters"):
+            adapter._transform("runid", output)
+
+    def test_transform_same_file_conflict_after_equal_cross_file_row_raises(self):
+        # A newer file delivers an EQUAL row for the meter first, then a
+        # conflicting one: the conflict is between two rows of the newer
+        # file, so it must still raise. Pins the rule that the stored
+        # source stamp refreshes on every stored row, not only on change -
+        # without that refresh this conflict would be misread as cross-file
+        # drift and silently kept.
+        file2_equal_cfreg = REAL_CFREG_ROW.replace("202606031515", "202606041515")
+        file2_conflicting_cf = REAL_CF_ROW.replace(
+            "202606031515", "202606041515"
+        ).replace("13169370", "57895784")
+        adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
+        output = cmep_rows_to_extract_output(
+            [REAL_CF_ROW, file2_equal_cfreg, file2_conflicting_cf]
+        )
+        with self.assertRaisesRegex(Exception, "duplicate meters"):
+            adapter._transform("runid", output)
 
     def test_transform_raises_on_unrecognized_units(self):
         adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
