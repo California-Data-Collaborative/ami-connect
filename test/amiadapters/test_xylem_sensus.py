@@ -18,7 +18,7 @@ from amiadapters.adapters.xylem_sensus import (
 )
 from test.base_test_case import BaseTestCase
 
-# Real rows from the STPUD drop file STAHO_IntervalReport_202606030815.txt.
+# Real rows from the STPUD delivery file STAHO_IntervalReport_202606030815.txt.
 # The CF row carries meter B74741489's 24 hourly interval values for
 # 2026-06-02 08:00 through 2026-06-03 07:00; the CFREG row carries the same
 # meter's cumulative register reads at the two daily 07:00 boundaries. The
@@ -345,10 +345,21 @@ class TestXylemSensusAdapter(BaseTestCase):
         self.assertEqual(62743.0, boundary.register_value)
 
     def test_transform_loads_spec_defined_codes(self):
-        # CMEP defines an empty flag as "OK and validated" and "A" as an
-        # adjustment; both are real values, neither is an estimate.
+        # Base CMEP defines an empty flag as "OK and validated" and "A" as
+        # an adjustment; the RNI Extended CMEP manual (ARM-10006-28) adds
+        # "D" (derived) and "M" (adjusted and derived). All are actual
+        # values, none estimates. R64 carries only an informational bitmask
+        # bit (daylight saving in effect) and must load normally.
         adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
-        for code, expected_estimated in [("", 0), ("A", 0), ("E0", 1), ("R0", 0)]:
+        for code, expected_estimated in [
+            ("", 0),
+            ("A", 0),
+            ("E0", 1),
+            ("R0", 0),
+            ("D0", 0),
+            ("M0", 0),
+            ("R64", 0),
+        ]:
             row = BARE_ID_CF_ROW.replace(",R0,3,", f",{code},3,")
             _, reads = adapter._transform("runid", cmep_rows_to_extract_output([row]))
             self.assertEqual(2, len(reads), f"code {code!r} should load")
@@ -357,6 +368,36 @@ class TestXylemSensusAdapter(BaseTestCase):
             self.assertEqual(
                 expected_estimated, first.estimated, f"code {code!r} estimated flag"
             )
+
+    def test_transform_skips_overflow_and_rollover_flagged_readings(self):
+        # Bitmask bit 9 (overflow) and bit 13 (register rollover) mark
+        # values that are not measurements (observed in the corpus as
+        # registers saturated at 999,99x and a negative interval); those
+        # readings are skipped like N placeholders.
+        tz = pytz.timezone("America/Los_Angeles")
+        adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
+        for code in ("R512", "R8192"):
+            row = BARE_ID_CF_ROW.replace(",R0,3,", f",{code},3,")
+            _, reads = adapter._transform("runid", cmep_rows_to_extract_output([row]))
+            self.assertEqual(1, len(reads), f"code {code} should be skipped")
+            self.assertEqual(tz.localize(datetime(2026, 6, 3, 7, 0)), reads[0].flowtime)
+
+    def test_transform_dst_fall_back_when_first_hour_is_overflow_flagged(self):
+        # A skipped overflow-flagged reading in the first ambiguous hour
+        # must still mark the surviving second one as standard time, same as
+        # the N-placeholder case above.
+        row = (
+            "MEPMD01,20080501,SENSUS,STAHO:133000,13169370,B74741489,202611010815,"
+            "B74741489,OK,W,CF,1.0,00000100,3,202611010000,R0,11,202611010100,R512,0,"
+            "202611010100,R0,13"
+        )
+        adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))
+        _, reads = adapter._transform("runid", cmep_rows_to_extract_output([row]))
+
+        self.assertEqual(2, len(reads))
+        by_utc = {r.flowtime.astimezone(pytz.UTC): r.interval_value for r in reads}
+        self.assertEqual(13.0, by_utc[datetime(2026, 11, 1, 9, 0, tzinfo=pytz.UTC)])
+        self.assertNotIn(datetime(2026, 11, 1, 8, 0, tzinfo=pytz.UTC), by_utc)
 
     def test_transform_raises_on_unknown_read_code(self):
         adapter = self._make_adapter(s3_client=FakeS3Client(CROSSWALK_CSV))

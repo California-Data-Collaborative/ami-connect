@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # CMEP is the California Metering Exchange Protocol, the flat-file format
 # Sensus/Xylem use for scheduled data transfers. These functions and
 # dataclasses are deliberately module-level and adapter-agnostic: if a second
-# consumer appears (another utility's CMEP drop, or an AlarmReport/MLA01
+# consumer appears (another utility's CMEP delivery, or an AlarmReport/MLA01
 # parser — see the RNI Extended CMEP Specs Reference Manual), extract this
 # section into its own module. Kept in-file until that second consumer exists.
 #
@@ -36,6 +36,11 @@ logger = logging.getLogger(__name__)
 ###############################################################################
 
 CMEP_INTERVAL_DATA_RECORD_TYPE = "MEPMD01"
+
+# Data quality bitmask bits (RNI Extended CMEP Specs Reference Manual,
+# ARM-10006-28, Table 22) whose set values are not usable measurements.
+CMEP_QUALITY_BIT_OVERFLOW = 1 << 9
+CMEP_QUALITY_BIT_REGISTER_ROLLOVER = 1 << 13
 
 
 @dataclass
@@ -156,7 +161,7 @@ def parse_cmep_row(row: List[str]) -> CmepMeterAndReads:
 # Adapter
 ###############################################################################
 
-# Sensus drop filenames look like STAHO_IntervalReport_202606030815.txt:
+# Sensus delivery filenames look like STAHO_IntervalReport_202606030815.txt:
 # a utility prefix, the report type, and a YYYYMMDDHHMM generation stamp.
 FILENAME_TIMESTAMP_PATTERN = re.compile(r"_IntervalReport_(\d{12})\.txt$")
 
@@ -194,7 +199,7 @@ def files_for_date_range(
 
 class XylemSensusAdapter(BaseAMIAdapter):
     """
-    AMI Adapter for Xylem/Sensus CMEP files delivered to an SFTP drop.
+    AMI Adapter for Xylem/Sensus CMEP files delivered to an SFTP folder.
 
     Optionally stamps account_id/location_id onto meters and reads from a
     billing crosswalk file in S3 (columns meter_id,account_id,location_id),
@@ -440,16 +445,16 @@ class XylemSensusAdapter(BaseAMIAdapter):
                 )
 
             for raw_read in raw_meter_with_reads.reads:
-                # CMEP data quality flags (spec section MEPMD01): empty = OK
-                # and validated, "R" = raw/unvalidated, "E" = estimated,
-                # "A" = adjustment, "N" = no value sent for this interval.
-                # Sensus emits the letter with a numeric suffix (this feed
-                # uses R0 and N32), so match on the leading letter.
-                # N rows are skipped: they carry a filler value (0 on the
-                # interval channel, a stale reading on the register channel)
-                # for hours the network never heard, and loading them would
-                # fabricate consumption. Any other code is unknown - fail
-                # loudly rather than guess at its meaning.
+                # CMEP data quality codes, per the Sensus RNI Extended CMEP
+                # Specs Reference Manual (ARM-10006-28, "Data quality
+                # flags"): a letter - R raw, N missing/unusable, E estimated,
+                # A adjusted, D derived (RNI-computed intervals), M adjusted
+                # and derived - followed by an integer bitmask of status
+                # flags (Table 22). Classification is by the letter; the
+                # bitmask is consulted only for the two value-corrupting bits
+                # handled below. Any other letter is unknown - fail loudly
+                # rather than guess at its meaning. The full code is
+                # preserved in the raw table either way.
                 code = (raw_read.code or "").upper()
                 naive = datetime.strptime(raw_read.time, "%Y%m%d%H%M")
 
@@ -477,7 +482,22 @@ class XylemSensusAdapter(BaseAMIAdapter):
                 # fabricate consumption.
                 if code.startswith("N"):
                     continue
-                if code == "" or code.startswith(("R", "A")):
+                # Readings whose status bitmask flags overflow or register
+                # rollover are skipped the same way: the flagged values are
+                # not measurements (observed: registers saturated at
+                # 999,99x, a negative interval). Informational bits (e.g.
+                # 64, daylight saving in effect) do not skip.
+                bitmask = int(code[1:]) if code[1:].isdigit() else 0
+                if bitmask & (
+                    CMEP_QUALITY_BIT_OVERFLOW | CMEP_QUALITY_BIT_REGISTER_ROLLOVER
+                ):
+                    logger.warning(
+                        f"Skipping reading with quality code {raw_read.code} for "
+                        f"meter {device_id} at {raw_read.time}: overflow/rollover-"
+                        f"flagged values are not usable measurements"
+                    )
+                    continue
+                if code == "" or code.startswith(("R", "A", "D", "M")):
                     estimated = 0
                 elif code.startswith("E"):
                     estimated = 1
