@@ -25,13 +25,9 @@ logger = logging.getLogger(__name__)
 # CMEP record parsing
 #
 # CMEP is the California Metering Exchange Protocol, the flat-file format
-# Sensus/Xylem use for scheduled data transfers. These functions and
-# dataclasses are deliberately module-level and adapter-agnostic: if a second
-# consumer appears (another utility's CMEP delivery, or an AlarmReport/MLA01
-# parser — see the RNI Extended CMEP Specs Reference Manual), extract this
-# section into its own module. Kept in-file until that second consumer exists.
-#
-# See MEPMD01 section of
+# Sensus/Xylem use for scheduled data transfers. Module-level and
+# adapter-agnostic; extract into its own module when a second consumer
+# appears. Spec (MEPMD01 section):
 # https://www.sce.com/sites/default/files/inline-files/14%2B-%2BCalifornia%2BMetering%2BExchange%2BProtocol%2B-%2BV4.1-022013_AA.pdf
 ###############################################################################
 
@@ -106,7 +102,7 @@ def parse_cmep_row(row: List[str]) -> CmepMeterAndReads:
     then (timestamp, code, value) triplets. Field 13 says how many triplets
     follow.
 
-    Raises on any structural violation — a malformed file should fail the run
+    Raises on any structural violation: a malformed file should fail the run
     loudly rather than load partially.
     """
     if row[0] != CMEP_INTERVAL_DATA_RECORD_TYPE:
@@ -174,7 +170,7 @@ def files_for_date_range(
 
     A file stamped day D carries readings from roughly D-1 08:00 through
     D 07:00 local, plus catch-up rows for meters whose earlier deliveries
-    were missed — so readings for a given day arrive in the file stamped the
+    were missed, so readings for a given day arrive in the file stamped the
     NEXT day, and we select stamps in [start, end + 1 day]. Catch-up copies
     of a day's readings can also appear in files later than that window;
     ongoing daily runs pick those up as they fetch newer files.
@@ -240,9 +236,8 @@ class XylemSensusAdapter(BaseAMIAdapter):
         self.crosswalk_s3_key = crosswalk_s3_key
         self.crosswalk_aws_access_key_id = crosswalk_aws_access_key_id
         self.crosswalk_aws_secret_access_key = crosswalk_aws_secret_access_key
-        # Injectable for tests. In production this stays None until the
-        # crosswalk is fetched — adapters are constructed at Airflow DAG-parse
-        # time, so the constructor must not do network or client setup work.
+        # Injectable for tests; in production the client is built lazily at
+        # crosswalk fetch time.
         self._s3_client = s3_client
         super().__init__(
             org_id,
@@ -379,8 +374,9 @@ class XylemSensusAdapter(BaseAMIAdapter):
 
             # The CMEP feed carries no billing identifiers (receiver_customer_id
             # duplicates the meter id), so account and location come from the
-            # configured crosswalk. Meters absent from the crosswalk load with
-            # null ids and become linkable when the crosswalk refreshes.
+            # configured crosswalk. Meters absent from it load with null ids;
+            # a later crosswalk updates the meter record, not already-loaded
+            # readings.
             if crosswalk is not None and device_id in crosswalk:
                 account_id, location_id = crosswalk[device_id]
             else:
@@ -416,8 +412,7 @@ class XylemSensusAdapter(BaseAMIAdapter):
                 # radio swap changes receiver_id, and so endpoint_id. Files
                 # iterate oldest-first, so keep the newer file's view - the
                 # same newest-file-wins rule used for re-delivered readings -
-                # and log what changed. Only the final state loads from one
-                # extract; changes between runs are versioned in METERS.
+                # and log what changed.
                 previous_meter = transformed_meters_by_device_id[device_id]
                 previous_stamp = meter_source_stamps[device_id]
                 current_stamp = raw_meter_with_reads.time_stamp
@@ -445,16 +440,10 @@ class XylemSensusAdapter(BaseAMIAdapter):
                 )
 
             for raw_read in raw_meter_with_reads.reads:
-                # CMEP data quality codes, per the Sensus RNI Extended CMEP
-                # Specs Reference Manual (ARM-10006-28, "Data quality
-                # flags"): a letter - R raw, N missing/unusable, E estimated,
-                # A adjusted, D derived (RNI-computed intervals), M adjusted
-                # and derived - followed by an integer bitmask of status
-                # flags (Table 22). Classification is by the letter; the
-                # bitmask is consulted only for the two value-corrupting bits
-                # handled below. Any other letter is unknown - fail loudly
-                # rather than guess at its meaning. The full code is
-                # preserved in the raw table either way.
+                # CMEP data quality code, per the Sensus RNI Extended CMEP
+                # Specs Reference Manual (ARM-10006-28): a letter, classified
+                # below, followed by a status bitmask consulted only for the
+                # two value-corrupting bits. Unknown letters fail loudly.
                 code = (raw_read.code or "").upper()
                 naive = datetime.strptime(raw_read.time, "%Y%m%d%H%M")
 
@@ -484,9 +473,8 @@ class XylemSensusAdapter(BaseAMIAdapter):
                     continue
                 # Readings whose status bitmask flags overflow or register
                 # rollover are skipped the same way: the flagged values are
-                # not measurements (observed: registers saturated at
-                # 999,99x, a negative interval). Informational bits (e.g.
-                # 64, daylight saving in effect) do not skip.
+                # not measurements. Informational bits (e.g. 64, daylight
+                # saving in effect) do not skip.
                 bitmask = int(code[1:]) if code[1:].isdigit() else 0
                 if bitmask & (
                     CMEP_QUALITY_BIT_OVERFLOW | CMEP_QUALITY_BIT_REGISTER_ROLLOVER
