@@ -248,6 +248,16 @@ class BaseAMIAdapter(ABC):
                     sink_post_process_start_date = (
                         sink_post_process_end_date - timedelta(days=30)
                     )
+                    # If this run extracted data older than the default window, widen the
+                    # window backwards so that data is post processed too. Scheduled runs
+                    # always extract within the last 30 days, so their window is unchanged.
+                    if extract_range_start is not None:
+                        extract_start = extract_range_start
+                        if extract_start.tzinfo is not None:
+                            extract_start = extract_start.replace(tzinfo=None)
+                        sink_post_process_start_date = min(
+                            sink_post_process_start_date, extract_start
+                        )
                     logger.info(
                         f"Running post processor for sink {sink.__class__.__name__} from {sink_post_process_start_date} to {sink_post_process_end_date}"
                     )

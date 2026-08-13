@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytz
@@ -111,6 +111,66 @@ class TestBaseAdapter(BaseTestCase):
     def test_map_reading__unrecognized_unit(self):
         with self.assertRaises(ValueError, msg="Unrecognized unit of measure: Pounds"):
             self.adapter.map_reading(5.0, "Pounds")
+
+    @patch("amiadapters.adapters.base.datetime")
+    def test_post_process__window_unchanged_for_recent_extract_range(
+        self, mock_datetime
+    ):
+        today = datetime(2026, 8, 13, 12, 0, 0)
+        mock_datetime.today.return_value = today
+        sink = MagicMock(spec=SnowflakeStorageSink)
+        self.adapter.storage_sinks = [sink]
+
+        self.adapter.post_process("run-id", today - timedelta(days=2), today)
+
+        sink.exec_postprocessor.assert_called_once_with(
+            "run-id", today - timedelta(days=30), today
+        )
+
+    @patch("amiadapters.adapters.base.datetime")
+    def test_post_process__window_widens_backwards_for_old_extract_range(
+        self, mock_datetime
+    ):
+        today = datetime(2026, 8, 13, 12, 0, 0)
+        mock_datetime.today.return_value = today
+        sink = MagicMock(spec=SnowflakeStorageSink)
+        self.adapter.storage_sinks = [sink]
+        old_start = datetime(2026, 5, 14)
+
+        self.adapter.post_process("run-id", old_start, datetime(2026, 5, 15))
+
+        sink.exec_postprocessor.assert_called_once_with("run-id", old_start, today)
+
+    @patch("amiadapters.adapters.base.datetime")
+    def test_post_process__window_widens_for_timezone_aware_extract_range(
+        self, mock_datetime
+    ):
+        today = datetime(2026, 8, 13, 12, 0, 0)
+        mock_datetime.today.return_value = today
+        sink = MagicMock(spec=SnowflakeStorageSink)
+        self.adapter.storage_sinks = [sink]
+        aware_start = datetime(2026, 5, 14, tzinfo=timezone.utc)
+
+        self.adapter.post_process("run-id", aware_start, datetime(2026, 5, 15))
+
+        sink.exec_postprocessor.assert_called_once_with(
+            "run-id", datetime(2026, 5, 14), today
+        )
+
+    @patch("amiadapters.adapters.base.datetime")
+    def test_post_process__window_unchanged_when_extract_range_is_none(
+        self, mock_datetime
+    ):
+        today = datetime(2026, 8, 13, 12, 0, 0)
+        mock_datetime.today.return_value = today
+        sink = MagicMock(spec=SnowflakeStorageSink)
+        self.adapter.storage_sinks = [sink]
+
+        self.adapter.post_process("run-id", None, None)
+
+        sink.exec_postprocessor.assert_called_once_with(
+            "run-id", today - timedelta(days=30), today
+        )
 
 
 class TestExtractRangeCalculator(BaseTestCase):
