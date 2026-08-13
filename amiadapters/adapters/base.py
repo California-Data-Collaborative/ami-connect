@@ -238,6 +238,11 @@ class BaseAMIAdapter(ABC):
         Post processing step after loading data into storage sinks. Includes
         sink-specific post processing, e.g. queries that run on the loaded data to refresh downstream tables.
 
+        widen_post_process_window: when True and extract_range_start is older than the
+        default trailing-30-day window, widen the sink post-process window backwards to
+        include it. Callers should set this only for runs whose range was explicitly
+        provided by an operator.
+
         Also can be configured to publish an event to a message queue saying we finished loading data.
         """
         with self._base_adapter_metrics.post_process_timer():

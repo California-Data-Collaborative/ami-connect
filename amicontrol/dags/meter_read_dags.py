@@ -62,9 +62,13 @@ def ami_control_dag_factory(
             run_id = context["dag_run"].run_id
             start, end = _calculate_extract_range(adapter, context, interval, lag)
             # Only a run whose extract range was explicitly provided in the trigger
-            # conf may widen the sink post-process window. Scheduled and backfill
-            # runs have no user-provided range and must keep the default window.
-            widen = bool(context["params"].get("extract_range_start"))
+            # conf may widen the sink post-process window. Backfill runs must never
+            # widen — they ignore conf and compute historical chunk ranges — and
+            # Airflow merges dag_run.conf into params even for DAGs that declare no
+            # params, so the conf check alone would not exclude them.
+            widen = backfill_params is None and bool(
+                context["params"].get("extract_range_start")
+            )
             adapter.post_process(run_id, start, end, widen_post_process_window=widen)
 
         # Set sequence of tasks for this utility
