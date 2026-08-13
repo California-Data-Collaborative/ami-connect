@@ -121,14 +121,35 @@ class TestBaseAdapter(BaseTestCase):
         sink = MagicMock(spec=SnowflakeStorageSink)
         self.adapter.storage_sinks = [sink]
 
-        self.adapter.post_process("run-id", today - timedelta(days=2), today)
+        self.adapter.post_process(
+            "run-id", today - timedelta(days=2), today, widen_post_process_window=True
+        )
 
         sink.exec_postprocessor.assert_called_once_with(
             "run-id", today - timedelta(days=30), today
         )
 
     @patch("amiadapters.adapters.base.datetime")
-    def test_post_process__window_widens_backwards_for_old_extract_range(
+    def test_post_process__old_extract_range_does_not_widen_window_by_default(
+        self, mock_datetime
+    ):
+        # Scheduled and backfill runs pass computed ranges that can reach far into
+        # history (lagged extracts, backfill chunks); they must keep the default window.
+        today = datetime(2026, 8, 13, 12, 0, 0)
+        mock_datetime.today.return_value = today
+        sink = MagicMock(spec=SnowflakeStorageSink)
+        self.adapter.storage_sinks = [sink]
+
+        self.adapter.post_process(
+            "run-id", datetime(2026, 2, 13), datetime(2026, 2, 14)
+        )
+
+        sink.exec_postprocessor.assert_called_once_with(
+            "run-id", today - timedelta(days=30), today
+        )
+
+    @patch("amiadapters.adapters.base.datetime")
+    def test_post_process__window_widens_backwards_for_old_extract_range_when_enabled(
         self, mock_datetime
     ):
         today = datetime(2026, 8, 13, 12, 0, 0)
@@ -137,7 +158,9 @@ class TestBaseAdapter(BaseTestCase):
         self.adapter.storage_sinks = [sink]
         old_start = datetime(2026, 5, 14)
 
-        self.adapter.post_process("run-id", old_start, datetime(2026, 5, 15))
+        self.adapter.post_process(
+            "run-id", old_start, datetime(2026, 5, 15), widen_post_process_window=True
+        )
 
         sink.exec_postprocessor.assert_called_once_with("run-id", old_start, today)
 
@@ -151,7 +174,12 @@ class TestBaseAdapter(BaseTestCase):
         self.adapter.storage_sinks = [sink]
         aware_start = datetime(2026, 5, 14, tzinfo=timezone.utc)
 
-        self.adapter.post_process("run-id", aware_start, datetime(2026, 5, 15))
+        self.adapter.post_process(
+            "run-id",
+            aware_start,
+            datetime(2026, 5, 15),
+            widen_post_process_window=True,
+        )
 
         sink.exec_postprocessor.assert_called_once_with(
             "run-id", datetime(2026, 5, 14), today

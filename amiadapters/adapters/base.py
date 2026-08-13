@@ -232,6 +232,7 @@ class BaseAMIAdapter(ABC):
         run_id: str,
         extract_range_start: datetime,
         extract_range_end: datetime,
+        widen_post_process_window: bool = False,
     ):
         """
         Post processing step after loading data into storage sinks. Includes
@@ -248,10 +249,13 @@ class BaseAMIAdapter(ABC):
                     sink_post_process_start_date = (
                         sink_post_process_end_date - timedelta(days=30)
                     )
-                    # If this run extracted data older than the default window, widen the
-                    # window backwards so that data is post processed too. Scheduled runs
-                    # always extract within the last 30 days, so their window is unchanged.
-                    if extract_range_start is not None:
+                    # A manual run whose trigger conf explicitly provided an extract range
+                    # older than the default window may widen the window backwards so that
+                    # data is post processed too. Scheduled and backfill runs must never
+                    # widen: their computed ranges can reach far into history (lagged
+                    # extracts, backfill chunks), which would repeatedly rewrite
+                    # historical post-processor output on every run.
+                    if widen_post_process_window and extract_range_start is not None:
                         extract_start = extract_range_start
                         if extract_start.tzinfo is not None:
                             extract_start = extract_start.replace(tzinfo=None)

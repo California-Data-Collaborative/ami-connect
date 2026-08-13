@@ -61,7 +61,11 @@ def ami_control_dag_factory(
         def post_process(**context):
             run_id = context["dag_run"].run_id
             start, end = _calculate_extract_range(adapter, context, interval, lag)
-            adapter.post_process(run_id, start, end)
+            # Only a run whose extract range was explicitly provided in the trigger
+            # conf may widen the sink post-process window. Scheduled and backfill
+            # runs have no user-provided range and must keep the default window.
+            widen = bool(context["params"].get("extract_range_start"))
+            adapter.post_process(run_id, start, end, widen_post_process_window=widen)
 
         # Set sequence of tasks for this utility
         (
