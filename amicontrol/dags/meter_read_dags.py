@@ -3,7 +3,25 @@ from datetime import datetime, timedelta
 from airflow.decorators import dag, task
 from airflow.notifications.basenotifier import BaseNotifier
 
-from amiadapters.adapters.base import BaseAMIAdapter
+from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, BaseAMIAdapter
+
+
+def staggered_schedule(schedule_crontab: str, org_index: int) -> str:
+    """
+    Give each org's default-scheduled extract its own start hour.
+
+    Every extract that inherits ScheduledExtract's default crontab used to
+    start at exactly 12:00 UTC, so all orgs' memory-heavy extract and
+    transform tasks ran simultaneously — that wave held the Airflow host at
+    86-87% memory on good days and froze it on 2026-08-17. Orgs are assigned
+    hourly slots 12:00, 13:00, ... by their position in the sorted org list
+    (wrapping back to 12:00 after 23:00), the same generated-crontab approach
+    kraken uses for its per-utility DAGs. Explicitly configured crontabs
+    (e.g. Beacon's lagged extracts) pass through unchanged.
+    """
+    if schedule_crontab != DEFAULT_SCHEDULE_CRONTAB:
+        return schedule_crontab
+    return f"0 {12 + org_index % 12} * * *"
 
 
 def ami_control_dag_factory(

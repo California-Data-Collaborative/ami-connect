@@ -12,7 +12,7 @@ from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.configuration.env import set_global_aws_region
 from amicontrol.dags.administration_dags import log_cleanup_dag_factory
 from amicontrol.dags.data_quality_check_dags import data_quality_check_dag_factory
-from amicontrol.dags.meter_read_dags import ami_control_dag_factory
+from amicontrol.dags.meter_read_dags import ami_control_dag_factory, staggered_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +30,9 @@ utility_adapters = config.adapters()
 backfills = config.backfills()
 on_failure_sns_notifier = config.on_failure_sns_notifier()
 
-# Create DAGs for each configured utility
-for adapter in utility_adapters:
+# Create DAGs for each configured utility. Sorted by org_id so each org's
+# staggered schedule slot is deterministic across DAG refreshes.
+for org_index, adapter in enumerate(sorted(utility_adapters, key=lambda a: a.org_id)):
     # Manual runs
     user_provided_params = {
         "extract_range_start": Param(
@@ -57,7 +58,7 @@ for adapter in utility_adapters:
     for scheduled_extract in adapter.scheduled_extracts():
         ami_control_dag_factory(
             f"{adapter.org_id}-ami-meter-read-dag-{scheduled_extract.name}",
-            schedule=scheduled_extract.schedule_crontab,
+            schedule=staggered_schedule(scheduled_extract.schedule_crontab, org_index),
             interval=scheduled_extract.interval,
             lag=scheduled_extract.lag,
             params={},
