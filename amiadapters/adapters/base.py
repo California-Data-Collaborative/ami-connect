@@ -26,9 +26,8 @@ logger = logging.getLogger(__name__)
 
 # The crontab a ScheduledExtract gets when its adapter doesn't choose one.
 # Exported so the DAG-build layer can recognize default-scheduled extracts
-# and stagger them across orgs (see amicontrol/dags/main.py) — every org
-# starting at the same instant is what memory-exhausted the Airflow host
-# on 2026-08-17.
+# and stagger them across orgs (see amicontrol/dags/main.py) rather than
+# start every org's pipeline at the same instant.
 DEFAULT_SCHEDULE_CRONTAB = "0 12 * * *"
 
 
