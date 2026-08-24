@@ -58,7 +58,9 @@ for org_index, adapter in enumerate(sorted(utility_adapters, key=lambda a: a.org
     for scheduled_extract in adapter.scheduled_extracts():
         ami_control_dag_factory(
             f"{adapter.org_id}-ami-meter-read-dag-{scheduled_extract.name}",
-            schedule=staggered_schedule(scheduled_extract.schedule_crontab, org_index),
+            schedule=staggered_schedule(
+                scheduled_extract.schedule_crontab, org_index, len(utility_adapters)
+            ),
             interval=scheduled_extract.interval,
             lag=scheduled_extract.lag,
             params={},
