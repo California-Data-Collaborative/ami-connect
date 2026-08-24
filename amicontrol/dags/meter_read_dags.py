@@ -3,7 +3,37 @@ from datetime import datetime, timedelta
 from airflow.decorators import dag, task
 from airflow.notifications.basenotifier import BaseNotifier
 
-from amiadapters.adapters.base import BaseAMIAdapter
+from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, BaseAMIAdapter
+
+# Window over which default-scheduled extracts are spread, divided evenly
+# by the number of configured orgs. Sized to give ~30-minute spacing at
+# nine orgs — enough that one org's memory-heavy extract+transform phase
+# finishes before the next org's begins (observed heavy phases run up to
+# ~23 minutes, except two extract-bound orgs whose multi-hour vendor pulls
+# no spacing can serialize). Spacing tightens as orgs are added; widen the
+# window when it gets too tight for the observed heavy-phase durations.
+STAGGER_WINDOW_START_HOUR = 12
+STAGGER_WINDOW_MINUTES = 270
+
+
+def staggered_schedule(schedule_crontab: str, org_index: int, org_count: int) -> str:
+    """
+    Spread default-scheduled extracts evenly across a fixed daily window.
+
+    Extracts that inherit ScheduledExtract's default crontab would otherwise
+    all start at exactly 12:00 UTC, running every org's memory-heavy extract
+    and transform tasks simultaneously and letting them compete for the
+    host's memory. Each org gets an evenly spaced start time in the window
+    by its position in the sorted org list, and the spacing adapts as orgs
+    are added or removed. Explicitly configured crontabs (e.g. Beacon's
+    lagged extracts) pass through unchanged.
+    """
+    if schedule_crontab != DEFAULT_SCHEDULE_CRONTAB:
+        return schedule_crontab
+    offset_minutes = (STAGGER_WINDOW_MINUTES // max(org_count, 1)) * org_index
+    hour = (STAGGER_WINDOW_START_HOUR + offset_minutes // 60) % 24
+    minute = offset_minutes % 60
+    return f"{minute} {hour} * * *"
 
 
 def ami_control_dag_factory(

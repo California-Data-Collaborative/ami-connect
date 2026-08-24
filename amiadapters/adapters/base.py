@@ -24,6 +24,13 @@ from amiadapters.storage.snowflake import SnowflakeStorageSink, RawSnowflakeLoad
 logger = logging.getLogger(__name__)
 
 
+# The crontab a ScheduledExtract gets when its adapter doesn't choose one.
+# Exported so the DAG-build layer can recognize default-scheduled extracts
+# and stagger them across orgs (see amicontrol/dags/main.py) rather than
+# start every org's pipeline at the same instant.
+DEFAULT_SCHEDULE_CRONTAB = "0 12 * * *"
+
+
 @dataclass
 class ScheduledExtract:
     """
@@ -33,7 +40,7 @@ class ScheduledExtract:
     name: str = "standard"
     lag: timedelta = timedelta(days=0)
     interval: timedelta = timedelta(days=2)
-    schedule_crontab: str = "0 12 * * *"
+    schedule_crontab: str = DEFAULT_SCHEDULE_CRONTAB
 
 
 # Most adapters will use this standard daily extract with the default values
