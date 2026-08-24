@@ -5,7 +5,6 @@ from airflow.notifications.basenotifier import BaseNotifier
 
 from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, BaseAMIAdapter
 
-
 # Window over which default-scheduled extracts are spread, divided evenly
 # by the number of configured orgs. Sized to give ~30-minute spacing at
 # nine orgs — enough that one org's memory-heavy extract+transform phase

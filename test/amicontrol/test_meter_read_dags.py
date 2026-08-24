@@ -11,15 +11,27 @@ class TestStaggeredSchedule(BaseTestCase):
 
     def test_nine_orgs_get_thirty_minute_spacing(self):
         # 270-minute window / 9 orgs = 30-minute spacing from 12:00
-        self.assertEqual("0 12 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 0, 9))
-        self.assertEqual("30 12 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 1, 9))
-        self.assertEqual("0 16 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 8, 9))
+        self.assertEqual(
+            "0 12 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 0, 9)
+        )
+        self.assertEqual(
+            "30 12 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 1, 9)
+        )
+        self.assertEqual(
+            "0 16 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 8, 9)
+        )
 
     def test_spacing_tightens_as_orgs_are_added(self):
         # 270 / 10 = 27-minute spacing
-        self.assertEqual("0 12 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 0, 10))
-        self.assertEqual("27 12 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 1, 10))
-        self.assertEqual("3 16 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 9, 10))
+        self.assertEqual(
+            "0 12 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 0, 10)
+        )
+        self.assertEqual(
+            "27 12 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 1, 10)
+        )
+        self.assertEqual(
+            "3 16 * * *", staggered_schedule(DEFAULT_SCHEDULE_CRONTAB, 9, 10)
+        )
 
     def test_all_starts_fall_inside_the_window(self):
         window_end = STAGGER_WINDOW_START_HOUR * 60 + STAGGER_WINDOW_MINUTES
