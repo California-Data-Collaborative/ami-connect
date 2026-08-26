@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytz
@@ -79,6 +79,44 @@ class TestItronRosevilleAdapter(BaseTestCase):
             return {"Body": body}
 
         self.mock_s3_client.get_object.side_effect = get_object
+
+    def test_scheduled_extracts(self):
+        result = self.adapter.scheduled_extracts()
+        self.assertEqual(1, len(result))
+
+        standard_extract = result[0]
+        # name feeds the DAG id and schedule_crontab decides whether the extract
+        # is picked up by the cross-org stagger; changing either renames the DAG
+        # or drops it out of the staggered schedule.
+        self.assertEqual("standard", standard_extract.name)
+        self.assertEqual("0 12 * * *", standard_extract.schedule_crontab)
+        self.assertEqual(timedelta(days=0), standard_extract.lag)
+        # Every row of every matched file is parsed and loaded, so this interval
+        # bounds peak memory, not just coverage.
+        self.assertEqual(timedelta(days=2), standard_extract.interval)
+
+    def test_scheduled_interval_selects_only_the_two_most_recent_daily_files(self):
+        # The production shape: one file per type per day, matched against the
+        # range a scheduled run builds from the configured interval. Each file
+        # already carries a rolling ~3-day window of reads, so the two most
+        # recent cover the range; a wider interval only re-parses rows that
+        # neighbouring files already carry.
+        interval = self.adapter.scheduled_extracts()[0].interval
+        files = {
+            f"p/rosevillecityof_Interval_2026082{day}_1700.csv": LM
+            for day in (1, 2, 3, 4)
+        }
+        end = datetime(2026, 8, 25, 14, 30)
+
+        result = select_files_for_range(files, PATTERN, end - interval, end)
+
+        self.assertEqual(
+            [
+                "p/rosevillecityof_Interval_20260823_1700.csv",
+                "p/rosevillecityof_Interval_20260824_1700.csv",
+            ],
+            sorted(result["interval"]),
+        )
 
     def test_extract(self):
         register_csv = "\n".join(

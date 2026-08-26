@@ -180,11 +180,19 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
 
     def scheduled_extracts(self) -> List[ScheduledExtract]:
         """
-        Roseville pushes a file per day covering a rolling ~3-day window. We use
-        a 4-day extract window so a file pushed late (or a day skipped on our
-        side) is still picked up by filename-date overlap.
+        Roseville pushes one file per day, each covering a rolling ~3-day window
+        of reads, so consecutive files repeat most of each other's rows. A 2-day
+        extract window matches the two most recent files. A file that arrives
+        more than a day late falls outside later runs' overlap checks, but the
+        reads it carried arrive anyway in the files that follow it.
+
+        The extract range selects files, not rows: every row of every matched
+        file is parsed, transformed and loaded regardless of the range. Peak
+        memory therefore scales with the number of files matched, so the window
+        is kept narrow; two days leaves one run of slack for a late push without
+        re-parsing days that earlier runs already loaded.
         """
-        return [ScheduledExtract(interval=timedelta(days=4))]
+        return [ScheduledExtract(interval=timedelta(days=2))]
 
     def _get_s3_client(self):
         if self._s3_client is None:
