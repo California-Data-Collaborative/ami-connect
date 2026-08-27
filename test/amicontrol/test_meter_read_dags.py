@@ -1,7 +1,15 @@
-from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, ScheduledExtract
+from unittest.mock import MagicMock
+
+from amiadapters.adapters.base import (
+    DEFAULT_SCHEDULE_CRONTAB,
+    BaseAMIAdapter,
+    ScheduledExtract,
+)
 from amicontrol.dags.meter_read_dags import (
+    MEMORY_HEAVY_POOL,
     STAGGER_WINDOW_MINUTES,
     STAGGER_WINDOW_START_HOUR,
+    ami_control_dag_factory,
     staggered_schedule,
 )
 from test.base_test_case import BaseTestCase
@@ -55,3 +63,37 @@ class TestStaggeredSchedule(BaseTestCase):
         # constant; if the dataclass default ever diverges, staggering silently
         # stops applying.
         self.assertEqual(DEFAULT_SCHEDULE_CRONTAB, ScheduledExtract().schedule_crontab)
+
+
+class TestMemoryHeavyPool(BaseTestCase):
+    """
+    A pool only bounds tasks that name it, so a task added without `pool=`
+    silently escapes the ceiling. Lock every task in the DAG to the pool.
+    """
+
+    def _build_dag(self):
+        adapter = MagicMock(spec=BaseAMIAdapter)
+        adapter.name.return_value = "test-adapter"
+        return ami_control_dag_factory(
+            dag_id="test-dag",
+            schedule=DEFAULT_SCHEDULE_CRONTAB,
+            params={},
+            adapter=adapter,
+            on_failure_sns_notifier=MagicMock(),
+        )
+
+    def test_every_task_uses_the_memory_heavy_pool(self):
+        dag = self._build_dag()
+        self.assertEqual(5, len(dag.tasks))
+        for task in dag.tasks:
+            self.assertEqual(
+                MEMORY_HEAVY_POOL,
+                task.pool,
+                f"{task.task_id} is not in {MEMORY_HEAVY_POOL}; it would bypass the cap",
+            )
+
+    def test_pool_name_is_stable(self):
+        # The pool is created by hand in the metastore before deploy. Renaming
+        # it here without renaming it there sends every task to a pool that
+        # does not exist.
+        self.assertEqual("ami_meter_read", MEMORY_HEAVY_POOL)

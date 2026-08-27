@@ -15,6 +15,17 @@ from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, BaseAMIAdapter
 STAGGER_WINDOW_START_HOUR = 12
 STAGGER_WINDOW_MINUTES = 270
 
+# Airflow pool that serializes the memory-heavy meter-read tasks. Each of them
+# holds a full batch of readings in memory and the host is 32 GB with no swap,
+# so more than one at a time can exhaust it. Unlike the staggered schedules,
+# which only spread start times, a pool bounds what is in flight — including on
+# scheduler start, when orphan adoption re-executes every previously-running
+# task at once.
+#
+# The pool must already exist in the metastore when this code deploys; Airflow
+# does not create it. See the deploy note in the pull request.
+MEMORY_HEAVY_POOL = "ami_meter_read"
+
 
 def staggered_schedule(schedule_crontab: str, org_index: int, org_count: int) -> str:
     """
@@ -66,28 +77,28 @@ def ami_control_dag_factory(
     )
     def ami_control_dag():
 
-        @task()
+        @task(pool=MEMORY_HEAVY_POOL)
         def extract(adapter: BaseAMIAdapter, **context):
             run_id = context["dag_run"].run_id
             start, end = _calculate_extract_range(adapter, context, interval, lag)
             adapter.extract_and_output(run_id, start, end)
 
-        @task()
+        @task(pool=MEMORY_HEAVY_POOL)
         def transform(adapter: BaseAMIAdapter, **context):
             run_id = context["dag_run"].run_id
             adapter.transform_and_output(run_id)
 
-        @task()
+        @task(pool=MEMORY_HEAVY_POOL)
         def load_raw(adapter: BaseAMIAdapter, **context):
             run_id = context["dag_run"].run_id
             adapter.load_raw(run_id)
 
-        @task()
+        @task(pool=MEMORY_HEAVY_POOL)
         def load_transformed(adapter: BaseAMIAdapter, **context):
             run_id = context["dag_run"].run_id
             adapter.load_transformed(run_id)
 
-        @task()
+        @task(pool=MEMORY_HEAVY_POOL)
         def post_process(**context):
             run_id = context["dag_run"].run_id
             start, end = _calculate_extract_range(adapter, context, interval, lag)
@@ -128,4 +139,7 @@ def ami_control_dag_factory(
                 backfill_params=backfill_params,
             )
 
-    ami_control_dag()
+    # Returned so tests can assert the pool is set on every task. The DAG is
+    # registered by the decorator on call, as before; returning it changes
+    # nothing about discovery.
+    return ami_control_dag()
