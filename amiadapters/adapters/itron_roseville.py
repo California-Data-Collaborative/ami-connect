@@ -180,17 +180,22 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
 
     def scheduled_extracts(self) -> List[ScheduledExtract]:
         """
-        Roseville pushes one file per day, each covering a rolling ~3-day window
-        of reads, so consecutive files repeat most of each other's rows. A 2-day
-        extract window matches the two most recent files. A file that arrives
-        more than a day late falls outside later runs' overlap checks, but the
-        reads it carried arrive anyway in the files that follow it.
+        Roseville pushes one Register and one Interval file per day, each
+        carrying three days of hourly reads, so every read arrives in three
+        consecutive deliveries. A 2-day extract window matches the two most
+        recent deliveries: four files, roughly 8.7M rows.
+
+        A file dated D is matched by the runs on D+1 and D+2, so a late delivery
+        still lands in a run's window, and the deliveries either side of it
+        carry its reads in any case. Reach is about five days: a gap longer than
+        four consecutive missed runs leaves reads that no scheduled run will
+        pick up, and needs a manual range.
 
         The extract range selects files, not rows: every row of every matched
-        file is parsed, transformed and loaded regardless of the range. Peak
-        memory therefore scales with the number of files matched, so the window
-        is kept narrow; two days leaves one run of slack for a late push without
-        re-parsing days that earlier runs already loaded.
+        file is parsed, transformed and loaded regardless of the range, so peak
+        memory scales with the number of files matched. Two days does not
+        eliminate repeated parsing, since consecutive runs share a file-day, but
+        it holds a run to roughly half of what a 4-day window matched.
         """
         return [ScheduledExtract(interval=timedelta(days=2))]
 
