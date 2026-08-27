@@ -15,6 +15,17 @@ services:
       AIRFLOW__WEBSERVER__WARN_DEPLOYMENT_EXPOSURE: False
       AIRFLOW__CORE__LOAD_EXAMPLES: False
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      # Run one task at a time on this host. Meter-read tasks each hold a full
+      # batch of readings in memory, the box is 32 GB with no swap, and Airflow's
+      # default of 32 lets enough of them start together to exhaust it: every
+      # freeze on record except the two single-oversized-task ones came from
+      # several heavy tasks running at once, most often on scheduler start, when
+      # orphan adoption re-executes every task that was running before.
+      # The staggered schedules spread start times but cannot bound what is
+      # already in flight, so they do not cover the restart case.
+      # Cost is wall clock: a full day's tasks measured 8h56m end to end on
+      # 2026-08-27, against a window that opens at 10:00 UTC.
+      AIRFLOW__CORE__PARALLELISM: 1
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/amicontrol/dags
       PYTHONPATH: /opt/airflow:/opt/airflow/amicontrol
     volumes:
