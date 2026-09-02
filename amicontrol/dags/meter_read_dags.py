@@ -15,22 +15,16 @@ from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, BaseAMIAdapter
 STAGGER_WINDOW_START_HOUR = 12
 STAGGER_WINDOW_MINUTES = 270
 
-# Airflow pool that serializes the meter-read tasks. The extract, transform
-# and load tasks each hold a full batch of readings in memory and the host is
-# 32 GB with no swap, so more than one at a time can exhaust it. post_process
-# does its work server-side in Snowflake but is pooled too: that keeps runs of
-# the same org from interleaving DELETE+INSERT on the per-org result tables.
-# Unlike the staggered schedules, which only spread start times, a pool bounds
-# what is in flight.
+# Pool that serializes the meter-read tasks. Extract, transform and load each
+# hold a full batch of readings in memory, so concurrent tasks can exhaust the
+# host (currently 32 GB with no swap); post_process is pooled too so runs of
+# the same org can't interleave writes to the per-org result tables. Staggered
+# schedules only spread start times — the pool bounds what is in flight.
 #
-# Two operational facts, verified against Airflow 2.10.5: the pool must
-# already exist in the metastore when this code deploys (Airflow does not
-# create it, and tasks naming a missing pool are never scheduled — no
-# failure and no alert, only a warning on the DAG's Grid view),
-# and the pool binds a task instance when its row is created — dag runs
-# already open at deploy time keep default_pool for their lifetime, including
-# through orphan adoption on a scheduler restart. Deploy with nothing in
-# flight. See the deploy note in the pull request.
+# The pool must exist in the metastore before this code deploys (Airflow does
+# not create it; tasks naming a missing pool wait indefinitely with no failure
+# or alert), and it binds task instances at creation, so runs already open at
+# deploy time keep default_pool. See the pull request for deploy notes.
 MEMORY_HEAVY_POOL = "ami_meter_read"
 
 
@@ -116,9 +110,8 @@ def ami_control_dag_factory(
             extract.override(task_id=f"extract-{adapter.name()}")(adapter)
             >> transform.override(task_id=f"transform-{adapter.name()}")(adapter)
             >> [
-                # Structured to run in parallel; the 1-slot pool serializes
-                # them in practice (each re-materializes the full payload, so
-                # their peaks add — a larger pool would let them overlap).
+                # Parallel by structure; a 1-slot pool runs them serially
+                # (each materializes the full payload, so their peaks add).
                 load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter),
                 load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(
                     adapter
@@ -148,7 +141,6 @@ def ami_control_dag_factory(
                 backfill_params=backfill_params,
             )
 
-    # Returned so tests can assert the pool is set on every task. The DAG is
-    # registered by the decorator on call, as before; returning it changes
-    # nothing about discovery.
+    # Returned so tests can assert every task carries the pool; the DAG is
+    # still registered on call, as before.
     return ami_control_dag()
