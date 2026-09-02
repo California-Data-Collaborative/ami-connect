@@ -15,15 +15,22 @@ from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, BaseAMIAdapter
 STAGGER_WINDOW_START_HOUR = 12
 STAGGER_WINDOW_MINUTES = 270
 
-# Airflow pool that serializes the memory-heavy meter-read tasks. Each of them
-# holds a full batch of readings in memory and the host is 32 GB with no swap,
-# so more than one at a time can exhaust it. Unlike the staggered schedules,
-# which only spread start times, a pool bounds what is in flight — including on
-# scheduler start, when orphan adoption re-executes every previously-running
-# task at once.
+# Airflow pool that serializes the meter-read tasks. The extract, transform
+# and load tasks each hold a full batch of readings in memory and the host is
+# 32 GB with no swap, so more than one at a time can exhaust it. post_process
+# does its work server-side in Snowflake but is pooled too: that keeps runs of
+# the same org from interleaving DELETE+INSERT on the per-org result tables.
+# Unlike the staggered schedules, which only spread start times, a pool bounds
+# what is in flight.
 #
-# The pool must already exist in the metastore when this code deploys; Airflow
-# does not create it. See the deploy note in the pull request.
+# Two operational facts, verified against Airflow 2.10.5: the pool must
+# already exist in the metastore when this code deploys (Airflow does not
+# create it, and tasks naming a missing pool are never scheduled — no
+# failure and no alert, only a warning on the DAG's Grid view),
+# and the pool binds a task instance when its row is created — dag runs
+# already open at deploy time keep default_pool for their lifetime, including
+# through orphan adoption on a scheduler restart. Deploy with nothing in
+# flight. See the deploy note in the pull request.
 MEMORY_HEAVY_POOL = "ami_meter_read"
 
 
@@ -109,7 +116,9 @@ def ami_control_dag_factory(
             extract.override(task_id=f"extract-{adapter.name()}")(adapter)
             >> transform.override(task_id=f"transform-{adapter.name()}")(adapter)
             >> [
-                # Run load tasks in parallel
+                # Structured to run in parallel; the 1-slot pool serializes
+                # them in practice (each re-materializes the full payload, so
+                # their peaks add — a larger pool would let them overlap).
                 load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter),
                 load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(
                     adapter
