@@ -17,6 +17,14 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/amicontrol/dags
       PYTHONPATH: /opt/airflow:/opt/airflow/amicontrol
+      # Caps how many tasks run at once. Too many concurrent meter-read
+      # tasks can crash small servers (tens of GB of RAM, no swap): each
+      # task holds a full batch of readings in memory, and without swap
+      # the host livelocks rather than OOM-killing.
+      #
+      # Read only when Airflow creates default_pool in an empty metastore;
+      # the live value is in Admin -> Pools.
+      AIRFLOW__CORE__DEFAULT_POOL_TASK_SLOT_COUNT: 3
     volumes:
       - logs:/opt/airflow/logs
       - ./repo/amicontrol/dags:/opt/airflow/amicontrol/dags:ro
@@ -42,6 +50,8 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/amicontrol/dags
       PYTHONPATH: /opt/airflow:/opt/airflow/amicontrol
+      # See the scheduler service.
+      AIRFLOW__CORE__DEFAULT_POOL_TASK_SLOT_COUNT: 3
     volumes:
       - logs:/opt/airflow/logs
       - ./repo/amicontrol/dags:/opt/airflow/amicontrol/dags:ro
