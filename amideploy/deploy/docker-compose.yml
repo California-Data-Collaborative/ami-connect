@@ -17,19 +17,15 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/amicontrol/dags
       PYTHONPATH: /opt/airflow:/opt/airflow/amicontrol
-      # Cap on concurrent tasks for the whole box. The host is 32 GB with no
-      # swap, and every meter-read task (extract / transform / load) holds a
-      # full batch of readings in memory; enough of them running together
-      # exhausted the host on 8/17, 8/18, 8/24 and 8/26 (a restart re-adopting
-      # orphaned tasks, an unpause burst, and the pre-stagger noon wave). With
-      # staggered schedules the normal daily wave never has more than ~3-5
-      # heavy tasks in flight and peaks around 60% of memory, so a 3-slot pool
-      # leaves normal operations alone and only bites when something piles up.
+      # Caps how many tasks run at once. Meter-read tasks hold a full batch
+      # of readings in memory, and a host with no swap livelocks instead of
+      # OOM-killing when too many run together (a scheduler restart
+      # re-adopting tasks, an unpause, a stacked backfill). Staggered
+      # schedules keep the normal daily wave well below this number.
       #
-      # This value only seeds default_pool when the metastore has no row for
-      # it (Airflow's add_default_pool_if_not_exists). The live value is in
-      # the metastore and is changed in Admin -> Pools, effective on the next
-      # scheduler loop, no deploy needed. Keep the two in agreement.
+      # Read only when Airflow creates default_pool in an empty metastore.
+      # The live value is in Admin -> Pools (takes effect on the next
+      # scheduler loop, no deploy); keep the two in agreement.
       AIRFLOW__CORE__DEFAULT_POOL_TASK_SLOT_COUNT: 3
     volumes:
       - logs:/opt/airflow/logs
@@ -56,19 +52,7 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/amicontrol/dags
       PYTHONPATH: /opt/airflow:/opt/airflow/amicontrol
-      # Cap on concurrent tasks for the whole box. The host is 32 GB with no
-      # swap, and every meter-read task (extract / transform / load) holds a
-      # full batch of readings in memory; enough of them running together
-      # exhausted the host on 8/17, 8/18, 8/24 and 8/26 (a restart re-adopting
-      # orphaned tasks, an unpause burst, and the pre-stagger noon wave). With
-      # staggered schedules the normal daily wave never has more than ~3-5
-      # heavy tasks in flight and peaks around 60% of memory, so a 3-slot pool
-      # leaves normal operations alone and only bites when something piles up.
-      #
-      # This value only seeds default_pool when the metastore has no row for
-      # it (Airflow's add_default_pool_if_not_exists). The live value is in
-      # the metastore and is changed in Admin -> Pools, effective on the next
-      # scheduler loop, no deploy needed. Keep the two in agreement.
+      # See the scheduler service.
       AIRFLOW__CORE__DEFAULT_POOL_TASK_SLOT_COUNT: 3
     volumes:
       - logs:/opt/airflow/logs
