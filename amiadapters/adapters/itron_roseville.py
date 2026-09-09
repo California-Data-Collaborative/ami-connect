@@ -582,10 +582,18 @@ def date_range_from_filename(dates: str) -> Tuple[datetime, datetime]:
     "202607" (YYYYMM) covers the whole month; "20260616_20260619" covers the
     named days through the end of the last day; "20260803" or "20260805_0923"
     (YYYYMMDD run date, with or without a time-of-day suffix) names the run
-    date of Roseville's daily job, whose file carries a rolling ~3-day window
-    of reads ending on the run date — covered here as the 4 prior days
-    through the end of the run date so cadence drift can't slip a day of
-    reads past the overlap check.
+    date of Roseville's daily job — covered here as the day before through
+    the end of the run date.
+
+    Scheduled runs end their range at "now", so how far a file's window
+    reaches back never changes what they match: a file dated D is matched by
+    the runs on D+1 and D+2 either way. The reach only decides how many files
+    a manual range pulls in, and that is a memory budget: every matched file
+    is parsed in memory at once, at roughly 3.9M interval rows and 5 GB per
+    file, and a six-file run was OOM-killed at 30 GB on 2026-09-09. One day
+    back means a single-day manual range matches three files (D-1, D, D+1),
+    which fits; fill a longer gap with consecutive single-day ranges — the
+    load is a merge, so the runs add up.
     """
     if "_" in dates:
         start_str, end_str = dates.split("_")
@@ -596,7 +604,7 @@ def date_range_from_filename(dates: str) -> Tuple[datetime, datetime]:
         dates = start_str  # run date plus time of day; only the date matters
     if len(dates) == 8:
         run_date = datetime.strptime(dates, "%Y%m%d")
-        return run_date - timedelta(days=4), run_date + timedelta(days=1)
+        return run_date - timedelta(days=1), run_date + timedelta(days=1)
     start = datetime.strptime(dates, "%Y%m")
     if start.month == 12:
         end = start.replace(year=start.year + 1, month=1)
