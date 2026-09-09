@@ -667,12 +667,12 @@ class TestSelectFilesForRange(BaseTestCase):
     def test_run_date_suffix(self):
         cases = [
             # (range start, range end, expect match) against a file whose
-            # run-date suffix 20260803 covers [07/30, 08/04).
+            # run-date suffix 20260803 covers [08/02, 08/04).
             (datetime(2026, 8, 2), datetime(2026, 8, 4), True),
             (datetime(2026, 8, 4), datetime(2026, 8, 6), True),
             (datetime(2026, 8, 5), datetime(2026, 8, 7), False),
-            (datetime(2026, 7, 26), datetime(2026, 7, 30), True),
-            (datetime(2026, 7, 24), datetime(2026, 7, 28), False),
+            (datetime(2026, 8, 1), datetime(2026, 8, 2), True),
+            (datetime(2026, 7, 30), datetime(2026, 8, 1), False),
         ]
         # The literal name Roseville's daily job produces in production.
         files = {"p/rosevillecityof_Interval_20260803.csv": LM}
@@ -683,6 +683,26 @@ class TestSelectFilesForRange(BaseTestCase):
                 len(result.get("interval", [])) == 1,
                 f"unexpected result for [{start}, {end}]",
             )
+
+    def test_single_day_range_matches_exactly_three_daily_files(self):
+        # The manual-run sizing property: a one-day range pulls the file for
+        # that day and its two neighbours, and nothing more. Six files was
+        # OOM-killed on the 32 GB host on 2026-09-09; three fits.
+        files = {
+            f"p/rosevillecityof_Interval_202608{day:02d}_1700.csv": LM
+            for day in range(15, 27)
+        }
+        result = select_files_for_range(
+            files, PATTERN, datetime(2026, 8, 19), datetime(2026, 8, 19)
+        )
+        self.assertEqual(
+            [
+                "p/rosevillecityof_Interval_20260818_1700.csv",
+                "p/rosevillecityof_Interval_20260819_1700.csv",
+                "p/rosevillecityof_Interval_20260820_1700.csv",
+            ],
+            sorted(result["interval"]),
+        )
 
     def test_run_date_suffix_with_time_of_day(self):
         # Another literal production name; the HHMM part doesn't shift coverage.
@@ -766,17 +786,17 @@ class TestDateRangeFromFilename(BaseTestCase):
 
     def test_run_date(self):
         start, end = date_range_from_filename("20260803")
-        self.assertEqual(datetime(2026, 7, 30), start)
+        self.assertEqual(datetime(2026, 8, 2), start)
         self.assertEqual(datetime(2026, 8, 4), end)
 
     def test_run_date_with_hhmm(self):
         start, end = date_range_from_filename("20260805_0923")
-        self.assertEqual(datetime(2026, 8, 1), start)
+        self.assertEqual(datetime(2026, 8, 4), start)
         self.assertEqual(datetime(2026, 8, 6), end)
 
     def test_run_date_with_hhmmss(self):
         start, end = date_range_from_filename("20260805_092454")
-        self.assertEqual(datetime(2026, 8, 1), start)
+        self.assertEqual(datetime(2026, 8, 4), start)
         self.assertEqual(datetime(2026, 8, 6), end)
 
 
