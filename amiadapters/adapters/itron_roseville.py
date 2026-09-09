@@ -592,8 +592,12 @@ def date_range_from_filename(dates: str) -> Tuple[datetime, datetime]:
     is parsed in memory at once, at roughly 3.9M interval rows and 5 GB per
     file, and a six-file run was OOM-killed at 30 GB on 2026-09-09. One day
     back means a single-day manual range matches three files (D-1, D, D+1),
-    which fits; fill a longer gap with consecutive single-day ranges — the
-    load is a merge, so the runs add up.
+    which fits. Fill a longer gap with consecutive single-day ranges, oldest
+    first, and stop before any file whose reads a newer file has already
+    loaded: the load is a merge that overwrites on match, so an older file
+    loaded after a newer one regresses those rows to the older delivery —
+    something the scheduled runs, which only ever load the newest files,
+    never do.
     """
     if "_" in dates:
         start_str, end_str = dates.split("_")
