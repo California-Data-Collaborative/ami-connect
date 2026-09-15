@@ -2,11 +2,15 @@ import csv
 import io
 import json
 import logging
+import tempfile
 from datetime import datetime
+from unittest import mock
 
+import paramiko
 import pytz
 
 from amiadapters.outputs.base import ExtractOutput
+from amiadapters.configuration.models import SourceSecretsBase, XylemSensusSecrets
 from amiadapters.models import DataclassJSONEncoder
 from amiadapters.adapters.xylem_sensus import (
     CmepMeterAndReads,
@@ -105,7 +109,7 @@ def cmep_rows_to_extract_output(rows: list) -> ExtractOutput:
 
 class TestXylemSensusAdapter(BaseTestCase):
 
-    def _make_adapter(self, s3_client=None, with_crosswalk=True):
+    def _make_adapter(self, s3_client=None, with_crosswalk=True, sftp_private_key=None):
         return XylemSensusAdapter(
             org_id="cadc_south_tahoe",
             org_timezone="America/Los_Angeles",
@@ -116,6 +120,7 @@ class TestXylemSensusAdapter(BaseTestCase):
             sftp_known_hosts_str=None,
             sftp_user="user",
             sftp_password="pass",
+            sftp_private_key=sftp_private_key,
             crosswalk_s3_region="us-west-2" if with_crosswalk else None,
             crosswalk_s3_bucket="a-bucket" if with_crosswalk else None,
             crosswalk_s3_key="a/key.csv" if with_crosswalk else None,
@@ -679,3 +684,97 @@ class TestXylemSensusAdapter(BaseTestCase):
         key_indexes = [loader.columns().index(c) for c in loader.unique_by()]
         keys = [tuple(row[i] for i in key_indexes) for row in rows]
         self.assertEqual(len(keys), len(set(keys)))
+
+    ###########################################################################
+    # SFTP auth selection
+    ###########################################################################
+
+    def _extract_with_mocked_server(self, mock_ssh_client, adapter):
+        """
+        Drive _extract end-to-end against a mocked SSHClient: the server
+        lists one real-named file and get() writes a real CMEP row into it.
+        Returns the ssh mock for connect-call assertions.
+        """
+        adapter.known_hosts = "example.com ssh-rsa abc"
+        adapter.local_download_directory = tempfile.mkdtemp()
+        ssh = mock_ssh_client.return_value.__enter__.return_value
+        sftp = ssh.open_sftp.return_value.__enter__.return_value
+        sftp.listdir.return_value = ["STAHO_IntervalReport_202609140815.txt"]
+
+        def fake_get(remote_path, local_path):
+            with open(local_path, "w") as f:
+                f.write(REAL_CF_ROW + "\n")
+
+        sftp.get.side_effect = fake_get
+        output = adapter._extract(
+            "runid", datetime(2026, 9, 13, 0, 0), datetime(2026, 9, 14, 0, 0)
+        )
+        # The downloaded file made it through parsing, so the mocked SFTP
+        # session is the one the data actually flowed through.
+        rows = CmepMeterAndReads.from_json_file(output, "meters_and_reads.json")
+        self.assertEqual(1, len(rows))
+        return ssh
+
+    @mock.patch("amiadapters.adapters.xylem_sensus.paramiko.SSHClient")
+    def test_extract_connects_with_password(self, mock_ssh_client):
+        adapter = self._make_adapter()
+        ssh = self._extract_with_mocked_server(mock_ssh_client, adapter)
+        ssh.connect.assert_called_once_with(
+            "host",
+            username="user",
+            look_for_keys=False,
+            allow_agent=False,
+            password="pass",
+        )
+
+    @mock.patch("amiadapters.adapters.xylem_sensus.paramiko.SSHClient")
+    def test_extract_connects_with_private_key(self, mock_ssh_client):
+        key = paramiko.RSAKey.generate(2048)
+        pem = io.StringIO()
+        key.write_private_key(pem)
+        adapter = self._make_adapter(sftp_private_key=pem.getvalue())
+        ssh = self._extract_with_mocked_server(mock_ssh_client, adapter)
+        ssh.connect.assert_called_once()
+        kwargs = ssh.connect.call_args.kwargs
+        self.assertEqual("user", kwargs["username"])
+        self.assertFalse(kwargs["look_for_keys"])
+        self.assertFalse(kwargs["allow_agent"])
+        self.assertNotIn("password", kwargs)
+        self.assertEqual(key.get_fingerprint(), kwargs["pkey"].get_fingerprint())
+
+    def test_auth_kwargs_use_password_when_no_private_key(self):
+        adapter = self._make_adapter()
+        self.assertEqual({"password": "pass"}, adapter._sftp_auth_kwargs())
+
+    def test_auth_kwargs_use_private_key_when_present(self):
+        key = paramiko.RSAKey.generate(2048)
+        pem = io.StringIO()
+        key.write_private_key(pem)
+        adapter = self._make_adapter(sftp_private_key=pem.getvalue())
+        kwargs = adapter._sftp_auth_kwargs()
+        # The key wins even though a password is also configured, and the
+        # secret round-trips to the same key material.
+        self.assertEqual(["pkey"], list(kwargs))
+        self.assertEqual(key.get_fingerprint(), kwargs["pkey"].get_fingerprint())
+
+
+class TestXylemSensusSecrets(BaseTestCase):
+
+    def test_password_only_validates(self):
+        XylemSensusSecrets(sftp_user="u", sftp_password="p").validate()
+
+    def test_private_key_only_validates(self):
+        XylemSensusSecrets(sftp_user="u", sftp_private_key="k").validate()
+
+    def test_both_auth_secrets_validate(self):
+        XylemSensusSecrets(
+            sftp_user="u", sftp_password="p", sftp_private_key="k"
+        ).validate()
+
+    def test_neither_auth_secret_raises(self):
+        with self.assertRaises(ValueError):
+            XylemSensusSecrets(sftp_user="u").validate()
+
+    def test_from_dict_runs_validation(self):
+        with self.assertRaises(ValueError):
+            SourceSecretsBase.from_dict("xylem_sensus", {"sftp_user": "u"})

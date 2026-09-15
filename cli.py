@@ -655,7 +655,7 @@ def update_secret(
     new_secrets = parse_kv_pairs(secrets)
 
     # For large secrets like SSH keys, allow user to pass in path to file instead of raw key
-    for key in ["ssh_tunnel_private_key", "ssh_key"]:
+    for key in ["ssh_tunnel_private_key", "ssh_key", "sftp_private_key"]:
         if (
             key in new_secrets
             and "\n" not in new_secrets[key]
