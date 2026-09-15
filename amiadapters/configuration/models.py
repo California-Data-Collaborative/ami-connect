@@ -282,11 +282,20 @@ class XylemDatalakeSecrets(SourceSecretsBase):
 @dataclass
 class XylemSensusSecrets(SourceSecretsBase):
     sftp_user: str
-    sftp_password: str
+    # SFTP auth is either a password or an OpenSSH-formatted RSA private key;
+    # validate() requires at least one; the key wins when both are present.
+    sftp_password: str = None
+    sftp_private_key: str = None
     # Read-only keypair for the cross-account crosswalk fetch; only needed
     # when the source config sets the crosswalk_s3_* fields.
     crosswalk_aws_access_key_id: str = None
     crosswalk_aws_secret_access_key: str = None
+
+    def validate(self) -> None:
+        if not (self.sftp_password or self.sftp_private_key):
+            raise ValueError(
+                "xylem_sensus secrets require sftp_password or sftp_private_key"
+            )
 
 
 @dataclass

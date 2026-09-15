@@ -215,6 +215,7 @@ class XylemSensusAdapter(BaseAMIAdapter):
         sftp_known_hosts_str,
         sftp_user,
         sftp_password,
+        sftp_private_key,
         crosswalk_s3_region,
         crosswalk_s3_bucket,
         crosswalk_s3_key,
@@ -228,6 +229,7 @@ class XylemSensusAdapter(BaseAMIAdapter):
         self.sftp_host = sftp_host
         self.sftp_user = sftp_user
         self.sftp_password = sftp_password
+        self.sftp_private_key = sftp_private_key
         self.sftp_meter_and_reads_folder = sftp_remote_data_directory
         self.local_download_directory = sftp_local_download_directory
         self.known_hosts = sftp_known_hosts_str
@@ -274,9 +276,9 @@ class XylemSensusAdapter(BaseAMIAdapter):
                 ssh.connect(
                     self.sftp_host,
                     username=self.sftp_user,
-                    password=self.sftp_password,
                     look_for_keys=False,
                     allow_agent=False,
+                    **self._sftp_auth_kwargs(),
                 )
                 with ssh.open_sftp() as sftp:
                     downloaded_files = (
@@ -295,6 +297,20 @@ class XylemSensusAdapter(BaseAMIAdapter):
                 os.remove(f)
 
         return ExtractOutput({"meters_and_reads.json": output})
+
+    def _sftp_auth_kwargs(self) -> dict:
+        """
+        Authentication kwargs for the SSH connect call. Sensus/Xylem delivery
+        servers use password auth or RSA-key auth depending on the deployment;
+        the key wins when both secrets are present.
+        """
+        if self.sftp_private_key:
+            return {
+                "pkey": paramiko.RSAKey.from_private_key(
+                    io.StringIO(self.sftp_private_key)
+                )
+            }
+        return {"password": self.sftp_password}
 
     def _download_meter_and_read_files_for_date_range(
         self,

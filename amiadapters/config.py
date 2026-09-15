@@ -417,6 +417,7 @@ class AMIAdapterConfiguration:
                             source.sftp_known_hosts_str,
                             source.secrets.sftp_user,
                             source.secrets.sftp_password,
+                            source.secrets.sftp_private_key,
                             source.crosswalk_s3_region,
                             source.crosswalk_s3_bucket,
                             source.crosswalk_s3_key,

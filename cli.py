@@ -638,6 +638,8 @@ def update_secret(
 ):
     """
     Creates or updates a secret. Matches on secret_type+secret_name for update, else adds new secret.
+
+    An update replaces the stored secret with exactly the fields passed - re-pass any fields you want to keep.
     """
     if not secret_name:
         raise typer.BadParameter("secret_name is required")
@@ -655,7 +657,7 @@ def update_secret(
     new_secrets = parse_kv_pairs(secrets)
 
     # For large secrets like SSH keys, allow user to pass in path to file instead of raw key
-    for key in ["ssh_tunnel_private_key", "ssh_key"]:
+    for key in ["ssh_tunnel_private_key", "ssh_key", "sftp_private_key"]:
         if (
             key in new_secrets
             and "\n" not in new_secrets[key]
