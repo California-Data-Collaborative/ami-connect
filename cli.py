@@ -638,6 +638,8 @@ def update_secret(
 ):
     """
     Creates or updates a secret. Matches on secret_type+secret_name for update, else adds new secret.
+
+    An update replaces the stored secret with exactly the fields passed - re-pass any fields you want to keep.
     """
     if not secret_name:
         raise typer.BadParameter("secret_name is required")

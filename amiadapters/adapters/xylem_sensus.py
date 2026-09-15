@@ -300,11 +300,9 @@ class XylemSensusAdapter(BaseAMIAdapter):
 
     def _sftp_auth_kwargs(self) -> dict:
         """
-        Authentication kwargs for the SSH connect call. The Xylem filestore
-        servers (e.g. ftp.filestore.xylem-vue.com) authenticate with an RSA
-        private key; older Sensus drop servers used passwords. When both
-        secrets are present the key wins, so a key-auth cutover can add the
-        key without first deleting the old password.
+        Authentication kwargs for the SSH connect call. Sensus/Xylem delivery
+        servers use password auth or RSA-key auth depending on the deployment;
+        the key wins when both secrets are present.
         """
         if self.sftp_private_key:
             return {
