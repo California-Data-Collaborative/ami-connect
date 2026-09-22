@@ -97,13 +97,15 @@ def ami_control_dag_factory(
         (
             extract.override(task_id=f"extract-{adapter.name()}")(adapter)
             >> transform.override(task_id=f"transform-{adapter.name()}")(adapter)
-            >> [
-                # Run load tasks in parallel
-                load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter),
-                load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(
-                    adapter
-                ),
-            ]
+            # The two loads run one after the other, not in parallel: each one
+            # re-materializes the run's full payload from the intermediate outputs,
+            # and two copies at once is what exhausted the Airflow host on
+            # 2026-08-25 and 2026-09-22. Transformed data first, so readings and
+            # meters land even if the raw archive load fails.
+            >> load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(
+                adapter
+            )
+            >> load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter)
             >> post_process.override(task_id=f"post-process-{adapter.name()}")()
         )
 
@@ -128,4 +130,4 @@ def ami_control_dag_factory(
                 backfill_params=backfill_params,
             )
 
-    ami_control_dag()
+    return ami_control_dag()

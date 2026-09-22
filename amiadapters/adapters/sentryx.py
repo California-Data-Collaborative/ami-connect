@@ -159,6 +159,7 @@ class SentryxAdapter(BaseAMIAdapter):
         configured_metrics,
         configured_sinks,
         utility_name: str = None,
+        max_extract_days: int = None,
     ):
         self.api_key = api_key
         self.org_id = org_id
@@ -179,6 +180,7 @@ class SentryxAdapter(BaseAMIAdapter):
                     SentryxRawReadsLoader(),
                 ]
             ),
+            max_extract_days=max_extract_days,
         )
 
     def name(self) -> str:

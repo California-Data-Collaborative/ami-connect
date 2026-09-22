@@ -283,6 +283,7 @@ class AMIAdapterConfiguration:
                             source.task_output_controller,
                             source.metrics,
                             source.sinks,
+                            max_extract_days=source.max_extract_days,
                         )
                     )
                 case ConfiguredAMISourceTypes.BEACON_360.value.type:
@@ -297,6 +298,7 @@ class AMIAdapterConfiguration:
                             source.task_output_controller,
                             source.metrics,
                             source.sinks,
+                            max_extract_days=source.max_extract_days,
                         )
                     )
                 case ConfiguredAMISourceTypes.METERSENSE.value.type:
@@ -317,6 +319,7 @@ class AMIAdapterConfiguration:
                             database_user=source.secrets.database_user,
                             database_password=source.secrets.database_password,
                             configured_sinks=source.sinks,
+                            max_extract_days=source.max_extract_days,
                         )
                     )
                 case ConfiguredAMISourceTypes.NEPTUNE.value.type:
@@ -328,20 +331,23 @@ class AMIAdapterConfiguration:
                     sys.path.append(source.external_adapter_location)
                     from neptune import NeptuneAdapter
 
-                    adapters.append(
-                        NeptuneAdapter(
-                            source.org_id,
-                            source.timezone,
-                            self._pipeline_configuration,
-                            source.secrets.site_id,
-                            source.secrets.api_key,
-                            source.secrets.client_id,
-                            source.secrets.client_secret,
-                            source.task_output_controller,
-                            source.metrics,
-                            source.sinks,
-                        )
+                    neptune_adapter = NeptuneAdapter(
+                        source.org_id,
+                        source.timezone,
+                        self._pipeline_configuration,
+                        source.secrets.site_id,
+                        source.secrets.api_key,
+                        source.secrets.client_id,
+                        source.secrets.client_secret,
+                        source.task_output_controller,
+                        source.metrics,
+                        source.sinks,
                     )
+                    # NeptuneAdapter lives in its own package, so its constructor does not
+                    # take the cap; apply the configured value after construction.
+                    if source.max_extract_days is not None:
+                        neptune_adapter.max_extract_days = source.max_extract_days
+                    adapters.append(neptune_adapter)
                 case ConfiguredAMISourceTypes.SENTRYX.value.type:
                     adapters.append(
                         SentryxAdapter(
@@ -352,6 +358,7 @@ class AMIAdapterConfiguration:
                             source.task_output_controller,
                             source.metrics,
                             source.sinks,
+                            max_extract_days=source.max_extract_days,
                             utility_name=source.utility_name,
                         )
                     )
@@ -366,6 +373,7 @@ class AMIAdapterConfiguration:
                             source.task_output_controller,
                             source.metrics,
                             source.sinks,
+                            max_extract_days=source.max_extract_days,
                         )
                     )
                 case ConfiguredAMISourceTypes.XYLEM_DATALAKE.value.type:
@@ -383,6 +391,7 @@ class AMIAdapterConfiguration:
                             password=source.secrets.password,
                             chunk_hours=source.chunk_hours,
                             configured_sinks=source.sinks,
+                            max_extract_days=source.max_extract_days,
                         )
                     )
                 case ConfiguredAMISourceTypes.XYLEM_MOULTON_NIGUEL.value.type:
@@ -403,6 +412,7 @@ class AMIAdapterConfiguration:
                             database_user=source.secrets.database_user,
                             database_password=source.secrets.database_password,
                             configured_sinks=source.sinks,
+                            max_extract_days=source.max_extract_days,
                         )
                     )
                 case ConfiguredAMISourceTypes.XYLEM_SENSUS.value.type:
@@ -426,6 +436,7 @@ class AMIAdapterConfiguration:
                             source.task_output_controller,
                             source.metrics,
                             source.sinks,
+                            max_extract_days=source.max_extract_days,
                         )
                     )
                 case ConfiguredAMISourceTypes.ITRON_ROSEVILLE.value.type:
@@ -442,6 +453,7 @@ class AMIAdapterConfiguration:
                             source.task_output_controller,
                             source.metrics,
                             source.sinks,
+                            max_extract_days=source.max_extract_days,
                         )
                     )
 

@@ -24,6 +24,8 @@ class TestBaseAdapter(BaseTestCase):
             configured_metrics=self.TEST_METRICS_CONFIGURATION,
             configured_sinks=[],
         )
+        self.range_start = datetime(2026, 1, 1, tzinfo=pytz.UTC)
+        self.range_end = datetime(2026, 1, 3, tzinfo=pytz.UTC)
 
     def test_datetime_from_iso_str__None_results_in_None(self):
         result = self.adapter.datetime_from_iso_str(None, self.adapter.org_timezone)
@@ -72,6 +74,40 @@ class TestBaseAdapter(BaseTestCase):
         with self.assertRaises(Exception) as context:
             # End after start
             self.adapter._validate_extract_range(self.range_end, self.range_start)
+
+    def test_validate_extract_range__default_cap_allows_fourteen_days(self):
+        self.adapter._validate_extract_range(
+            self.range_start, self.range_start + timedelta(days=14)
+        )
+
+    def test_validate_extract_range__default_cap_rejects_longer_range(self):
+        with self.assertRaises(Exception) as ctx:
+            self.adapter._validate_extract_range(
+                self.range_start, self.range_start + timedelta(days=14, hours=1)
+            )
+        self.assertIn("more than 14 days", str(ctx.exception))
+        self.assertIn("max_extract_days", str(ctx.exception))
+
+    def test_validate_extract_range__configured_cap_wins_over_default(self):
+        adapter = Beacon360Adapter(
+            api_user="user",
+            api_password="pass",
+            use_cache=False,
+            pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
+            org_id="test-org",
+            org_timezone=pytz.timezone("Europe/Rome"),
+            configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
+            configured_metrics=self.TEST_METRICS_CONFIGURATION,
+            configured_sinks=[],
+            max_extract_days=30,
+        )
+        adapter._validate_extract_range(
+            self.range_start, self.range_start + timedelta(days=30)
+        )
+        with self.assertRaises(Exception):
+            adapter._validate_extract_range(
+                self.range_start, self.range_start + timedelta(days=31)
+            )
 
     def test_map_reading__valid_ccf_conversion(self):
         value, unit = self.adapter.map_reading(12.5, "CCF")

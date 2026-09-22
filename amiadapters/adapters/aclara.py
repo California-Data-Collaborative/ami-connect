@@ -70,6 +70,7 @@ class AclaraAdapter(BaseAMIAdapter):
         configured_task_output_controller,
         configured_metrics,
         configured_sinks,
+        max_extract_days: int = None,
     ):
         self.sftp_host = sftp_host
         self.sftp_user = sftp_user
@@ -85,6 +86,7 @@ class AclaraAdapter(BaseAMIAdapter):
             configured_metrics,
             configured_sinks,
             RawSnowflakeLoader.with_table_loaders([AclaraBaseTableLoader()]),
+            max_extract_days=max_extract_days,
         )
 
     def name(self) -> str:
