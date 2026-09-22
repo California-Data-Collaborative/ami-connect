@@ -75,6 +75,7 @@ class SubecaAdapter(BaseAMIAdapter):
         configured_task_output_controller,
         configured_metrics,
         configured_sinks,
+        max_extract_days: int = None,
     ):
         self.api_url = api_url
         self.api_key = api_key
@@ -86,6 +87,7 @@ class SubecaAdapter(BaseAMIAdapter):
             configured_metrics,
             configured_sinks,
             SUBECA_RAW_SNOWFLAKE_LOADER,
+            max_extract_days=max_extract_days,
         )
 
     def name(self) -> str:

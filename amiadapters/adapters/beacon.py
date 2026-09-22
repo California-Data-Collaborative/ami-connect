@@ -107,6 +107,7 @@ class Beacon360Adapter(BaseAMIAdapter):
         configured_metrics: MetricsConfigurationBase,
         configured_sinks,
         cache_output_folder: str = "./output",
+        max_extract_days: int = None,
     ):
         self.user = api_user
         self.password = api_password
@@ -120,6 +121,7 @@ class Beacon360Adapter(BaseAMIAdapter):
             configured_metrics,
             configured_sinks,
             BEACON_RAW_SNOWFLAKE_LOADER,
+            max_extract_days=max_extract_days,
         )
 
     def name(self) -> str:

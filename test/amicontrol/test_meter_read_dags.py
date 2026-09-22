@@ -1,5 +1,9 @@
+import unittest
+from unittest.mock import MagicMock
+
 from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, ScheduledExtract
 from amicontrol.dags.meter_read_dags import (
+    ami_control_dag_factory,
     STAGGER_WINDOW_MINUTES,
     STAGGER_WINDOW_START_HOUR,
     staggered_schedule,
@@ -55,3 +59,28 @@ class TestStaggeredSchedule(BaseTestCase):
         # constant; if the dataclass default ever diverges, staggering silently
         # stops applying.
         self.assertEqual(DEFAULT_SCHEDULE_CRONTAB, ScheduledExtract().schedule_crontab)
+
+
+class TestMeterReadDagWiring(unittest.TestCase):
+    def test_loads_run_in_series_transformed_before_raw(self):
+        adapter = MagicMock()
+        adapter.name.return_value = "vendor-my_org"
+        dag = ami_control_dag_factory(
+            dag_id="my_org-ami-meter-read-dag-test",
+            schedule=None,
+            params={},
+            adapter=adapter,
+            on_failure_sns_notifier=None,
+        )
+        upstream = {t.task_id: set(t.upstream_task_ids) for t in dag.tasks}
+        self.assertEqual(set(), upstream["extract-vendor-my_org"])
+        self.assertEqual({"extract-vendor-my_org"}, upstream["transform-vendor-my_org"])
+        self.assertEqual(
+            {"transform-vendor-my_org"}, upstream["load-transformed-vendor-my_org"]
+        )
+        self.assertEqual(
+            {"load-transformed-vendor-my_org"}, upstream["load-raw-vendor-my_org"]
+        )
+        self.assertEqual(
+            {"load-raw-vendor-my_org"}, upstream["post-process-vendor-my_org"]
+        )

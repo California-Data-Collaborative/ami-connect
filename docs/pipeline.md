@@ -51,6 +51,8 @@ Users control the pipeline via the CLI, which alters tables in the Snowflake dat
 
 Each AMI source defined in configuration becomes its own set of pipeline DAGs in Airflow.
 
+Every source accepts an optional `max_extract_days` config value (`cli.py config update-source <org_id> --config max_extract_days=<n>`). It caps the extract window a single run may request, on every path that produces one: scheduled runs, manual runs with a range from the Airflow UI, and backfill chunks. The default is 14 days (`BaseAMIAdapter.DEFAULT_MAX_EXTRACT_DAYS`). A run holds its whole payload in memory through transform and load, and the Airflow host has no swap, so a range that does not fit livelocks the host instead of failing the task. Raise the cap for a source only once a run of that size has completed on the host; otherwise split the range into chronological runs of at most the cap.
+
 ---
 
 ## Airflow Integration

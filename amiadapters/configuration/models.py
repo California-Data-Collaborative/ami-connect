@@ -1,5 +1,5 @@
 from abc import ABC
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from enum import Enum
 import json
@@ -460,6 +460,13 @@ class SourceConfigBase:
     sinks: List[ConfiguredStorageSink]
     task_output_controller: IntermediateOutputControllerConfiguration
     metrics: MetricsConfigurationBase
+    # Longest extract window, in days, that one pipeline run may request for this
+    # source. Bounds every path that produces a range (scheduled, manual UI conf,
+    # backfill chunks). Guards the Airflow host, which livelocks rather than
+    # OOM-kills when a single run's payload exceeds memory. None means the adapter
+    # default, BaseAMIAdapter.DEFAULT_MAX_EXTRACT_DAYS. Set per source with
+    # `cli.py config update-source <org_id> --config max_extract_days=<n>`.
+    max_extract_days: Optional[int] = field(default=None, kw_only=True)
 
     def validate(self) -> None:
         """
@@ -475,6 +482,11 @@ class SourceConfigBase:
 
         if not ConfiguredAMISourceTypes.is_valid_type(self.type):
             raise ValueError(f"Unrecognized AMI source type: {self.type}")
+
+        if self.max_extract_days is not None and self.max_extract_days < 1:
+            raise ValueError(
+                f"{self.org_id} ({self.type}) max_extract_days must be a positive integer, got {self.max_extract_days}"
+            )
 
         if not ConfiguredAMISourceTypes.are_valid_storage_sinks_for_type(
             self.type, self.sinks
@@ -518,6 +530,8 @@ class SourceConfigBase:
             kwargs["database_id"] = int(kwargs["database_id"])
         if "chunk_hours" in kwargs:
             kwargs["chunk_hours"] = int(kwargs["chunk_hours"])
+        if kwargs.get("max_extract_days") is not None:
+            kwargs["max_extract_days"] = int(kwargs["max_extract_days"])
         # ---- end transforms ----
 
         config = config_cls(**kwargs)

@@ -288,6 +288,7 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
         password,
         chunk_hours=12,
         configured_sinks=None,
+        max_extract_days: int = None,
     ):
         self.agency_code = agency_code
         self.database_id = database_id
@@ -306,6 +307,7 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
             configured_metrics,
             configured_sinks,
             XYLEM_DATALAKE_RAW_SNOWFLAKE_LOADER,
+            max_extract_days=max_extract_days,
         )
 
     def name(self) -> str:

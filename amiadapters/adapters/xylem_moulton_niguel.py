@@ -141,6 +141,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
         database_user,
         database_password,
         configured_sinks=None,
+        max_extract_days: int = None,
     ):
         """
         ssh_tunnel_server_host = hostname or IP of intermediate server
@@ -170,6 +171,7 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
             configured_metrics,
             configured_sinks,
             XYLEM_MOULTON_NIGUEL_RAW_SNOWFLAKE_LOADER,
+            max_extract_days=max_extract_days,
         )
 
     def name(self) -> str:

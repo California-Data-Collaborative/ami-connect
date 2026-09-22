@@ -154,6 +154,22 @@ class TestConfig(BaseTestCase):
         self.assertEqual([], config._backfills)
         self.assertIsNone(config.on_failure_sns_notifier())
 
+    def test_max_extract_days__defaults_when_not_configured(self):
+        config = AMIAdapterConfiguration.from_yaml(
+            self.get_fixture_path("itron-roseville-config.yaml"),
+            self.get_fixture_path("itron-roseville-secrets.yaml"),
+        )
+        self.assertIsNone(config._sources[0].max_extract_days)
+        self.assertEqual(14, config.adapters()[0].max_extract_days)
+
+    def test_max_extract_days__configured_value_is_coerced_and_passed_to_adapter(self):
+        config = AMIAdapterConfiguration.from_yaml(
+            self.get_fixture_path("itron-roseville-config-capped.yaml"),
+            self.get_fixture_path("itron-roseville-secrets.yaml"),
+        )
+        self.assertEqual(21, config._sources[0].max_extract_days)
+        self.assertEqual(21, config.adapters()[0].max_extract_days)
+
     def test_can_instantiate_itron_roseville_via_yaml(self):
         config = AMIAdapterConfiguration.from_yaml(
             self.get_fixture_path("itron-roseville-config.yaml"),

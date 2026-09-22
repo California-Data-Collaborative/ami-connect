@@ -30,6 +30,14 @@ logger = logging.getLogger(__name__)
 # start every org's pipeline at the same instant.
 DEFAULT_SCHEDULE_CRONTAB = "0 12 * * *"
 
+# Longest extract window one run may request unless the source config says otherwise
+# (SourceConfigBase.max_extract_days). Every scheduled extract in the codebase is six
+# days or less, so this only bites manual runs and oversized backfill chunks. It exists
+# because a single run holds its whole payload in memory during transform and load, and
+# the Airflow host has no swap: a payload that does not fit livelocks the box instead of
+# failing the task (2026-08-25 and 2026-09-22 incidents).
+DEFAULT_MAX_EXTRACT_DAYS = 14
+
 
 @dataclass
 class ScheduledExtract:
@@ -63,6 +71,7 @@ class BaseAMIAdapter(ABC):
         configured_metrics: MetricsConfigurationBase,
         configured_sinks: List[ConfiguredStorageSink] = None,
         raw_snowflake_loader: RawSnowflakeLoader = None,
+        max_extract_days: int = None,
     ):
         """
         The code takes a shortcut: raw_snowflake_loader is used for any Snowflake sink. We may
@@ -71,6 +80,11 @@ class BaseAMIAdapter(ABC):
         self.org_id = org_id
         self.org_timezone = org_timezone
         self.pipeline_configuration = pipeline_configuration
+        self.max_extract_days = (
+            max_extract_days
+            if max_extract_days is not None
+            else DEFAULT_MAX_EXTRACT_DAYS
+        )
         self.output_controller = self._create_task_output_controller(
             configured_task_output_controller, org_id
         )
@@ -434,6 +448,16 @@ class BaseAMIAdapter(ABC):
         if extract_range_end < extract_range_start:
             raise Exception(
                 f"Range start must be before end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}"
+            )
+        if extract_range_end - extract_range_start > timedelta(
+            days=self.max_extract_days
+        ):
+            raise Exception(
+                f"Extract range {extract_range_start} -> {extract_range_end} spans more than "
+                f"{self.max_extract_days} days, the most one run of {self.org_id} may load at once. "
+                f"Split the range into runs of at most {self.max_extract_days} days (chronological order), "
+                f"or raise the cap with `cli.py config update-source {self.org_id} --config max_extract_days=<n>` "
+                f"if this source has proven it fits in memory."
             )
 
     @staticmethod
