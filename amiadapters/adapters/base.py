@@ -239,10 +239,16 @@ class BaseAMIAdapter(ABC):
         run_id: str,
         extract_range_start: datetime,
         extract_range_end: datetime,
+        widen_post_process_window: bool = False,
     ):
         """
         Post processing step after loading data into storage sinks. Includes
         sink-specific post processing, e.g. queries that run on the loaded data to refresh downstream tables.
+
+        widen_post_process_window: when True and extract_range_start is older than the
+        default trailing-30-day window, widen the sink post-process window backwards to
+        include it. Callers should set this only for runs whose range was explicitly
+        provided by an operator.
 
         Also can be configured to publish an event to a message queue saying we finished loading data.
         """
@@ -255,6 +261,19 @@ class BaseAMIAdapter(ABC):
                     sink_post_process_start_date = (
                         sink_post_process_end_date - timedelta(days=30)
                     )
+                    # A manual run whose trigger conf explicitly provided an extract range
+                    # older than the default window may widen the window backwards so that
+                    # data is post processed too. Scheduled and backfill runs must never
+                    # widen: their computed ranges can reach far into history (lagged
+                    # extracts, backfill chunks), which would repeatedly rewrite
+                    # historical post-processor output on every run.
+                    if widen_post_process_window and extract_range_start is not None:
+                        extract_start = extract_range_start
+                        if extract_start.tzinfo is not None:
+                            extract_start = extract_start.replace(tzinfo=None)
+                        sink_post_process_start_date = min(
+                            sink_post_process_start_date, extract_start
+                        )
                     logger.info(
                         f"Running post processor for sink {sink.__class__.__name__} from {sink_post_process_start_date} to {sink_post_process_end_date}"
                     )
