@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from typing import List, Set
 
@@ -14,6 +14,11 @@ from amiadapters.outputs.base import ExtractOutput
 from amiadapters.storage.base import BaseAMIStorageSink, BaseAMIDataQualityCheck
 
 logger = logging.getLogger(__name__)
+
+# How far back leak detection looks for the start of a leak that is still active
+LEAK_MAX_LOOKBACK_DAYS = 365
+# Size of each window when recomputing leak history
+LEAK_BACKFILL_WINDOW_DAYS = 30
 
 
 class RawSnowflakeTableLoader(ABC):
@@ -530,213 +535,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             """
             conn.cursor().execute(ami_meters_score_agg_sql)
 
-            # Ensure leaks table exists (no-op after first run)
-            conn.cursor().execute(f"""
-                create table if not exists leaks_{self.org_id} (
-                    org_id text,
-                    device_id text,
-                    flowtime_ts timestamp_tz,
-                    flowinterval_sec number(18,0),
-                    raw_register_value_cf float,
-                    raw_interval_value_cf float,
-                    clean_interval_value_cf float,
-                    is_estimated boolean,
-                    is_leak boolean,
-                    minflow_prev24h_cf float,
-                    minflow_lead24h_cf float,
-                    leak_calculated_cf float,
-                    leak_average_cf float,
-                    leak_stdev_cf float,
-                    leak_clean_cf float,
-                    event_seq number(18,0),
-                    event_start_ts timestamp_tz,
-                    event_end_ts timestamp_tz,
-                    event_hrs number(10,0),
-                    event_id text,
-                    final_leak_cf float,
-                    final_usage_cf float,
-                    final_est_usage_cf float
-                )
-            """)
-
-            # Delete existing rows in the window, then insert fresh results
-            conn.cursor().execute(f"""
-                delete from leaks_{self.org_id}
-                where flowtime_ts::date >= '{min_date.isoformat()}'
-                and flowtime_ts::date <= '{max_date.isoformat()}'
-            """)
-
-            ami_leaks_sql = f"""
-                insert into leaks_{self.org_id}
-                with data0_readings as
-                (
-                    select org_id
-                        ,device_id
-                        ,flowtime
-                        ,datediff(second, lag(flowtime) over(partition by org_id, device_id order by flowtime), flowtime) as flowinterval
-                        ,interval_value
-                        ,register_value
-                        ,coalesce(estimated::boolean, false) as estimated
-                        ,case when not coalesce(estimated::boolean, false) and flowinterval = 3600 and interval_value > 0 then interval_value end as interval_value_clean
-                    from ami_connect.readings
-                    where 1=1
-                    and org_id = '{self.org_id}'
-                    and flowtime::date >= '{min_date.isoformat()}'
-                    and flowtime::date <= '{max_date.isoformat()}'
-                )
-                ,leaks_groups0 as
-                (
-                    select
-                        org_id
-                        ,device_id
-                        ,min(flowtime) as stime0
-                        ,max(flowtime) as etime0
-                        ,datediff(hour, stime0, etime0) + 1 as duration0
-                    from
-                    (
-                        select
-                            org_id
-                            ,device_id
-                            ,flowtime
-                            ,date_part(epoch_second, flowtime) / 3600 - row_number() over (partition by org_id, device_id order by flowtime) as grp
-                        from data0_readings
-                        where interval_value_clean is not null
-                    )
-                    group by org_id, device_id, grp
-                )
-                ,leaks_groups1 as
-                (
-                    select
-                        a.org_id
-                        ,a.device_id
-                        ,a.stime0 as stime1
-                        ,ifnull(b.etime0, a.etime0) as etime1
-                        ,datediff(hour, stime1, etime1) + 1 as duration1
-                    from leaks_groups0 a
-                    left join leaks_groups0 b on a.org_id = b.org_id and a.device_id = b.device_id and datediff(hour, a.etime0, b.stime0) = 2
-                    where duration1 >= 24
-                )
-                ,leaks_groups2 as
-                (
-                    with cte as
-                    (
-                        select *
-                            ,row_number() over(partition by org_id, device_id order by stime1, etime1) as rn
-                        from leaks_groups1
-                    )
-                    ,rec as
-                    (
-                        select *
-                            ,rn as rn2
-                        from cte
-                        where rn = 1
-                        union all
-                        select a.*
-                            ,case when b.etime1 between a.stime1 and a.etime1 then b.rn2 else a.rn end
-                        from cte a
-                        join rec b on a.org_id = b.org_id and a.device_id = b.device_id and a.rn = b.rn + 1
-                    )
-                    select
-                        org_id
-                        ,device_id
-                        ,min(stime1) as stime2
-                        ,max(etime1) as etime2
-                        ,datediff(hour, stime2, etime2) + 1 as duration2
-                    from rec
-                    group by org_id, device_id, rn2
-                )
-                ,leaks as
-                (
-                    with cte as
-                    (
-                        select a.*
-                            ,(b.device_id is not null) as is_leak
-                            ,conditional_change_event(is_leak) over(partition by a.org_id, a.device_id order by flowtime) as grp
-                        from data0_readings a
-                        left join leaks_groups2 b on a.org_id = b.org_id and a.device_id = b.device_id and flowtime between stime2 and etime2
-                        where concat_ws('-', a.org_id, a.device_id) in (select distinct concat_ws('-', org_id, device_id) from leaks_groups2) --and a.device_id = '38919022'
-                    )
-                    ,cte2 as
-                    (
-                        select *
-                            ,min(flowtime) over(partition by org_id, device_id, grp) as stime
-                            ,max(flowtime) over(partition by org_id, device_id, grp) as etime
-                            ,datediff(hour, stime, etime) + 1 as duration
-                            ,min(case when is_leak then interval_value_clean end) over (partition by org_id, device_id, grp order by flowtime rows between 23 preceding and current row) as min_leak_bck
-                            ,min(case when is_leak then interval_value_clean end) over (partition by org_id, device_id, grp order by flowtime rows between current row and 23 following) as min_leak_fwd
-                            ,greatest(min_leak_bck, min_leak_fwd) as leak_calc
-                        from cte
-                    )
-                    select *
-                        ,avg(leak_calc) over(partition by org_id, device_id, stime, etime) as leak_avg
-                        ,stddev(leak_calc) over(partition by org_id, device_id, stime, etime) as leak_stdev
-                        ,case when leak_calc > leak_avg + leak_stdev then leak_avg else leak_calc end as leak_clean
-                        ,to_varchar(stime, 'yyyy/mm/dd@hh - ') || duration || iff(is_leak, 'h', 'h*') as event_id
-                        ,case when estimated then 0 when leak_clean <= interval_value then leak_clean else 0 end as leak
-                        ,case when estimated then 0 when leak_clean <= interval_value then interval_value - leak_clean else ifnull(interval_value, 0) end as usage
-                        ,case when estimated then interval_value else 0 end as est_usage
-                    from cte2
-                )
-                select
-                    org_id
-                    ,device_id
-                    ,flowtime                as flowtime_ts
-                    ,flowinterval            as flowinterval_sec
-                    ,register_value          as raw_register_value_cf
-                    ,interval_value          as raw_interval_value_cf
-                    ,interval_value_clean    as clean_interval_value_cf
-                    ,estimated               as is_estimated
-                    ,is_leak                 as is_leak
-                    ,min_leak_bck            as minflow_prev24h_cf
-                    ,min_leak_fwd            as minflow_lead24h_cf
-                    ,leak_calc               as leak_calculated_cf
-                    ,leak_avg                as leak_average_cf
-                    ,leak_stdev              as leak_stdev_cf
-                    ,leak_clean              as leak_clean_cf
-                    ,grp                     as event_seq
-                    ,stime                   as event_start_ts
-                    ,etime                   as event_end_ts
-                    ,duration                as event_hrs
-                    ,event_id                as event_id
-                    ,leak                    as final_leak_cf
-                    ,usage                   as final_usage_cf
-                    ,est_usage               as final_est_usage_cf
-                from leaks
-            """
-            conn.cursor().execute(ami_leaks_sql)
-
-            ami_leaks_agg_sql = f"""
-                create or replace table leaks_{self.org_id}_agg
-                as
-                select
-                    org_id
-                    , device_id
-                    , event_id
-                    , event_start_ts
-                    , event_end_ts
-                    , event_hrs
-                    , is_leak
-                    , array_agg(flowtime_ts) as flowtime_ts
-                    , array_agg(flowinterval_sec) as flowinterval_sec
-                    , array_agg(ifnull(is_estimated, 'NaN')) as is_estimated
-                    , array_agg(ifnull(raw_interval_value_cf, 'NaN')) as raw_interval_value_cf
-                    , array_agg(ifnull(clean_interval_value_cf, 'NaN')) as clean_interval_value_cf
-                    , array_agg(ifnull(leak_calculated_cf, 'NaN')) as leak_calculated_cf
-                    , avg(leak_calculated_cf) as leak_average_cf
-                    , stddev(leak_calculated_cf) as leak_stdev_cf
-                    , array_agg(ifnull(leak_clean_cf, 'NaN')) as leak_clean_cf
-                    , avg(final_leak_cf) as final_leak_rate_cfph
-                    , array_agg(ifnull(final_leak_cf, 'NaN')) as final_leak_cf
-                    , array_agg(ifnull(final_usage_cf, 'NaN')) as final_usage_cf
-                    , array_agg(ifnull(final_est_usage_cf, 'NaN')) as final_est_usage_cf
-                    , sum(final_leak_cf) as final_leak_sum_cf
-                    , sum(final_usage_cf) as final_usage_sum_cf
-                    , sum(final_est_usage_cf) as final_est_usage_sum_cf
-                    , sum(raw_interval_value_cf) as raw_interval_value_sum_cf
-                from leaks_{self.org_id}
-                group by org_id, device_id, event_id, event_start_ts, event_end_ts, event_hrs, is_leak
-            """
-            conn.cursor().execute(ami_leaks_agg_sql)
+            self._exec_leak_detection(conn, min_date, max_date)
 
             # Ensure irrigation detail table exists (no-op after first run)
             conn.cursor().execute(f"""
@@ -836,6 +635,313 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 group by org_id, device_id, event_id, event_start_ts, event_end_ts, event_hrs
             """
             conn.cursor().execute(ami_irrigation_agg_sql)
+
+    def exec_leak_detection(self, run_id: str, min_date: datetime, max_date: datetime):
+        """
+        Recompute leak events for the min_date..max_date window without the rest of the
+        post processor, e.g. to backfill leak history.
+        """
+        with self.metrics.timed_task(
+            "snowflake_storage_sink.exec_leak_detection",
+            tags={"org_id": self.org_id},
+        ):
+            conn = self.sink_config.connection()
+            self._exec_leak_detection(conn, min_date, max_date)
+
+    def backfill_leak_detection(
+        self,
+        run_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        window_days: int = LEAK_BACKFILL_WINDOW_DAYS,
+    ):
+        """
+        Recompute leak history from start_date to end_date in consecutive windows, oldest first,
+        so each window continues the leaks that were still active at the end of the previous one.
+        """
+        window_start = start_date
+        while window_start.date() <= end_date.date():
+            window_end = min(window_start + timedelta(days=window_days - 1), end_date)
+            logger.info(
+                f"Recomputing leaks for {self.org_id} from {window_start.date()} to {window_end.date()}"
+            )
+            self.exec_leak_detection(run_id, window_start, window_end)
+            window_start = window_end + timedelta(days=1)
+
+    def _exec_leak_detection(self, conn, min_date: datetime, max_date: datetime):
+        """
+        Detect leaks in the readings and store them per hour in leaks_{org_id}, then rebuild
+        the per event leaks_{org_id}_agg table.
+
+        Only the min_date..max_date window is recomputed, except for meters with a leak still
+        active when the window starts. Those are recomputed from the start of that leak, up to
+        LEAK_MAX_LOOKBACK_DAYS back, so a long leak is stored as one event instead of being cut
+        at the window start.
+        """
+        window_start = min_date.date().isoformat()
+        window_end = max_date.date().isoformat()
+        lookback_start = (
+            (max_date - timedelta(days=LEAK_MAX_LOOKBACK_DAYS)).date().isoformat()
+        )
+
+        # Ensure leaks table exists (no-op after first run)
+        conn.cursor().execute(f"""
+            create table if not exists leaks_{self.org_id} (
+                org_id text,
+                device_id text,
+                flowtime_ts timestamp_tz,
+                flowinterval_sec number(18,0),
+                raw_register_value_cf float,
+                raw_interval_value_cf float,
+                clean_interval_value_cf float,
+                is_estimated boolean,
+                is_leak boolean,
+                minflow_prev24h_cf float,
+                minflow_lead24h_cf float,
+                leak_calculated_cf float,
+                leak_average_cf float,
+                leak_stdev_cf float,
+                leak_clean_cf float,
+                event_seq number(18,0),
+                event_start_ts timestamp_tz,
+                event_end_ts timestamp_tz,
+                event_hrs number(10,0),
+                event_id text,
+                final_leak_cf float,
+                final_usage_cf float,
+                final_est_usage_cf float
+            )
+        """)
+
+        # Meters that were leaking the day before the window starts. Their leak may still be
+        # active, so we read their readings further back to find where it really started.
+        conn.cursor().execute(f"""
+            create or replace temporary table leaks_{self.org_id}_ongoing
+            as
+            select distinct org_id, device_id
+            from leaks_{self.org_id}
+            where is_leak
+            and flowtime_ts::date = dateadd(day, -1, '{window_start}'::date)
+        """)
+
+        # Detect leaks into a temporary table first: which stored rows we replace depends on
+        # where the recomputed leaks start.
+        ami_leaks_sql = f"""
+            create or replace temporary table leaks_{self.org_id}_recomputed
+            as
+            with data0_readings as
+            (
+                select r.org_id
+                    ,r.device_id
+                    ,r.flowtime
+                    ,datediff(second, lag(r.flowtime) over(partition by r.org_id, r.device_id order by r.flowtime), r.flowtime) as flowinterval
+                    ,r.interval_value
+                    ,r.register_value
+                    ,coalesce(r.estimated::boolean, false) as estimated
+                    ,case when not coalesce(r.estimated::boolean, false) and flowinterval = 3600 and r.interval_value > 0 then r.interval_value end as interval_value_clean
+                from ami_connect.readings r
+                left join leaks_{self.org_id}_ongoing o on r.org_id = o.org_id and r.device_id = o.device_id
+                where 1=1
+                and r.org_id = '{self.org_id}'
+                and r.flowtime::date >= '{lookback_start}'
+                and r.flowtime::date <= '{window_end}'
+                -- One extra day before the window so its first hour has a previous reading to compare against
+                and (r.flowtime::date >= dateadd(day, -1, '{window_start}'::date) or o.device_id is not null)
+            )
+            ,leaks_groups0 as
+            (
+                select
+                    org_id
+                    ,device_id
+                    ,min(flowtime) as stime0
+                    ,max(flowtime) as etime0
+                    ,datediff(hour, stime0, etime0) + 1 as duration0
+                from
+                (
+                    select
+                        org_id
+                        ,device_id
+                        ,flowtime
+                        ,date_part(epoch_second, flowtime) / 3600 - row_number() over (partition by org_id, device_id order by flowtime) as grp
+                    from data0_readings
+                    where interval_value_clean is not null
+                )
+                group by org_id, device_id, grp
+            )
+            ,leaks_groups1 as
+            (
+                select
+                    a.org_id
+                    ,a.device_id
+                    ,a.stime0 as stime1
+                    ,ifnull(b.etime0, a.etime0) as etime1
+                    ,datediff(hour, stime1, etime1) + 1 as duration1
+                from leaks_groups0 a
+                left join leaks_groups0 b on a.org_id = b.org_id and a.device_id = b.device_id and datediff(hour, a.etime0, b.stime0) = 2
+                where duration1 >= 24
+            )
+            ,leaks_groups2 as
+            (
+                with cte as
+                (
+                    select *
+                        ,row_number() over(partition by org_id, device_id order by stime1, etime1) as rn
+                    from leaks_groups1
+                )
+                ,rec as
+                (
+                    select *
+                        ,rn as rn2
+                    from cte
+                    where rn = 1
+                    union all
+                    select a.*
+                        ,case when b.etime1 between a.stime1 and a.etime1 then b.rn2 else a.rn end
+                    from cte a
+                    join rec b on a.org_id = b.org_id and a.device_id = b.device_id and a.rn = b.rn + 1
+                )
+                select
+                    org_id
+                    ,device_id
+                    ,min(stime1) as stime2
+                    ,max(etime1) as etime2
+                    ,datediff(hour, stime2, etime2) + 1 as duration2
+                from rec
+                group by org_id, device_id, rn2
+            )
+            ,leaks as
+            (
+                with cte as
+                (
+                    select a.*
+                        ,(b.device_id is not null) as is_leak
+                        ,conditional_change_event(is_leak) over(partition by a.org_id, a.device_id order by flowtime) as grp
+                    from data0_readings a
+                    left join leaks_groups2 b on a.org_id = b.org_id and a.device_id = b.device_id and flowtime between stime2 and etime2
+                    where concat_ws('-', a.org_id, a.device_id) in (select distinct concat_ws('-', org_id, device_id) from leaks_groups2)
+                )
+                ,cte2 as
+                (
+                    select *
+                        ,min(flowtime) over(partition by org_id, device_id, grp) as stime
+                        ,max(flowtime) over(partition by org_id, device_id, grp) as etime
+                        ,datediff(hour, stime, etime) + 1 as duration
+                        ,min(case when is_leak then interval_value_clean end) over (partition by org_id, device_id, grp order by flowtime rows between 23 preceding and current row) as min_leak_bck
+                        ,min(case when is_leak then interval_value_clean end) over (partition by org_id, device_id, grp order by flowtime rows between current row and 23 following) as min_leak_fwd
+                        ,greatest(min_leak_bck, min_leak_fwd) as leak_calc
+                    from cte
+                )
+                select *
+                    ,avg(leak_calc) over(partition by org_id, device_id, stime, etime) as leak_avg
+                    ,stddev(leak_calc) over(partition by org_id, device_id, stime, etime) as leak_stdev
+                    ,case when leak_calc > leak_avg + leak_stdev then leak_avg else leak_calc end as leak_clean
+                    ,to_varchar(stime, 'yyyy/mm/dd@hh - ') || duration || iff(is_leak, 'h', 'h*') as event_id
+                    ,case when estimated then 0 when leak_clean <= interval_value then leak_clean else 0 end as leak
+                    ,case when estimated then 0 when leak_clean <= interval_value then interval_value - leak_clean else ifnull(interval_value, 0) end as usage
+                    ,case when estimated then interval_value else 0 end as est_usage
+                from cte2
+            )
+            -- Start of the leak that is still active when the window starts, per meter
+            ,leaks_keep_from as
+            (
+                select org_id
+                    ,device_id
+                    ,min(stime) as keep_from
+                from leaks
+                where is_leak
+                and stime::date < '{window_start}'
+                and etime::date >= '{window_start}'
+                group by org_id, device_id
+            )
+            select
+                l.org_id
+                ,l.device_id
+                ,l.flowtime                as flowtime_ts
+                ,l.flowinterval            as flowinterval_sec
+                ,l.register_value          as raw_register_value_cf
+                ,l.interval_value          as raw_interval_value_cf
+                ,l.interval_value_clean    as clean_interval_value_cf
+                ,l.estimated               as is_estimated
+                ,l.is_leak                 as is_leak
+                ,l.min_leak_bck            as minflow_prev24h_cf
+                ,l.min_leak_fwd            as minflow_lead24h_cf
+                ,l.leak_calc               as leak_calculated_cf
+                ,l.leak_avg                as leak_average_cf
+                ,l.leak_stdev              as leak_stdev_cf
+                ,l.leak_clean              as leak_clean_cf
+                ,l.grp                     as event_seq
+                ,l.stime                   as event_start_ts
+                ,l.etime                   as event_end_ts
+                ,l.duration                as event_hrs
+                ,l.event_id                as event_id
+                ,l.leak                    as final_leak_cf
+                ,l.usage                   as final_usage_cf
+                ,l.est_usage               as final_est_usage_cf
+            from leaks l
+            left join leaks_keep_from k on l.org_id = k.org_id and l.device_id = k.device_id
+            -- Keep the window, plus the earlier part of a leak that is still active when it starts
+            where iff(k.keep_from is not null, l.flowtime >= k.keep_from, l.flowtime::date >= '{window_start}')
+        """
+        conn.cursor().execute(ami_leaks_sql)
+
+        # Delete existing rows in the window, then insert fresh results
+        conn.cursor().execute(f"""
+            delete from leaks_{self.org_id}
+            where flowtime_ts::date >= '{window_start}'
+            and flowtime_ts::date <= '{window_end}'
+        """)
+
+        # Also delete the stored rows of leaks that we recomputed from before the window
+        conn.cursor().execute(f"""
+            delete from leaks_{self.org_id} t
+            using (
+                select org_id, device_id, min(flowtime_ts) as keep_from
+                from leaks_{self.org_id}_recomputed
+                group by org_id, device_id
+            ) k
+            where t.org_id = k.org_id
+            and t.device_id = k.device_id
+            and t.flowtime_ts >= k.keep_from
+            and t.flowtime_ts::date < '{window_start}'
+        """)
+
+        conn.cursor().execute(f"""
+            insert into leaks_{self.org_id}
+            select * from leaks_{self.org_id}_recomputed
+        """)
+
+        ami_leaks_agg_sql = f"""
+            create or replace table leaks_{self.org_id}_agg
+            as
+            select
+                org_id
+                , device_id
+                , event_id
+                , event_start_ts
+                , event_end_ts
+                , event_hrs
+                , is_leak
+                , array_agg(flowtime_ts) as flowtime_ts
+                , array_agg(flowinterval_sec) as flowinterval_sec
+                , array_agg(ifnull(is_estimated, 'NaN')) as is_estimated
+                , array_agg(ifnull(raw_interval_value_cf, 'NaN')) as raw_interval_value_cf
+                , array_agg(ifnull(clean_interval_value_cf, 'NaN')) as clean_interval_value_cf
+                , array_agg(ifnull(leak_calculated_cf, 'NaN')) as leak_calculated_cf
+                , avg(leak_calculated_cf) as leak_average_cf
+                , stddev(leak_calculated_cf) as leak_stdev_cf
+                , array_agg(ifnull(leak_clean_cf, 'NaN')) as leak_clean_cf
+                , avg(final_leak_cf) as final_leak_rate_cfph
+                , array_agg(ifnull(final_leak_cf, 'NaN')) as final_leak_cf
+                , array_agg(ifnull(final_usage_cf, 'NaN')) as final_usage_cf
+                , array_agg(ifnull(final_est_usage_cf, 'NaN')) as final_est_usage_cf
+                , sum(final_leak_cf) as final_leak_sum_cf
+                , sum(final_usage_cf) as final_usage_sum_cf
+                , sum(final_est_usage_cf) as final_est_usage_sum_cf
+                , sum(raw_interval_value_cf) as raw_interval_value_sum_cf
+            from leaks_{self.org_id}
+            group by org_id, device_id, event_id, event_start_ts, event_end_ts, event_hrs, is_leak
+        """
+        conn.cursor().execute(ami_leaks_agg_sql)
 
     def _meter_tuple(self, meter: GeneralMeter, row_active_from: datetime):
         result = [

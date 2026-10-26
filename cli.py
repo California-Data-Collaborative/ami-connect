@@ -47,6 +47,7 @@ from amiadapters.configuration.secrets import get_secrets, SecretType
 from amiadapters.events.base import EventSubscriber
 from amiadapters.outputs.local import LocalTaskOutputController
 from amiadapters.outputs.s3 import S3TaskOutputController
+from amiadapters.storage.snowflake import SnowflakeStorageSink
 
 HELP_MESSAGE__PROFILE = "Name of pipeline profile to get configuration for. Expected to match the name of the AWS profile in your AWS credentials file."
 ANNOTATION__PROFILE = Annotated[
@@ -156,6 +157,55 @@ def run(
         logger.info(f"Executed postprocess data for {adapter.name()}")
 
     logger.info(f"Finished for {len(adapters)} adapters")
+
+
+@app.command()
+@sets_environment_from_profile
+def backfill_leaks(
+    org_ids: Annotated[
+        list[str],
+        typer.Option(help="Org_ids to recompute leaks for."),
+    ],
+    start_date: Annotated[
+        datetime,
+        typer.Option(help="First day of leak history to recompute, YYYY-MM-DD."),
+    ],
+    end_date: Annotated[
+        datetime,
+        typer.Option(
+            help="Last day of leak history to recompute, YYYY-MM-DD. Defaults to today."
+        ),
+    ] = None,
+    profile: ANNOTATION__PROFILE = None,
+    local: Annotated[
+        str,
+        typer.Option(
+            help="Local configuration file that includes secret and non-secret configuration. Used instead of database configuration if specified. Meant for local development."
+        ),
+    ] = None,
+):
+    """
+    Recompute the leaks tables in Snowflake from start_date to end_date, oldest first, without running the rest of the pipeline.
+    """
+    if local is not None:
+        logger.info(f"Loading configuration from local file {local}")
+        config = AMIAdapterConfiguration.from_yaml(local, local)
+    else:
+        logger.info(f"Loading configuration from database using profile {profile}")
+        config = AMIAdapterConfiguration.from_database()
+
+    if end_date is None:
+        end_date = datetime.today()
+
+    adapters = [a for a in config.adapters() if a.org_id in org_ids]
+    run_id = f"backfill-leaks-{datetime.now().isoformat()}"
+
+    for adapter in adapters:
+        for sink in adapter.storage_sinks:
+            if isinstance(sink, SnowflakeStorageSink):
+                sink.backfill_leak_detection(run_id, start_date, end_date)
+
+    logger.info(f"Finished recomputing leaks for {len(adapters)} adapters")
 
 
 @app.command()
