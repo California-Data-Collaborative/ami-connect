@@ -884,31 +884,47 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         """
         conn.cursor().execute(ami_leaks_sql)
 
-        # Delete existing rows in the window, then insert fresh results
-        conn.cursor().execute(f"""
-            delete from leaks_{self.org_id}
-            where flowtime_ts::date >= '{window_start}'
-            and flowtime_ts::date <= '{window_end}'
-        """)
+        # Replace the stored rows in one transaction, so a failure part way through leaves
+        # the stored rows in place instead of a hole the next run cannot see past.
+        # The scratch tables above and the agg table below stay outside it: creating a
+        # table commits an open transaction.
+        conn.cursor().execute("begin")
+        try:
+            # Delete existing rows in the window, then insert fresh results
+            conn.cursor().execute(f"""
+                delete from leaks_{self.org_id}
+                where flowtime_ts::date >= '{window_start}'
+                and flowtime_ts::date <= '{window_end}'
+            """)
 
-        # Also delete the stored rows of leaks that we recomputed from before the window
-        conn.cursor().execute(f"""
-            delete from leaks_{self.org_id} t
-            using (
-                select org_id, device_id, min(flowtime_ts) as keep_from
-                from leaks_{self.org_id}_recomputed
-                group by org_id, device_id
-            ) k
-            where t.org_id = k.org_id
-            and t.device_id = k.device_id
-            and t.flowtime_ts >= k.keep_from
-            and t.flowtime_ts::date < '{window_start}'
-        """)
+            # Also delete the stored rows of leaks that we recomputed from before the window
+            conn.cursor().execute(f"""
+                delete from leaks_{self.org_id} t
+                using (
+                    select org_id, device_id, min(flowtime_ts) as keep_from
+                    from leaks_{self.org_id}_recomputed
+                    group by org_id, device_id
+                ) k
+                where t.org_id = k.org_id
+                and t.device_id = k.device_id
+                and t.flowtime_ts >= k.keep_from
+                and t.flowtime_ts::date < '{window_start}'
+            """)
 
-        conn.cursor().execute(f"""
-            insert into leaks_{self.org_id}
-            select * from leaks_{self.org_id}_recomputed
-        """)
+            conn.cursor().execute(f"""
+                insert into leaks_{self.org_id}
+                select * from leaks_{self.org_id}_recomputed
+            """)
+            conn.cursor().execute("commit")
+        except Exception:
+            # An error leaves the transaction open and the table locked until it is rolled back
+            try:
+                conn.cursor().execute("rollback")
+            except Exception:
+                logger.exception(
+                    f"Could not roll back the leaks rewrite for {self.org_id}"
+                )
+            raise
 
         ami_leaks_agg_sql = f"""
             create or replace table leaks_{self.org_id}_agg

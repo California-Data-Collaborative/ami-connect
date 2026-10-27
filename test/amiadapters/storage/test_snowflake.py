@@ -269,13 +269,13 @@ class TestSnowflakeStorageSink(BaseTestCase):
         all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
         normalized = [self.normalize_sql(sql) for sql in all_sqls]
 
-        # Expects exactly 15 execute calls:
+        # Expects exactly 17 execute calls:
         # 1 meters_score CREATE, 1 meters_score DELETE, 1 meters_score INSERT,
         # 1 meters_score_agg,
-        # 1 leaks CREATE, 1 leaks ongoing, 1 leaks recomputed, 2 leaks DELETE,
-        # 1 leaks INSERT, 1 leaks_agg,
+        # 1 leaks CREATE, 1 leaks ongoing, 1 leaks recomputed, 1 begin, 2 leaks DELETE,
+        # 1 leaks INSERT, 1 commit, 1 leaks_agg,
         # 1 irrigation CREATE, 1 irrigation DELETE, 1 irrigation INSERT, 1 irrigation_agg
-        self.assertEqual(15, self.mock_cursor.execute.call_count)
+        self.assertEqual(17, self.mock_cursor.execute.call_count)
 
         # --- meters_score detail table ---
         meters_score_create = next(
@@ -423,8 +423,8 @@ class TestSnowflakeStorageSink(BaseTestCase):
 
         all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
         normalized = [self.normalize_sql(sql) for sql in all_sqls]
-        # create, ongoing, recomputed, 2 deletes, insert, agg
-        self.assertEqual(7, len(normalized))
+        # create, ongoing, recomputed, begin, 2 deletes, insert, commit, agg
+        self.assertEqual(9, len(normalized))
 
         # --- meters leaking the day before the window ---
         ongoing = normalized[1]
@@ -453,12 +453,16 @@ class TestSnowflakeStorageSink(BaseTestCase):
             recomputed,
         )
 
+        # --- the rewrite runs inside one transaction ---
+        self.assertEqual("begin", normalized[3])
+        self.assertEqual("commit", normalized[7])
+
         # --- deletes: the window, then earlier rows of leaks recomputed from their start ---
-        window_delete = normalized[3]
+        window_delete = normalized[4]
         self.assertIn("delete from leaks_org-id", window_delete)
         self.assertIn("flowtime_ts::date >= '2025-01-01'", window_delete)
         self.assertIn("flowtime_ts::date <= '2025-01-31'", window_delete)
-        earlier_delete = normalized[4]
+        earlier_delete = normalized[5]
         self.assertIn("delete from leaks_org-id t using", earlier_delete)
         self.assertIn("from leaks_org-id_recomputed", earlier_delete)
         self.assertIn("t.flowtime_ts >= k.keep_from", earlier_delete)
@@ -467,9 +471,32 @@ class TestSnowflakeStorageSink(BaseTestCase):
         # --- insert and agg ---
         self.assertIn(
             "insert into leaks_org-id select * from leaks_org-id_recomputed",
-            normalized[5],
+            normalized[6],
         )
-        self.assertIn("create or replace table leaks_org-id_agg", normalized[6])
+        self.assertIn("create or replace table leaks_org-id_agg", normalized[8])
+
+    def test_exec_leak_detection__rolls_back_when_the_rewrite_fails(self):
+        min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
+        max_date = datetime.datetime(2025, 1, 31, tzinfo=pytz.UTC)
+
+        def fail_on_insert(sql, *args, **kwargs):
+            if "insert into leaks_org-id" in self.normalize_sql(sql):
+                raise RuntimeError("warehouse timeout")
+
+        self.mock_cursor.execute.side_effect = fail_on_insert
+
+        with self.assertRaises(RuntimeError):
+            self.snowflake_sink.exec_leak_detection("run-id", min_date, max_date)
+
+        normalized = [
+            self.normalize_sql(call[0][0])
+            for call in self.mock_cursor.execute.call_args_list
+        ]
+        # begin, the two deletes, the failed insert, then rollback; no commit, no agg rebuild
+        self.assertEqual("begin", normalized[3])
+        self.assertEqual("rollback", normalized[-1])
+        self.assertNotIn("commit", normalized)
+        self.assertFalse(any("leaks_org-id_agg" in s for s in normalized))
 
     def test_exec_postprocessor__runs_leak_detection_after_meters_score(self):
         min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
@@ -483,7 +510,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
         ]
         # Leak statements come right after the 4 meters_score statements
         self.assertIn("create table if not exists leaks_org-id", normalized[4])
-        self.assertIn("create or replace table leaks_org-id_agg", normalized[10])
+        self.assertIn("create or replace table leaks_org-id_agg", normalized[12])
 
     def test_backfill_leak_detection__runs_consecutive_windows_oldest_first(self):
         self.snowflake_sink.exec_leak_detection = Mock()
