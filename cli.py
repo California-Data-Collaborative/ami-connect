@@ -187,15 +187,19 @@ def backfill_leaks(
     """
     Recompute the leaks tables in Snowflake from start_date to end_date, oldest first, without running the rest of the pipeline.
     """
+    if start_date is None:
+        raise typer.BadParameter("start_date is required")
+    if end_date is None:
+        end_date = datetime.today()
+    if start_date.date() > end_date.date():
+        raise typer.BadParameter("start_date must be on or before end_date")
+
     if local is not None:
         logger.info(f"Loading configuration from local file {local}")
         config = AMIAdapterConfiguration.from_yaml(local, local)
     else:
         logger.info(f"Loading configuration from database using profile {profile}")
         config = AMIAdapterConfiguration.from_database()
-
-    if end_date is None:
-        end_date = datetime.today()
 
     adapters = [a for a in config.adapters() if a.org_id in org_ids]
     run_id = f"backfill-leaks-{datetime.now().isoformat()}"
