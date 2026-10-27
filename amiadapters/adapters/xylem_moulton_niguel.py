@@ -178,12 +178,22 @@ class XylemMoultonNiguelAdapter(BaseAMIAdapter):
     def scheduled_extracts(self) -> List[ScheduledExtract]:
         """
         We've seen in some cases that Moulton's meter reads aren't fully represented in the source until two days
-        after the flowtime. We set our standard extract range to 3+ days to cover this lag.
+        after the flowtime. We set our standard extract range to 6 days to cover this lag.
+
+        Some days of reads were never loaded because they reached the source late, or our runs were down, until
+        after the standard extract had moved past them. A lagged extract re-retrieves two days from two weeks ago,
+        so each day gets two more chances to load.
         """
         return [
             ScheduledExtract(
                 interval=timedelta(days=6),
-            )
+            ),
+            ScheduledExtract(
+                name="lagged",
+                interval=timedelta(days=2),
+                lag=timedelta(days=14),
+                schedule_crontab="0 9 * * *",
+            ),
         ]
 
     def _extract(
