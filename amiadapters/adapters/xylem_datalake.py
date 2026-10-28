@@ -20,6 +20,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Dict, List, Set, Tuple
 
+import pytz
 import requests
 from bs4 import BeautifulSoup
 
@@ -656,11 +657,19 @@ class XylemDatalakeAdapter(BaseAMIAdapter):
         return normalized
 
     def _parse_flowtime(self, raw_flowtime: str) -> datetime:
-        """Parse a UTC timestamp from the Data Lake. Timestamps are naive but represent UTC."""
-        if "T" in raw_flowtime:
-            return datetime.strptime(raw_flowtime, "%Y-%m-%dT%H:%M:%S")
-        else:
-            return datetime.strptime(raw_flowtime, "%Y-%m-%d %H:%M:%S")
+        """
+        Parse a Data Lake timestamp into a timezone-aware datetime.
+
+        The Data Lake sends read_time_timestamp in UTC (with no offset in the
+        string; read_time_timestamp_local carries the same instant in local
+        time), so the digits are attached to UTC and the instant is expressed
+        in the org's timezone. The result must never be naive: a naive datetime
+        serializes without an offset, and Snowflake then labels the UTC digits
+        with the session timezone, which stored every reading 7-8 hours late.
+        """
+        fmt = "%Y-%m-%dT%H:%M:%S" if "T" in raw_flowtime else "%Y-%m-%d %H:%M:%S"
+        naive = datetime.strptime(raw_flowtime, fmt)
+        return pytz.UTC.localize(naive).astimezone(self.org_timezone)
 
     # ── Helpers ─────────────────────────────────────────────────────────
 
