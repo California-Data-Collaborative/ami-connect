@@ -1,10 +1,18 @@
 import json
+from datetime import datetime
+
+import pytz
 from unittest.mock import MagicMock, patch
 
 import requests
 
 from amiadapters.outputs.base import ExtractOutput
-from amiadapters.models import DataclassJSONEncoder, GeneralMeter, GeneralMeterRead
+from amiadapters.models import (
+    DataclassJSONEncoder,
+    GeneralMeter,
+    GeneralMeterRead,
+    GeneralModelJSONEncoder,
+)
 from amiadapters.adapters.xylem_datalake import (
     XylemDatalakeAdapter,
     _create_superset_session_with_retry,
@@ -89,7 +97,7 @@ class TestXylemDatalakeAdapter(BaseTestCase):
     def setUp(self):
         self.adapter = XylemDatalakeAdapter(
             org_id="test_org",
-            org_timezone="America/Los_Angeles",
+            org_timezone=pytz.timezone("America/Los_Angeles"),
             pipeline_configuration=None,
             configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
             configured_metrics=self.TEST_METRICS_CONFIGURATION,
@@ -231,16 +239,43 @@ class TestXylemDatalakeAdapter(BaseTestCase):
         self.assertEqual(len(reads), 0)
 
     def test_parse_flowtime_with_T(self):
-        from datetime import datetime
-
+        # 08:00 UTC on 2026-04-14 is 01:00 Pacific daylight time.
         result = self.adapter._parse_flowtime("2026-04-14T08:00:00")
-        self.assertEqual(result, datetime(2026, 4, 14, 8, 0, 0))
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEqual(result, pytz.UTC.localize(datetime(2026, 4, 14, 8, 0, 0)))
+        self.assertEqual(result.isoformat(), "2026-04-14T01:00:00-07:00")
 
     def test_parse_flowtime_with_space(self):
-        from datetime import datetime
-
         result = self.adapter._parse_flowtime("2026-04-14 08:00:00")
-        self.assertEqual(result, datetime(2026, 4, 14, 8, 0, 0))
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEqual(result.isoformat(), "2026-04-14T01:00:00-07:00")
+
+    def test_parse_flowtime_standard_time(self):
+        # 08:00 UTC on 2026-01-14 is 00:00 Pacific standard time.
+        result = self.adapter._parse_flowtime("2026-01-14T08:00:00")
+        self.assertEqual(result.isoformat(), "2026-01-14T00:00:00-08:00")
+
+    def test_flowtime_serializes_with_offset(self):
+        # The S3 output writes reads with GeneralModelJSONEncoder; the flowtime
+        # string must carry an offset or Snowflake labels the digits with the
+        # session timezone when the load binds it into TIMESTAMP_TZ.
+        read = GeneralMeterRead(
+            org_id="test_org",
+            device_id="device",
+            account_id=None,
+            location_id=None,
+            flowtime=self.adapter._parse_flowtime("2026-04-14T08:00:00"),
+            register_value=None,
+            register_unit=None,
+            interval_value=1.0,
+            interval_unit="CF",
+            battery=None,
+            install_date=None,
+            estimated=None,
+            connection=None,
+        )
+        serialized = json.dumps(read, cls=GeneralModelJSONEncoder)
+        self.assertIn('"flowtime": "2026-04-14T01:00:00-07:00"', serialized)
 
 
 def _query_response(
@@ -266,7 +301,7 @@ class TestXylemDatalakeQueryRetry(BaseTestCase):
     def setUp(self):
         self.adapter = XylemDatalakeAdapter(
             org_id="test_org",
-            org_timezone="America/Los_Angeles",
+            org_timezone=pytz.timezone("America/Los_Angeles"),
             pipeline_configuration=None,
             configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
             configured_metrics=self.TEST_METRICS_CONFIGURATION,
