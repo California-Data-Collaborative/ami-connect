@@ -269,12 +269,13 @@ class TestSnowflakeStorageSink(BaseTestCase):
         all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
         normalized = [self.normalize_sql(sql) for sql in all_sqls]
 
-        # Expects exactly 12 execute calls:
+        # Expects exactly 17 execute calls:
         # 1 meters_score CREATE, 1 meters_score DELETE, 1 meters_score INSERT,
         # 1 meters_score_agg,
-        # 1 leaks CREATE, 1 leaks DELETE, 1 leaks INSERT, 1 leaks_agg,
+        # 1 leaks CREATE, 1 leaks ongoing, 1 leaks recomputed, 1 begin, 2 leaks DELETE,
+        # 1 leaks INSERT, 1 commit, 1 leaks_agg,
         # 1 irrigation CREATE, 1 irrigation DELETE, 1 irrigation INSERT, 1 irrigation_agg
-        self.assertEqual(12, self.mock_cursor.execute.call_count)
+        self.assertEqual(17, self.mock_cursor.execute.call_count)
 
         # --- meters_score detail table ---
         meters_score_create = next(
@@ -408,6 +409,136 @@ class TestSnowflakeStorageSink(BaseTestCase):
             all_sqls,
             "Should not create the old shared irrigation_detection_agg table",
         )
+
+    def test_exec_leak_detection__recomputes_active_leaks_from_their_start(self):
+        """
+        Verifies that meters leaking the day before the window are read further back,
+        that the window gets one extra day of readings, and that stored rows are replaced
+        from the start of a leak that is still active when the window starts.
+        """
+        min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
+        max_date = datetime.datetime(2025, 1, 31, tzinfo=pytz.UTC)
+
+        self.snowflake_sink.exec_leak_detection("run-id", min_date, max_date)
+
+        all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
+        normalized = [self.normalize_sql(sql) for sql in all_sqls]
+        # create, ongoing, recomputed, begin, 2 deletes, insert, commit, agg
+        self.assertEqual(9, len(normalized))
+
+        # --- meters leaking the day before the window ---
+        ongoing = normalized[1]
+        self.assertIn("create or replace temporary table leaks_org-id_ongoing", ongoing)
+        self.assertIn("from leaks_org-id", ongoing)
+        self.assertIn("dateadd(day, -1, '2025-01-01'::date)", ongoing)
+
+        # --- recomputed leaks ---
+        recomputed = normalized[2]
+        self.assertIn(
+            "create or replace temporary table leaks_org-id_recomputed", recomputed
+        )
+        self.assertIn("ami_connect.readings", recomputed)
+        self.assertIn("left join leaks_org-id_ongoing o", recomputed)
+        # Lookback for active leaks is capped at 365 days before the window end
+        self.assertIn("r.flowtime::date >= '2024-02-01'", recomputed)
+        self.assertIn("r.flowtime::date <= '2025-01-31'", recomputed)
+        # Everyone else gets one extra day before the window
+        self.assertIn(
+            "r.flowtime::date >= dateadd(day, -1, '2025-01-01'::date) or o.device_id is not null",
+            recomputed,
+        )
+        self.assertIn("leaks_keep_from", recomputed)
+        self.assertIn(
+            "where iff(k.keep_from is not null, l.flowtime >= k.keep_from, l.flowtime::date >= '2025-01-01')",
+            recomputed,
+        )
+
+        # --- the rewrite runs inside one transaction ---
+        self.assertEqual("begin", normalized[3])
+        self.assertEqual("commit", normalized[7])
+
+        # --- deletes: the window, then earlier rows of leaks recomputed from their start ---
+        window_delete = normalized[4]
+        self.assertIn("delete from leaks_org-id", window_delete)
+        self.assertIn("flowtime_ts::date >= '2025-01-01'", window_delete)
+        self.assertIn("flowtime_ts::date <= '2025-01-31'", window_delete)
+        earlier_delete = normalized[5]
+        self.assertIn("delete from leaks_org-id t using", earlier_delete)
+        self.assertIn("from leaks_org-id_recomputed", earlier_delete)
+        self.assertIn("t.flowtime_ts >= k.keep_from", earlier_delete)
+        self.assertIn("t.flowtime_ts::date < '2025-01-01'", earlier_delete)
+
+        # --- insert and agg ---
+        self.assertIn(
+            "insert into leaks_org-id select * from leaks_org-id_recomputed",
+            normalized[6],
+        )
+        self.assertIn("create or replace table leaks_org-id_agg", normalized[8])
+
+    def test_exec_leak_detection__rolls_back_when_the_rewrite_fails(self):
+        min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
+        max_date = datetime.datetime(2025, 1, 31, tzinfo=pytz.UTC)
+
+        def fail_on_insert(sql, *args, **kwargs):
+            if "insert into leaks_org-id" in self.normalize_sql(sql):
+                raise RuntimeError("warehouse timeout")
+
+        self.mock_cursor.execute.side_effect = fail_on_insert
+
+        with self.assertRaises(RuntimeError):
+            self.snowflake_sink.exec_leak_detection("run-id", min_date, max_date)
+
+        normalized = [
+            self.normalize_sql(call[0][0])
+            for call in self.mock_cursor.execute.call_args_list
+        ]
+        # begin, the two deletes, the failed insert, then rollback; no commit, no agg rebuild
+        self.assertEqual("begin", normalized[3])
+        self.assertEqual("rollback", normalized[-1])
+        self.assertNotIn("commit", normalized)
+        self.assertFalse(any("leaks_org-id_agg" in s for s in normalized))
+
+    def test_exec_postprocessor__runs_leak_detection_after_meters_score(self):
+        min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
+        max_date = datetime.datetime(2025, 1, 31, tzinfo=pytz.UTC)
+
+        self.snowflake_sink.exec_postprocessor("run-id", min_date, max_date)
+
+        normalized = [
+            self.normalize_sql(call[0][0])
+            for call in self.mock_cursor.execute.call_args_list
+        ]
+        # Leak statements come right after the 4 meters_score statements
+        self.assertIn("create table if not exists leaks_org-id", normalized[4])
+        self.assertIn("create or replace table leaks_org-id_agg", normalized[12])
+
+    def test_backfill_leak_detection__runs_consecutive_windows_oldest_first(self):
+        self.snowflake_sink.exec_leak_detection = Mock()
+        start_date = datetime.datetime(2026, 2, 8)
+        end_date = datetime.datetime(2026, 4, 20)
+
+        self.snowflake_sink.backfill_leak_detection("run-id", start_date, end_date)
+
+        windows = [
+            (call[0][1].date(), call[0][2].date())
+            for call in self.snowflake_sink.exec_leak_detection.call_args_list
+        ]
+        self.assertEqual(
+            [
+                (datetime.date(2026, 2, 8), datetime.date(2026, 3, 9)),
+                (datetime.date(2026, 3, 10), datetime.date(2026, 4, 8)),
+                (datetime.date(2026, 4, 9), datetime.date(2026, 4, 20)),
+            ],
+            windows,
+        )
+
+    def test_backfill_leak_detection__single_day(self):
+        self.snowflake_sink.exec_leak_detection = Mock()
+        day = datetime.datetime(2026, 2, 8)
+
+        self.snowflake_sink.backfill_leak_detection("run-id", day, day)
+
+        self.assertEqual(1, self.snowflake_sink.exec_leak_detection.call_count)
 
     def test_store_raw(self):
         self.snowflake_sink.store_raw(
