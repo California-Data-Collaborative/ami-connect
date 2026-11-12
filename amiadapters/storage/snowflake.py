@@ -572,19 +572,40 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     and timestamp::date >= '{min_date.isoformat()}'
                     and timestamp::date <= '{max_date.isoformat()}'
                 )
+                -- global_irrigation_detection.timestamp is the reading's clock time without its UTC
+                -- offset, and the offset differs by adapter: some store readings in Pacific time, others
+                -- (Neptune, Moulton Niguel) in UTC. Labeling that clock with the session time zone put
+                -- the UTC-stored orgs' events 7-8 hours late. Take the instant from the reading itself;
+                -- a detection row whose reading is gone keeps the old label. flowtime::timestamp_ntz and
+                -- flowtime::date are evaluated in the reading's own offset, so they line up with
+                -- timestamp and the window above.
+                , with_flowtime as
+                (
+                    select d.*
+                        , coalesce(r.flowtime, d.timestamp::timestamp_tz) as flowtime_ts
+                    from source_data d
+                    left join ami_connect.readings r
+                        on r.org_id = d.source
+                        and r.device_id = d.device_id
+                        and r.flowtime::timestamp_ntz = d.timestamp
+                        and r.flowtime::date >= '{min_date.isoformat()}'
+                        and r.flowtime::date <= '{max_date.isoformat()}'
+                    -- One reading per detection row: the fall-back hour has two readings with the same clock time
+                    qualify row_number() over (partition by d.source, d.device_id, d.timestamp order by r.flowtime) = 1
+                )
                 , with_events as
                 (
                     select
                         source                                as org_id
                         , device_id
-                        , timestamp::timestamp_tz             as flowtime_ts
+                        , flowtime_ts
                         , total_reading                       as total_reading_cf
                         , irrigation_reading                  as irrigation_reading_cf
                         , non_irrigation_reading              as non_irrigation_reading_cf
                         , coalesce(irrigation_reading, 0) > 0 as is_irrigation
                         , conditional_change_event(coalesce(irrigation_reading, 0) = 0)
-                              over (partition by source, device_id order by timestamp) as event_seq
-                    from source_data
+                              over (partition by source, device_id order by flowtime_ts) as event_seq
+                    from with_flowtime
                 )
                 , with_event_bounds as
                 (
