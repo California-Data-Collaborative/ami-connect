@@ -555,6 +555,21 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 )
             """)
 
+            # Detection rows in the window: the insert below should keep (almost) all of them. Counted
+            # before the delete so a join that matches nothing is reported instead of emptying the window.
+            count_cursor = conn.cursor()
+            count_cursor.execute(f"""
+                select count(*) from (
+                    select distinct *
+                    from wavelet.global_irrigation_detection
+                    where source = '{self.org_id}'
+                    and timestamp::date >= '{min_date.isoformat()}'
+                    and timestamp::date <= '{max_date.isoformat()}'
+                )
+            """)
+            count_row = count_cursor.fetchone()
+            detection_rows = count_row[0] if count_row else 0
+
             # Delete existing rows in the window, then insert fresh results
             conn.cursor().execute(f"""
                 delete from irrigation_{self.org_id}
@@ -574,32 +589,39 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 )
                 -- global_irrigation_detection.timestamp is the reading's clock time without its UTC
                 -- offset, and the offset differs by adapter: some store readings in Pacific time, others
-                -- (Neptune, Moulton Niguel) in UTC. Labeling that clock with the session time zone put
-                -- the UTC-stored orgs' events 7-8 hours late. Take the instant from the reading itself.
+                -- (Neptune, Moulton Niguel, Coastside) in UTC. Labeling that clock with the session time zone
+                -- put the UTC-stored orgs' events 7-8 hours late. Take the instant from the reading itself.
                 -- flowtime::timestamp_ntz and flowtime::date are evaluated in the reading's own offset, so
                 -- they line up with timestamp and the window above. A detection row whose reading is gone
                 -- is left out rather than given a label in a different offset from its neighbours.
                 , readings_window as
                 (
-                    select device_id, flowtime
+                    select device_id
+                        , flowtime
+                        , flowtime::timestamp_ntz as clock_time
+                        -- The fall-back hour has two readings with the same clock time; number them
+                        , row_number() over (partition by device_id, flowtime::timestamp_ntz order by flowtime) as same_clock_rank
                     from ami_connect.readings
                     where org_id = '{self.org_id}'
                     and flowtime::date >= '{min_date.isoformat()}'
                     and flowtime::date <= '{max_date.isoformat()}'
                 )
+                , detection_ranked as
+                (
+                    -- ... and the detection table can hold one row per such reading; pair them one to one
+                    select d.*
+                        , row_number() over (partition by source, device_id, timestamp order by total_reading) as same_clock_rank
+                    from source_data d
+                )
                 , with_flowtime as
                 (
                     select d.*
                         , r.flowtime as flowtime_ts
-                    from source_data d
+                    from detection_ranked d
                     join readings_window r
                         on r.device_id = d.device_id
-                        and r.flowtime::timestamp_ntz = d.timestamp
-                    -- One reading per detection row: the fall-back hour has two readings with the same clock time
-                    qualify row_number() over (
-                        partition by d.source, d.device_id, d.timestamp, d.total_reading, d.irrigation_reading, d.non_irrigation_reading
-                        order by r.flowtime
-                    ) = 1
+                        and r.clock_time = d.timestamp
+                        and r.same_clock_rank = d.same_clock_rank
                 )
                 , with_events as
                 (
@@ -641,7 +663,14 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     , event_id
                 from with_event_bounds
             """
-            conn.cursor().execute(ami_irrigation_sql)
+            insert_cursor = conn.cursor()
+            insert_cursor.execute(ami_irrigation_sql)
+            inserted_rows = insert_cursor.rowcount
+            if detection_rows and inserted_rows < 0.99 * detection_rows:
+                logger.error(
+                    f"irrigation_{self.org_id}: kept {inserted_rows} of {detection_rows} detection rows for "
+                    f"{min_date.isoformat()}..{max_date.isoformat()}; readings are missing for the rest"
+                )
 
             ami_irrigation_agg_sql = f"""
                 create or replace table irrigation_{self.org_id}_agg

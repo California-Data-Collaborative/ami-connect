@@ -22,6 +22,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
         self.conn = Mock()
         self.mock_cursor = Mock()
         self.conn.cursor.return_value = self.mock_cursor
+        self.mock_cursor.fetchone.return_value = (0,)
         sink_config = Mock()
         sink_config.connection.return_value = self.conn
         self.extract_outputs = ExtractOutput(
@@ -269,13 +270,14 @@ class TestSnowflakeStorageSink(BaseTestCase):
         all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
         normalized = [self.normalize_sql(sql) for sql in all_sqls]
 
-        # Expects exactly 17 execute calls:
+        # Expects exactly 18 execute calls:
         # 1 meters_score CREATE, 1 meters_score DELETE, 1 meters_score INSERT,
         # 1 meters_score_agg,
         # 1 leaks CREATE, 1 leaks ongoing, 1 leaks recomputed, 1 begin, 2 leaks DELETE,
         # 1 leaks INSERT, 1 commit, 1 leaks_agg,
-        # 1 irrigation CREATE, 1 irrigation DELETE, 1 irrigation INSERT, 1 irrigation_agg
-        self.assertEqual(17, self.mock_cursor.execute.call_count)
+        # 1 irrigation CREATE, 1 irrigation detection-row count, 1 irrigation DELETE,
+        # 1 irrigation INSERT, 1 irrigation_agg
+        self.assertEqual(18, self.mock_cursor.execute.call_count)
 
         # --- meters_score detail table ---
         meters_score_create = next(
@@ -378,9 +380,11 @@ class TestSnowflakeStorageSink(BaseTestCase):
         # Each hour's time comes from the reading itself (its own UTC offset), not from the
         # detection clock labeled with the session time zone
         self.assertIn("from ami_connect.readings", irrigation_insert.lower())
-        self.assertIn("join readings_window r", irrigation_insert.lower())
         self.assertIn(
-            "r.flowtime::timestamp_ntz = d.timestamp", irrigation_insert.lower()
+            "join readings_window r on r.device_id = d.device_id "
+            "and r.clock_time = d.timestamp "
+            "and r.same_clock_rank = d.same_clock_rank",
+            " ".join(irrigation_insert.lower().split()),
         )
         self.assertIn("r.flowtime as flowtime_ts", irrigation_insert.lower())
         self.assertNotIn("timestamp::timestamp_tz", irrigation_insert.lower())
