@@ -587,41 +587,16 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     and timestamp::date >= '{min_date.isoformat()}'
                     and timestamp::date <= '{max_date.isoformat()}'
                 )
-                -- global_irrigation_detection.timestamp is the reading's clock time without its UTC
-                -- offset, and the offset differs by adapter: some store readings in Pacific time, others
-                -- (Neptune, Moulton Niguel, Coastside) in UTC. Labeling that clock with the session time zone
-                -- put the UTC-stored orgs' events 7-8 hours late. Take the instant from the reading itself.
-                -- flowtime::timestamp_ntz and flowtime::date are evaluated in the reading's own offset, so
-                -- they line up with timestamp and the window above. A detection row whose reading is gone
-                -- is left out rather than given a label in a different offset from its neighbours.
-                , readings_window as
-                (
-                    select device_id
-                        , flowtime
-                        , flowtime::timestamp_ntz as clock_time
-                        -- The fall-back hour has two readings with the same clock time; number them
-                        , row_number() over (partition by device_id, flowtime::timestamp_ntz order by flowtime) as same_clock_rank
-                    from ami_connect.readings
-                    where org_id = '{self.org_id}'
-                    and flowtime::date >= '{min_date.isoformat()}'
-                    and flowtime::date <= '{max_date.isoformat()}'
-                )
-                , detection_ranked as
-                (
-                    -- ... and the detection table can hold one row per such reading; pair them one to one
-                    select d.*
-                        , row_number() over (partition by source, device_id, timestamp order by total_reading) as same_clock_rank
-                    from source_data d
-                )
+                -- global_irrigation_detection.flowtime is the hour's real moment, time zone included
+                -- (written by the detection procedure; see sql/irrigation_detection_flowtime.sql).
+                -- timestamp is that moment's clock reading without its offset and only serves as the
+                -- table's key. A row without flowtime is a detection row whose reading no longer exists.
                 , with_flowtime as
                 (
                     select d.*
-                        , r.flowtime as flowtime_ts
-                    from detection_ranked d
-                    join readings_window r
-                        on r.device_id = d.device_id
-                        and r.clock_time = d.timestamp
-                        and r.same_clock_rank = d.same_clock_rank
+                        , d.flowtime as flowtime_ts
+                    from source_data d
+                    where d.flowtime is not null
                 )
                 , with_events as
                 (
@@ -669,7 +644,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             if detection_rows and inserted_rows < 0.99 * detection_rows:
                 logger.error(
                     f"irrigation_{self.org_id}: kept {inserted_rows} of {detection_rows} detection rows for "
-                    f"{min_date.isoformat()}..{max_date.isoformat()}; readings are missing for the rest"
+                    f"{min_date.isoformat()}..{max_date.isoformat()}; the rest have no flowtime (reading gone)"
                 )
 
             ami_irrigation_agg_sql = f"""
