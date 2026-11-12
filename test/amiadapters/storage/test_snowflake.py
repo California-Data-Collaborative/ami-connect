@@ -379,7 +379,9 @@ class TestSnowflakeStorageSink(BaseTestCase):
         # detection clock labeled with the session time zone
         self.assertIn("from ami_connect.readings", irrigation_insert.lower())
         self.assertIn("join readings_window r", irrigation_insert.lower())
-        self.assertIn("r.flowtime::timestamp_ntz = d.timestamp", irrigation_insert.lower())
+        self.assertIn(
+            "r.flowtime::timestamp_ntz = d.timestamp", irrigation_insert.lower()
+        )
         self.assertIn("r.flowtime as flowtime_ts", irrigation_insert.lower())
         self.assertNotIn("timestamp::timestamp_tz", irrigation_insert.lower())
 
