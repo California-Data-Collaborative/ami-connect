@@ -575,23 +575,31 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 -- global_irrigation_detection.timestamp is the reading's clock time without its UTC
                 -- offset, and the offset differs by adapter: some store readings in Pacific time, others
                 -- (Neptune, Moulton Niguel) in UTC. Labeling that clock with the session time zone put
-                -- the UTC-stored orgs' events 7-8 hours late. Take the instant from the reading itself;
-                -- a detection row whose reading is gone keeps the old label. flowtime::timestamp_ntz and
-                -- flowtime::date are evaluated in the reading's own offset, so they line up with
-                -- timestamp and the window above.
+                -- the UTC-stored orgs' events 7-8 hours late. Take the instant from the reading itself.
+                -- flowtime::timestamp_ntz and flowtime::date are evaluated in the reading's own offset, so
+                -- they line up with timestamp and the window above. A detection row whose reading is gone
+                -- is left out rather than given a label in a different offset from its neighbours.
+                , readings_window as
+                (
+                    select device_id, flowtime
+                    from ami_connect.readings
+                    where org_id = '{self.org_id}'
+                    and flowtime::date >= '{min_date.isoformat()}'
+                    and flowtime::date <= '{max_date.isoformat()}'
+                )
                 , with_flowtime as
                 (
                     select d.*
-                        , coalesce(r.flowtime, d.timestamp::timestamp_tz) as flowtime_ts
+                        , r.flowtime as flowtime_ts
                     from source_data d
-                    left join ami_connect.readings r
-                        on r.org_id = d.source
-                        and r.device_id = d.device_id
+                    join readings_window r
+                        on r.device_id = d.device_id
                         and r.flowtime::timestamp_ntz = d.timestamp
-                        and r.flowtime::date >= '{min_date.isoformat()}'
-                        and r.flowtime::date <= '{max_date.isoformat()}'
                     -- One reading per detection row: the fall-back hour has two readings with the same clock time
-                    qualify row_number() over (partition by d.source, d.device_id, d.timestamp order by r.flowtime) = 1
+                    qualify row_number() over (
+                        partition by d.source, d.device_id, d.timestamp, d.total_reading, d.irrigation_reading, d.non_irrigation_reading
+                        order by r.flowtime
+                    ) = 1
                 )
                 , with_events as
                 (

@@ -377,11 +377,11 @@ class TestSnowflakeStorageSink(BaseTestCase):
         self.assertIn("source as org_id", irrigation_insert.lower())
         # Each hour's time comes from the reading itself (its own UTC offset), not from the
         # detection clock labeled with the session time zone
-        self.assertIn("left join ami_connect.readings", irrigation_insert.lower())
-        self.assertIn(
-            "coalesce(r.flowtime, d.timestamp::timestamp_tz) as flowtime_ts",
-            irrigation_insert.lower(),
-        )
+        self.assertIn("from ami_connect.readings", irrigation_insert.lower())
+        self.assertIn("join readings_window r", irrigation_insert.lower())
+        self.assertIn("r.flowtime::timestamp_ntz = d.timestamp", irrigation_insert.lower())
+        self.assertIn("r.flowtime as flowtime_ts", irrigation_insert.lower())
+        self.assertNotIn("timestamp::timestamp_tz", irrigation_insert.lower())
 
         # --- agg table ---
         irrigation_agg = next(
