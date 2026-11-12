@@ -377,17 +377,12 @@ class TestSnowflakeStorageSink(BaseTestCase):
         self.assertIn("conditional_change_event", irrigation_insert)
         # source column renamed to org_id
         self.assertIn("source as org_id", irrigation_insert.lower())
-        # Each hour's time comes from the reading itself (its own UTC offset), not from the
-        # detection clock labeled with the session time zone
-        self.assertIn("from ami_connect.readings", irrigation_insert.lower())
-        self.assertIn(
-            "join readings_window r on r.device_id = d.device_id "
-            "and r.clock_time = d.timestamp "
-            "and r.same_clock_rank = d.same_clock_rank",
-            " ".join(irrigation_insert.lower().split()),
-        )
-        self.assertIn("r.flowtime as flowtime_ts", irrigation_insert.lower())
+        # Each hour's time is the detection table's flowtime (the real moment, time zone
+        # included), not the clock column labeled with the session time zone
+        self.assertIn("d.flowtime as flowtime_ts", irrigation_insert.lower())
+        self.assertIn("where d.flowtime is not null", irrigation_insert.lower())
         self.assertNotIn("timestamp::timestamp_tz", irrigation_insert.lower())
+        self.assertNotIn("ami_connect.readings", irrigation_insert.lower())
 
         # --- agg table ---
         irrigation_agg = next(
