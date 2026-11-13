@@ -136,36 +136,24 @@ def run(
             # Default two interval of two days if start or end is not specified
             interval=timedelta(days=2),
         )
-        # A range longer than the source's max_extract_days loads as pieces, oldest
-        # first, then post processes once over the whole range (as the manual DAG does).
-        pieces = adapter.split_extract_range(start, end)
-        for index, (piece_start, piece_end) in enumerate(pieces, start=1):
-            piece_run_id = (
-                run_id
-                if len(pieces) == 1
-                else f"{run_id}-piece-{index:02d}-of-{len(pieces):02d}"
-            )
-            logger.info(
-                f"Extracting data for {adapter.name()} from {piece_start} to {piece_end}"
-                + (f" (piece {index} of {len(pieces)})" if len(pieces) > 1 else "")
-            )
-            adapter.extract_and_output(piece_run_id, piece_start, piece_end)
-            logger.info(f"Extracted data for {adapter.name()}")
+        logger.info(f"Extracting data for {adapter.name()} from {start} to {end}")
+        adapter.extract_and_output(run_id, start, end)
+        logger.info(f"Extracted data for {adapter.name()}")
 
-            logger.info(f"Transforming data for {adapter.name()}")
-            adapter.transform_and_output(piece_run_id)
-            logger.info(f"Transformed data for {adapter.name()}")
+        logger.info(f"Transforming data for {adapter.name()}")
+        adapter.transform_and_output(run_id)
+        logger.info(f"Transformed data for {adapter.name()}")
 
-            logger.info(f"Loading raw data for {adapter.name()}")
-            adapter.load_raw(piece_run_id)
-            logger.info(f"Loaded raw data for {adapter.name()}")
+        logger.info(f"Loading raw data for {adapter.name()}")
+        adapter.load_raw(run_id)
+        logger.info(f"Loaded raw data for {adapter.name()}")
 
-            logger.info(f"Loading transformed data for {adapter.name()}")
-            adapter.load_transformed(piece_run_id)
-            logger.info(f"Loaded transformed data for {adapter.name()}")
+        logger.info(f"Loading transformed data for {adapter.name()}")
+        adapter.load_transformed(run_id)
+        logger.info(f"Loaded transformed data for {adapter.name()}")
 
         logger.info(f"Executing postprocess data for {adapter.name()}")
-        adapter.post_process(run_id, start, end, cover_extract_range=len(pieces) > 1)
+        adapter.post_process(run_id, start, end)
         logger.info(f"Executed postprocess data for {adapter.name()}")
 
     logger.info(f"Finished for {len(adapters)} adapters")

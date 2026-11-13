@@ -152,7 +152,6 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
         configured_metrics,
         configured_sinks,
         s3_client=None,
-        max_extract_days: int = None,
     ):
         self.s3_bucket = s3_bucket
         # Normalize the trailing slash: we list with Delimiter="/", so without
@@ -174,7 +173,6 @@ class ItronRosevilleAdapter(BaseAMIAdapter):
             configured_metrics,
             configured_sinks,
             ITRON_ROSEVILLE_RAW_SNOWFLAKE_LOADER,
-            max_extract_days=max_extract_days,
         )
 
     def name(self) -> str:

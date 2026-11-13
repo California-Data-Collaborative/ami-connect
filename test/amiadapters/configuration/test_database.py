@@ -465,6 +465,53 @@ class TestDatabase(BaseTestCase):
         self.assertEqual(params[2], "org1")  # org_id lowercased
 
     @patch("amiadapters.configuration.database._get_source_by_org_id")
+    def test_update_source_configuration_saves_max_extract_days(self, mock_get_source):
+        mock_get_source.return_value = [
+            (
+                "id1",
+                "beacon_360",
+                "org1",
+                "UTC",
+                json.dumps({"use_raw_data_cache": False}),
+            )
+        ]
+        update_source_configuration(
+            self.mock_connection, {"org_id": "org1", "max_extract_days": "21"}
+        )
+        query, params = self.mock_cursor.execute.call_args_list[-1][0]
+        self.assertIn("UPDATE configuration_sources", query)
+        self.assertEqual(21, json.loads(params[1])["max_extract_days"])
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    def test_update_source_configuration_keeps_saved_max_extract_days(
+        self, mock_get_source
+    ):
+        saved = {"use_raw_data_cache": False, "max_extract_days": 21}
+        mock_get_source.return_value = [
+            ("id1", "beacon_360", "org1", "UTC", json.dumps(saved))
+        ]
+        update_source_configuration(
+            self.mock_connection, {"org_id": "org1", "timezone": "America/Chicago"}
+        )
+        _, params = self.mock_cursor.execute.call_args_list[-1][0]
+        self.assertEqual(21, json.loads(params[1])["max_extract_days"])
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    def test_add_source_configuration_saves_max_extract_days(self, mock_get_source):
+        mock_get_source.return_value = []
+        add_source_configuration(
+            self.mock_connection,
+            {
+                "org_id": "CADC",
+                "type": "beacon_360",
+                "timezone": "UTC",
+                "max_extract_days": 21,
+            },
+        )
+        _, params = self.mock_cursor.execute.call_args[0]
+        self.assertEqual(21, json.loads(params[3])["max_extract_days"])
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
     @patch("amiadapters.configuration.database._get_sink_by_id")
     def test_update_source_configuration_associates_sinks_if_provided(
         self, mock_get_sink, mock_get_source

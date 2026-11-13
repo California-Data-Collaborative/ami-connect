@@ -540,7 +540,10 @@ class SourceConfigBase:
         return config
 
     def type_specific_config_dict(self) -> Dict[str, Any]:
-        base_field_names = {f.name for f in fields(SourceConfigBase)}
+        # Base fields have their own columns in configuration_sources, except the ones
+        # listed here, which every source type shares but which are stored in its config.
+        stored_in_config = {"max_extract_days"}
+        base_field_names = {f.name for f in fields(SourceConfigBase)} - stored_in_config
         return {
             f.name: getattr(self, f.name)
             for f in fields(type(self))

@@ -225,7 +225,6 @@ class XylemSensusAdapter(BaseAMIAdapter):
         configured_metrics,
         configured_sinks,
         s3_client=None,
-        max_extract_days: int = None,
     ):
         self.sftp_host = sftp_host
         self.sftp_user = sftp_user
@@ -250,7 +249,6 @@ class XylemSensusAdapter(BaseAMIAdapter):
             configured_metrics,
             configured_sinks,
             RawSnowflakeLoader.with_table_loaders([XylemSensusBaseTableLoader()]),
-            max_extract_days=max_extract_days,
         )
 
     def name(self) -> str:

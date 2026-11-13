@@ -75,59 +75,46 @@ class TestBaseAdapter(BaseTestCase):
             # End after start
             self.adapter._validate_extract_range(self.range_end, self.range_start)
 
-    def _adapter_with_limit(self, max_extract_days):
-        return Beacon360Adapter(
-            api_user="user",
-            api_password="pass",
-            use_cache=False,
-            pipeline_configuration=self.TEST_PIPELINE_CONFIGURATION,
-            org_id="test-org",
-            org_timezone=pytz.timezone("Europe/Rome"),
-            configured_task_output_controller=self.TEST_TASK_OUTPUT_CONTROLLER_CONFIGURATION,
-            configured_metrics=self.TEST_METRICS_CONFIGURATION,
-            configured_sinks=[],
-            max_extract_days=max_extract_days,
+    def _calculate(self, start, end, interval=timedelta(days=2), backfill=None):
+        return self.adapter.calculate_extract_range(
+            start,
+            end,
+            interval=interval,
+            lag=timedelta(days=0),
+            backfill_params=backfill,
         )
 
-    def test_split_extract_range__range_within_limit_is_one_piece(self):
+    def test_extract_range__explicit_range_of_fourteen_days_is_allowed(self):
         end = self.range_start + timedelta(days=14)
         self.assertEqual(
-            [(self.range_start, end)],
-            self.adapter.split_extract_range(self.range_start, end),
+            (self.range_start, end), self._calculate(self.range_start, end)
         )
 
-    def test_split_extract_range__longer_range_splits_oldest_first(self):
-        end = self.range_start + timedelta(days=31)
-        pieces = self.adapter.split_extract_range(self.range_start, end)
-        day = timedelta(days=1)
-        self.assertEqual(
-            [
-                (self.range_start, self.range_start + 14 * day),
-                (self.range_start + 14 * day, self.range_start + 28 * day),
-                (self.range_start + 28 * day, end),
-            ],
-            pieces,
-        )
+    def test_extract_range__explicit_range_over_the_limit_is_refused(self):
+        with self.assertRaises(Exception) as ctx:
+            self._calculate(
+                self.range_start, self.range_start + timedelta(days=14, hours=1)
+            )
+        self.assertIn("more than 14 days", str(ctx.exception))
+        self.assertIn("consecutive runs", str(ctx.exception))
 
-    def test_split_extract_range__configured_limit_wins_over_default(self):
-        adapter = self._adapter_with_limit(30)
-        end = self.range_start + timedelta(days=31)
-        pieces = adapter.split_extract_range(self.range_start, end)
-        self.assertEqual(2, len(pieces))
-        self.assertEqual(self.range_start + timedelta(days=30), pieces[0][1])
-
-    def test_split_extract_range__rejects_end_before_start(self):
+    def test_extract_range__explicit_range_as_iso_strings_is_checked(self):
         with self.assertRaises(Exception):
-            self.adapter.split_extract_range(self.range_end, self.range_start)
+            self._calculate("2026-01-01T00:00:00", "2026-02-01T00:00:00")
 
-    def test_calculate_extract_range__long_manual_range_is_returned_whole(self):
-        end = self.range_start + timedelta(days=60)
-        start, calculated_end = self.adapter.calculate_extract_range(
-            self.range_start, end, interval=timedelta(days=2), lag=timedelta(days=0)
-        )
-        self.assertEqual((self.range_start, end), (start, calculated_end))
+    def test_extract_range__configured_limit_wins_over_default(self):
+        self.adapter.max_extract_days = 30
+        self._calculate(self.range_start, self.range_start + timedelta(days=30))
+        with self.assertRaises(Exception):
+            self._calculate(self.range_start, self.range_start + timedelta(days=31))
 
-    def test_calculate_extract_range__backfill_chunk_trimmed_to_limit(self):
+    def test_extract_range__computed_range_is_not_checked(self):
+        # Scheduled runs pass no dates; their window comes from code
+        self.adapter.max_extract_days = 1
+        start, end = self._calculate(None, None, interval=timedelta(days=6))
+        self.assertEqual(timedelta(days=6), end - start)
+
+    def test_extract_range__backfill_chunk_is_trimmed_to_the_limit(self):
         backfill = BackfillConfiguration(
             org_id="test-org",
             start_date=datetime(2025, 1, 1),
@@ -140,51 +127,10 @@ class TestBaseAdapter(BaseTestCase):
             "calculate_extract_range",
             return_value=(self.range_start, self.range_end),
         ) as calculate:
-            self.adapter.calculate_extract_range(
-                None,
-                None,
-                interval=timedelta(days=2),
-                lag=timedelta(days=0),
-                backfill_params=backfill,
-            )
+            self._calculate(None, None, backfill=backfill)
         self.assertEqual(
             14, calculate.call_args.kwargs["backfill_params"].interval_days
         )
-
-    def test_extract_and_output__refuses_range_over_limit(self):
-        with patch.object(self.adapter, "_extract") as extract:
-            with self.assertRaises(Exception) as ctx:
-                self.adapter.extract_and_output(
-                    "run-1",
-                    self.range_start,
-                    self.range_start + timedelta(days=14, hours=1),
-                )
-        extract.assert_not_called()
-        self.assertIn("split_extract_range", str(ctx.exception))
-
-    def _post_process_window(self, cover_extract_range):
-        sink = MagicMock()
-        self.adapter.storage_sinks = [sink]
-        self.adapter.pipeline_configuration = MagicMock(
-            should_run_post_processor=True, should_publish_load_finished_events=False
-        )
-        self.adapter.post_process(
-            "run-1",
-            datetime(2025, 3, 1, tzinfo=pytz.UTC),
-            datetime(2025, 3, 31, tzinfo=pytz.UTC),
-            cover_extract_range=cover_extract_range,
-        )
-        _, window_start, window_end = sink.exec_postprocessor.call_args.args
-        return window_start, window_end
-
-    def test_post_process__default_window_is_last_thirty_days(self):
-        window_start, window_end = self._post_process_window(False)
-        self.assertEqual(timedelta(days=30), window_end - window_start)
-
-    def test_post_process__cover_extract_range_starts_at_range_start(self):
-        window_start, window_end = self._post_process_window(True)
-        self.assertEqual(datetime(2025, 3, 1), window_start)
-        self.assertEqual(datetime.today().date(), window_end.date())
 
     def test_map_reading__valid_ccf_conversion(self):
         value, unit = self.adapter.map_reading(12.5, "CCF")

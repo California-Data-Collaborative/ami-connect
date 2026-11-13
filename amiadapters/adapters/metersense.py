@@ -219,7 +219,6 @@ class MetersenseAdapter(BaseAMIAdapter):
         database_user,
         database_password,
         configured_sinks=None,
-        max_extract_days: int = None,
     ):
         """
         ssh_tunnel_server_host = hostname or IP of intermediate server
@@ -249,7 +248,6 @@ class MetersenseAdapter(BaseAMIAdapter):
             configured_metrics,
             configured_sinks,
             METERSENSE_RAW_SNOWFLAKE_LOADER,
-            max_extract_days=max_extract_days,
         )
 
     def name(self) -> str:

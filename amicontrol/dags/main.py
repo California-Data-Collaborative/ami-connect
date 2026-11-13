@@ -52,7 +52,6 @@ for org_index, adapter in enumerate(sorted(utility_adapters, key=lambda a: a.org
         user_provided_params,
         adapter,
         on_failure_sns_notifier,
-        split_long_ranges=True,
     )
 
     # Scheduled runs
