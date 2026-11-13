@@ -21,7 +21,7 @@ Reads join to accounts via `meter_id = device_id` (direct join, no intermediate 
 
 Example:
 ```
-python cli.py config add-source my_utility xylem_datalake America/Los_Angeles --config agency-code=hlsbo --config database-id=1 --config client-id=e4b8a1bf-51c5-4ba4-a8e6-15e5186d503e --sinks my_snowflake
+python cli.py config add-source my_utility xylem_datalake America/Los_Angeles --config agency-code=hlsbo --config database-id=1 --config client-id=e4b8a1bf-51c5-4ba4-a8e6-15e5186d503e --config max_extract_days=7 --sinks my_snowflake
 ```
 
 ## Secrets

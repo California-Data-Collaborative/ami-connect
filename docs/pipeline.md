@@ -64,7 +64,7 @@ For each configured AMI source, the system generates **three Airflow DAGs**:
    - Runs the ETL daily for that source.  
 
 2. **Manual DAG**  
-   - Allows on-demand runs for an arbitrary date range.  
+   - Allows on-demand runs: a start date and a number of days, up to the source's `max_extract_days`.  
 
 3. **Backfill DAGs** (optional)  
    - Created when automated backfills are specified in configuration.  

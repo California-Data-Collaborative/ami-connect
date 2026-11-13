@@ -40,17 +40,18 @@ def staggered_schedule(schedule_crontab: str, org_index: int, org_count: int) ->
 def manual_run_params(max_extract_days: int) -> dict:
     """
     Inputs of a source's manual run DAG: a start date and a number of days, at most the
-    source's max_extract_days. Airflow checks them before it creates a run, so a request
-    for more days is rejected at the trigger form (or the API or CLI trigger) and no run starts.
+    source's max_extract_days. Both are required and have no default. Airflow checks them
+    before it creates a run, so a request without them (such as the older start and end
+    date form) or with more days is rejected at the trigger form (or the API or CLI
+    trigger) and no run starts.
     """
     return {
         "extract_range_start": Param(
-            "",
             type="string",
+            format="date",
             description="First day to extract, YYYY-MM-DD.",
         ),
         "extract_range_days": Param(
-            1,
             type="integer",
             minimum=1,
             maximum=max_extract_days,
@@ -150,13 +151,19 @@ def ami_control_dag_factory(
             """
             if takes_days:
                 # Manual run: a start date and a number of days, checked by Airflow against
-                # the source's max_extract_days. Without a start date (possible only through
-                # the API), the most recent that many days.
-                start = context["params"].get("extract_range_start") or None
-                days = timedelta(days=int(context["params"]["extract_range_days"]))
-                if start is None:
-                    return adapter.calculate_extract_range(None, None, days, lag)
-                start = datetime.fromisoformat(str(start).strip())
+                # the source's max_extract_days when the run was created. Airflow checks them
+                # again when each task starts and passes None for a value that no longer
+                # passes, e.g. after the source's limit was lowered.
+                start = context["params"].get("extract_range_start")
+                days = context["params"].get("extract_range_days")
+                if not start or not days:
+                    raise Exception(
+                        f"This run's start date ({start}) or number of days ({days}) is "
+                        f"missing or no longer allowed by {adapter.org_id}'s max_extract_days "
+                        f"of {adapter.max_extract_days}. Trigger a new run."
+                    )
+                start = datetime.fromisoformat(str(start))
+                days = timedelta(days=int(days))
                 return adapter.calculate_extract_range(start, start + days, days, lag)
             # start and end dates from Airflow UI, if specified
             start_from_params = context["params"].get("extract_range_start")

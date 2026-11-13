@@ -89,8 +89,26 @@ class TestManualRunForm(unittest.TestCase):
                 6, {"extract_range_start": "2026-01-01", "extract_range_days": 0}
             )
 
-    def test_defaults_are_valid_for_a_one_day_limit(self):
-        self._validate(1, {})
+    def test_requires_a_start_date_and_a_number_of_days(self):
+        with self.assertRaises(ParamValidationError):
+            self._validate(6, {})
+
+    def test_rejects_the_old_start_and_end_form(self):
+        with self.assertRaises(ParamValidationError):
+            self._validate(
+                6,
+                {
+                    "extract_range_start": "2026-01-01",
+                    "extract_range_end": "2026-01-20",
+                },
+            )
+
+    def test_rejects_a_start_that_is_not_a_date(self):
+        for start in [" ", "", "2026-1-1", "January 1"]:
+            with self.assertRaises(ParamValidationError, msg=start):
+                self._validate(
+                    6, {"extract_range_start": start, "extract_range_days": 3}
+                )
 
     def _extract_call(self, params, dag_params):
         adapter = MagicMock()
@@ -127,12 +145,15 @@ class TestManualRunForm(unittest.TestCase):
         )
         self.assertEqual(datetime.datetime(2026, 1, 6), end)
 
-    def test_manual_run_without_start_takes_the_most_recent_days(self):
-        start, end, interval, _ = self._extract_call(
-            {"extract_range_start": "", "extract_range_days": 3}, manual_run_params(6)
-        )
-        self.assertEqual((None, None), (start, end))
-        self.assertEqual(datetime.timedelta(days=3), interval)
+    def test_run_whose_days_are_no_longer_allowed_fails_with_a_clear_message(self):
+        # Airflow passes None for a value that fails its check when a task starts,
+        # e.g. after the source's limit was lowered
+        with self.assertRaises(Exception) as ctx:
+            self._extract_call(
+                {"extract_range_start": "2026-01-01", "extract_range_days": None},
+                manual_run_params(6),
+            )
+        self.assertIn("Trigger a new run", str(ctx.exception))
 
     def test_other_dags_ignore_days_and_read_start_and_end_as_before(self):
         start, end, *_ = self._extract_call(
