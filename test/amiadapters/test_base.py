@@ -27,6 +27,9 @@ class TestBaseAdapter(BaseTestCase):
         self.range_start = datetime(2026, 1, 1, tzinfo=pytz.UTC)
         self.range_end = datetime(2026, 1, 3, tzinfo=pytz.UTC)
 
+    def test_adapter_has_no_extract_limit_until_configuration_sets_it(self):
+        self.assertIsNone(self.adapter.max_extract_days)
+
     def test_datetime_from_iso_str__None_results_in_None(self):
         result = self.adapter.datetime_from_iso_str(None, self.adapter.org_timezone)
         self.assertIsNone(result)
@@ -74,63 +77,6 @@ class TestBaseAdapter(BaseTestCase):
         with self.assertRaises(Exception) as context:
             # End after start
             self.adapter._validate_extract_range(self.range_end, self.range_start)
-
-    def _calculate(self, start, end, interval=timedelta(days=2), backfill=None):
-        return self.adapter.calculate_extract_range(
-            start,
-            end,
-            interval=interval,
-            lag=timedelta(days=0),
-            backfill_params=backfill,
-        )
-
-    def test_extract_range__explicit_range_of_fourteen_days_is_allowed(self):
-        end = self.range_start + timedelta(days=14)
-        self.assertEqual(
-            (self.range_start, end), self._calculate(self.range_start, end)
-        )
-
-    def test_extract_range__explicit_range_over_the_limit_is_refused(self):
-        with self.assertRaises(Exception) as ctx:
-            self._calculate(
-                self.range_start, self.range_start + timedelta(days=14, hours=1)
-            )
-        self.assertIn("more than 14 days", str(ctx.exception))
-        self.assertIn("consecutive runs", str(ctx.exception))
-
-    def test_extract_range__explicit_range_as_iso_strings_is_checked(self):
-        with self.assertRaises(Exception):
-            self._calculate("2026-01-01T00:00:00", "2026-02-01T00:00:00")
-
-    def test_extract_range__configured_limit_wins_over_default(self):
-        self.adapter.max_extract_days = 30
-        self._calculate(self.range_start, self.range_start + timedelta(days=30))
-        with self.assertRaises(Exception):
-            self._calculate(self.range_start, self.range_start + timedelta(days=31))
-
-    def test_extract_range__computed_range_is_not_checked(self):
-        # Scheduled runs pass no dates; their window comes from code
-        self.adapter.max_extract_days = 1
-        start, end = self._calculate(None, None, interval=timedelta(days=6))
-        self.assertEqual(timedelta(days=6), end - start)
-
-    def test_extract_range__backfill_chunk_is_trimmed_to_the_limit(self):
-        backfill = BackfillConfiguration(
-            org_id="test-org",
-            start_date=datetime(2025, 1, 1),
-            end_date=datetime(2025, 12, 31),
-            interval_days=30,
-            schedule="*/15 * * * *",
-        )
-        with patch.object(
-            ExtractRangeCalculator,
-            "calculate_extract_range",
-            return_value=(self.range_start, self.range_end),
-        ) as calculate:
-            self._calculate(None, None, backfill=backfill)
-        self.assertEqual(
-            14, calculate.call_args.kwargs["backfill_params"].interval_days
-        )
 
     def test_map_reading__valid_ccf_conversion(self):
         value, unit = self.adapter.map_reading(12.5, "CCF")

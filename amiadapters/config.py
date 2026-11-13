@@ -447,7 +447,7 @@ class AMIAdapterConfiguration:
                     )
 
             # Per-source limit on how many days one run may extract (see
-            # BaseAMIAdapter.max_extract_days); adapters start with the default.
+            # BaseAMIAdapter.max_extract_days); adapters start with none set.
             if source.max_extract_days is not None and len(adapters) > built_before:
                 adapters[-1].max_extract_days = source.max_extract_days
 

@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
-from airflow.exceptions import AirflowSkipException
+from airflow.models.param import Param
 from airflow.notifications.basenotifier import BaseNotifier
-from airflow.utils.trigger_rule import TriggerRule
 
 from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, BaseAMIAdapter
 
@@ -36,6 +35,32 @@ def staggered_schedule(schedule_crontab: str, org_index: int, org_count: int) ->
     hour = (STAGGER_WINDOW_START_HOUR + offset_minutes // 60) % 24
     minute = offset_minutes % 60
     return f"{minute} {hour} * * *"
+
+
+def manual_run_params(max_extract_days: int) -> dict:
+    """
+    Inputs of a source's manual run DAG: a start date and a number of days, at most the
+    source's max_extract_days. Airflow checks them before it creates a run, so a request
+    for more days is rejected at the trigger form (or the API or CLI trigger) and no run starts.
+    """
+    return {
+        "extract_range_start": Param(
+            "",
+            type="string",
+            description="First day to extract, YYYY-MM-DD. Leave empty to extract the most recent days.",
+        ),
+        "extract_range_days": Param(
+            1,
+            type="integer",
+            minimum=1,
+            maximum=max_extract_days,
+            description=(
+                f"Number of days to extract from the start date, at most {max_extract_days} "
+                f"for this source (its max_extract_days setting). For a longer range, run "
+                f"consecutive manual runs, starting each after the previous one finishes."
+            ),
+        ),
+    }
 
 
 def ami_control_dag_factory(
@@ -79,17 +104,8 @@ def ami_control_dag_factory(
             run_id = context["dag_run"].run_id
             adapter.transform_and_output(run_id)
 
-        # Runs after load_transformed even if that failed, so the vendor's raw data is still
-        # archived; skips only when there is no extract to archive.
-        @task(trigger_rule=TriggerRule.ALL_DONE)
+        @task()
         def load_raw(adapter: BaseAMIAdapter, **context):
-            extract_ti = context["dag_run"].get_task_instance(
-                f"extract-{adapter.name()}"
-            )
-            if extract_ti is None or extract_ti.state != "success":
-                raise AirflowSkipException(
-                    "Extract did not succeed; nothing to archive"
-                )
             run_id = context["dag_run"].run_id
             adapter.load_raw(run_id)
 
@@ -105,25 +121,18 @@ def ami_control_dag_factory(
             adapter.post_process(run_id, start, end)
 
         # Set sequence of tasks for this utility
-        load_transformed_step = load_transformed.override(
-            task_id=f"load-transformed-{adapter.name()}"
-        )(adapter)
-        load_raw_step = load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter)
         (
             extract.override(task_id=f"extract-{adapter.name()}")(adapter)
             >> transform.override(task_id=f"transform-{adapter.name()}")(adapter)
-            # The two loads run one after the other, not in parallel: each one
-            # re-materializes the run's full payload from the intermediate outputs,
-            # and two copies at once is what exhausted the Airflow host on
-            # 2026-08-25. Transformed data first, so readings and meters land
-            # before the raw archive.
-            >> load_transformed_step
-            >> load_raw_step
+            >> [
+                # Run load tasks in parallel
+                load_raw.override(task_id=f"load-raw-{adapter.name()}")(adapter),
+                load_transformed.override(task_id=f"load-transformed-{adapter.name()}")(
+                    adapter
+                ),
+            ]
+            >> post_process.override(task_id=f"post-process-{adapter.name()}")()
         )
-        # Post processing needs both loads to have succeeded.
-        [load_transformed_step, load_raw_step] >> post_process.override(
-            task_id=f"post-process-{adapter.name()}"
-        )()
 
         def _calculate_extract_range(
             adapter: BaseAMIAdapter,
@@ -135,9 +144,17 @@ def ami_control_dag_factory(
             Given the DAG's inputs, figure out the start and end range for the pipeline's extract.
             Could come from DAG params, from backfill configuration, or could rely on default values.
             """
-            # start and end dates from Airflow UI, if specified
-            start_from_params = context["params"].get("extract_range_start")
-            end_from_params = context["params"].get("extract_range_end")
+            # Manual runs: a start date and a number of days from the trigger form
+            start_from_params = context["params"].get("extract_range_start") or None
+            days_from_params = context["params"].get("extract_range_days")
+            end_from_params = None
+            if start_from_params is not None and days_from_params:
+                start_from_params = datetime.fromisoformat(
+                    str(start_from_params).strip()
+                )
+                end_from_params = start_from_params + timedelta(
+                    days=int(days_from_params)
+                )
             return adapter.calculate_extract_range(
                 start_from_params,
                 end_from_params,

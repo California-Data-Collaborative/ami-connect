@@ -1,9 +1,14 @@
+from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, ScheduledExtract
+import datetime
 import unittest
 from unittest.mock import MagicMock
 
-from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, ScheduledExtract
+from airflow.exceptions import ParamValidationError
+from airflow.models.param import ParamsDict
+
 from amicontrol.dags.meter_read_dags import (
     ami_control_dag_factory,
+    manual_run_params,
     STAGGER_WINDOW_MINUTES,
     STAGGER_WINDOW_START_HOUR,
     staggered_schedule,
@@ -61,32 +66,68 @@ class TestStaggeredSchedule(BaseTestCase):
         self.assertEqual(DEFAULT_SCHEDULE_CRONTAB, ScheduledExtract().schedule_crontab)
 
 
-class TestMeterReadDagWiring(unittest.TestCase):
-    def test_loads_run_in_series_transformed_before_raw(self):
+class TestManualRunForm(unittest.TestCase):
+    def _validate(self, max_days, conf):
+        params = ParamsDict(manual_run_params(max_days))
+        params.update(conf)
+        params.validate()
+
+    def test_accepts_days_up_to_the_source_limit(self):
+        self._validate(
+            6, {"extract_range_start": "2026-01-01", "extract_range_days": 6}
+        )
+
+    def test_rejects_more_days_than_the_source_limit(self):
+        with self.assertRaises(ParamValidationError):
+            self._validate(
+                6, {"extract_range_start": "2026-01-01", "extract_range_days": 7}
+            )
+
+    def test_rejects_zero_days(self):
+        with self.assertRaises(ParamValidationError):
+            self._validate(
+                6, {"extract_range_start": "2026-01-01", "extract_range_days": 0}
+            )
+
+    def test_defaults_are_valid_for_a_one_day_limit(self):
+        self._validate(1, {})
+
+    def _extract_range(self, params):
         adapter = MagicMock()
         adapter.name.return_value = "vendor-my_org"
+        adapter.calculate_extract_range.return_value = ("start", "end")
         dag = ami_control_dag_factory(
-            dag_id="my_org-ami-meter-read-dag-test",
+            dag_id="my_org-ami-meter-read-dag-manual",
             schedule=None,
-            params={},
+            params=manual_run_params(6),
             adapter=adapter,
             on_failure_sns_notifier=None,
         )
-        upstream = {t.task_id: set(t.upstream_task_ids) for t in dag.tasks}
-        self.assertEqual(set(), upstream["extract-vendor-my_org"])
-        self.assertEqual({"extract-vendor-my_org"}, upstream["transform-vendor-my_org"])
-        self.assertEqual(
-            {"transform-vendor-my_org"}, upstream["load-transformed-vendor-my_org"]
+        dag.get_task("extract-vendor-my_org").python_callable(
+            adapter, params=params, dag_run=MagicMock(run_id="r")
         )
-        self.assertEqual(
-            {"load-transformed-vendor-my_org"}, upstream["load-raw-vendor-my_org"]
+        return adapter.calculate_extract_range.call_args.args[:2]
+
+    def test_start_and_days_become_the_extract_range(self):
+        start, end = self._extract_range(
+            {"extract_range_start": "2026-01-01", "extract_range_days": 5}
         )
-        self.assertEqual(
-            {"load-transformed-vendor-my_org", "load-raw-vendor-my_org"},
-            upstream["post-process-vendor-my_org"],
+        self.assertEqual(datetime.datetime(2026, 1, 1), start)
+        self.assertEqual(datetime.datetime(2026, 1, 6), end)
+
+    def test_end_date_in_run_config_is_ignored(self):
+        # Only the start date and number of days are checked against the limit
+        start, end = self._extract_range(
+            {
+                "extract_range_start": "2026-01-01",
+                "extract_range_days": 5,
+                "extract_range_end": "2026-12-31",
+            }
         )
-        tasks = {t.task_id: t for t in dag.tasks}
-        self.assertEqual("all_done", tasks["load-raw-vendor-my_org"].trigger_rule)
+        self.assertEqual(datetime.datetime(2026, 1, 6), end)
+
+    def test_empty_start_extracts_the_most_recent_days(self):
         self.assertEqual(
-            "all_success", tasks["post-process-vendor-my_org"].trigger_rule
+            (None, None),
+            self._extract_range({"extract_range_start": "", "extract_range_days": 1}),
         )

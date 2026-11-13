@@ -160,7 +160,7 @@ class TestConfig(BaseTestCase):
             self.get_fixture_path("itron-roseville-secrets.yaml"),
         )
         self.assertIsNone(config._sources[0].max_extract_days)
-        self.assertEqual(14, config.adapters()[0].max_extract_days)
+        self.assertIsNone(config.adapters()[0].max_extract_days)
 
     def test_max_extract_days__configured_value_is_coerced_and_passed_to_adapter(self):
         config = AMIAdapterConfiguration.from_yaml(

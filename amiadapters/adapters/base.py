@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 import logging
 from typing import List, Tuple
@@ -29,14 +29,6 @@ logger = logging.getLogger(__name__)
 # and stagger them across orgs (see amicontrol/dags/main.py) rather than
 # start every org's pipeline at the same instant.
 DEFAULT_SCHEDULE_CRONTAB = "0 12 * * *"
-
-# Most days of data one run with an explicit date range may extract, unless the source
-# config says otherwise (SourceConfigBase.max_extract_days). A run holds its whole payload
-# in memory through transform and load, and the Airflow host has no swap, so a payload
-# that does not fit livelocks the host instead of failing the task (2026-08-12 and
-# 2026-09-22 incidents). Manual and CLI runs over the limit are refused before extract;
-# backfill chunks are trimmed to it. Scheduled ranges are set in code and not checked.
-DEFAULT_MAX_EXTRACT_DAYS = 14
 
 
 @dataclass
@@ -79,8 +71,10 @@ class BaseAMIAdapter(ABC):
         self.org_id = org_id
         self.org_timezone = org_timezone
         self.pipeline_configuration = pipeline_configuration
-        # Overridden per source from configuration (AMIAdapterConfiguration.adapters)
-        self.max_extract_days = DEFAULT_MAX_EXTRACT_DAYS
+        # Most days one manual run or backfill chunk may extract for this source, from its
+        # max_extract_days setting (set in AMIAdapterConfiguration.adapters). None: not set,
+        # so the source gets no manual run DAG and backfills cannot be configured for it.
+        self.max_extract_days = None
         self.output_controller = self._create_task_output_controller(
             configured_task_output_controller, org_id
         )
@@ -201,17 +195,6 @@ class BaseAMIAdapter(ABC):
         lag: specified_start and specified_end are None, lag tells us if we should extract something farther
             back than the most recent data. Defaults to a lag of zero, i.e. "extract the most recent data".
         """
-        if (
-            backfill_params is not None
-            and int(backfill_params.interval_days) > self.max_extract_days
-        ):
-            logger.info(
-                f"Backfill interval of {backfill_params.interval_days} days for {self.org_id} "
-                f"is longer than max_extract_days; using {self.max_extract_days} days per chunk"
-            )
-            backfill_params = replace(
-                backfill_params, interval_days=self.max_extract_days
-            )
         range_calculator = ExtractRangeCalculator(self.org_id, self.storage_sinks)
         calculated_start, calculated_end = range_calculator.calculate_extract_range(
             specified_start,
@@ -221,9 +204,6 @@ class BaseAMIAdapter(ABC):
             backfill_params=backfill_params,
         )
         self._validate_extract_range(calculated_start, calculated_end)
-        if backfill_params is None and specified_start and specified_end:
-            # An explicit range from a person or agent (manual DAG run, cli.py run)
-            self._check_extract_range_size(calculated_start, calculated_end)
         return calculated_start, calculated_end
 
     def load_raw(self, run_id: str):
@@ -458,21 +438,6 @@ class BaseAMIAdapter(ABC):
         if extract_range_end < extract_range_start:
             raise Exception(
                 f"Range start must be before end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}"
-            )
-
-    def _check_extract_range_size(
-        self, extract_range_start: datetime, extract_range_end: datetime
-    ):
-        if extract_range_end - extract_range_start > timedelta(
-            days=self.max_extract_days
-        ):
-            raise Exception(
-                f"Extract range {extract_range_start} -> {extract_range_end} spans more than "
-                f"{self.max_extract_days} days, the most one run of {self.org_id} extracts at once. "
-                f"Run it as consecutive runs of at most {self.max_extract_days} days, starting each "
-                f"after the previous one finishes. Once a larger run has completed on the Airflow "
-                f"host, the limit can be raised with "
-                f"`cli.py config update-source {self.org_id} --config max_extract_days=<n>`."
             )
 
     @staticmethod

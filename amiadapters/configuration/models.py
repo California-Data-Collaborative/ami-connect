@@ -460,12 +460,10 @@ class SourceConfigBase:
     sinks: List[ConfiguredStorageSink]
     task_output_controller: IntermediateOutputControllerConfiguration
     metrics: MetricsConfigurationBase
-    # Longest extract window, in days, that one pipeline run may request for this
-    # source. Bounds every path that produces a range (scheduled, manual UI conf,
-    # backfill chunks). Guards the Airflow host, which livelocks rather than
-    # OOM-kills when a single run's payload exceeds memory. None means the adapter
-    # default, BaseAMIAdapter.DEFAULT_MAX_EXTRACT_DAYS. Set per source with
-    # `cli.py config update-source <org_id> --config max_extract_days=<n>`.
+    # Most days of data one manual run or backfill chunk may extract for this source, sized
+    # from the largest run of this source that has completed on the Airflow host (a run holds
+    # its whole payload in memory, and a payload that does not fit freezes the host). Required
+    # by add-source. Set with `cli.py config update-source <org_id> --config max_extract_days=<n>`.
     max_extract_days: Optional[int] = field(default=None, kw_only=True)
 
     def validate(self) -> None:

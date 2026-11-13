@@ -392,7 +392,12 @@ class TestDatabase(BaseTestCase):
     @patch("amiadapters.configuration.database._get_source_by_org_id")
     def test_add_source_configuration_executes_insert(self, mock_get_source):
         mock_get_source.return_value = []
-        source_config = {"org_id": "CADC", "type": "beacon_360", "timezone": "UTC"}
+        source_config = {
+            "org_id": "CADC",
+            "type": "beacon_360",
+            "timezone": "UTC",
+            "max_extract_days": 14,
+        }
         add_source_configuration(self.mock_connection, source_config)
 
         self.mock_cursor.execute.assert_called_once()
@@ -408,6 +413,7 @@ class TestDatabase(BaseTestCase):
             "type": "beacon_360",
             "timezone": "UTC",
             "sinks": ["cadc_snowflake"],
+            "max_extract_days": 14,
         }
         self.mock_cursor.execute.return_value.fetchall.return_value = [(1,)]
         add_source_configuration(self.mock_connection, source_config)
@@ -495,6 +501,17 @@ class TestDatabase(BaseTestCase):
         )
         _, params = self.mock_cursor.execute.call_args_list[-1][0]
         self.assertEqual(21, json.loads(params[1])["max_extract_days"])
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    def test_add_source_configuration_requires_max_extract_days(self, mock_get_source):
+        mock_get_source.return_value = []
+        with self.assertRaises(ValueError) as ctx:
+            add_source_configuration(
+                self.mock_connection,
+                {"org_id": "CADC", "type": "beacon_360", "timezone": "UTC"},
+            )
+        self.assertIn("max_extract_days", str(ctx.exception))
+        self.mock_cursor.execute.assert_not_called()
 
     @patch("amiadapters.configuration.database._get_source_by_org_id")
     def test_add_source_configuration_saves_max_extract_days(self, mock_get_source):
@@ -655,7 +672,54 @@ class TestDatabase(BaseTestCase):
                 f"Backfill configuration is missing field: {field}", str(ctx.exception)
             )
 
-    def test_update_backfill_configuration_executes_merge(self):
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    def test_update_backfill_configuration_rejects_interval_over_the_limit(
+        self, mock_get_source
+    ):
+        mock_get_source.return_value = [
+            ("id1", "beacon_360", "org1", "UTC", json.dumps({"max_extract_days": 14}))
+        ]
+        with self.assertRaises(ValueError) as ctx:
+            update_backfill_configuration(
+                self.mock_connection,
+                {
+                    "org_id": "org1",
+                    "start_date": date(2023, 1, 1),
+                    "end_date": date(2023, 12, 31),
+                    "interval_days": 15,
+                    "schedule": "0 0 * * *",
+                },
+            )
+        self.assertIn("max_extract_days of 14", str(ctx.exception))
+        self.mock_cursor.execute.assert_not_called()
+
+    @patch("amiadapters.configuration.database._get_source_by_org_id")
+    def test_update_backfill_configuration_requires_the_source_limit(
+        self, mock_get_source
+    ):
+        mock_get_source.return_value = [
+            ("id1", "beacon_360", "org1", "UTC", json.dumps({}))
+        ]
+        with self.assertRaises(ValueError) as ctx:
+            update_backfill_configuration(
+                self.mock_connection,
+                {
+                    "org_id": "org1",
+                    "start_date": date(2023, 1, 1),
+                    "end_date": date(2023, 12, 31),
+                    "interval_days": 5,
+                    "schedule": "0 0 * * *",
+                },
+            )
+        self.assertIn("no max_extract_days", str(ctx.exception))
+
+    @patch(
+        "amiadapters.configuration.database._get_source_by_org_id",
+        return_value=[
+            ("id1", "beacon_360", "org1", "UTC", json.dumps({"max_extract_days": 14}))
+        ],
+    )
+    def test_update_backfill_configuration_executes_merge(self, mock_get_source):
         """update_backfill_configuration should execute a MERGE statement with correct parameters"""
         valid_config = {
             "org_id": "Org1",
@@ -682,7 +746,13 @@ class TestDatabase(BaseTestCase):
         self.assertEqual(params[3], valid_config["interval_days"])
         self.assertEqual(params[4], valid_config["schedule"])
 
-    def test_update_backfill_configuration_allows_multiple_calls(self):
+    @patch(
+        "amiadapters.configuration.database._get_source_by_org_id",
+        return_value=[
+            ("id1", "beacon_360", "org1", "UTC", json.dumps({"max_extract_days": 14}))
+        ],
+    )
+    def test_update_backfill_configuration_allows_multiple_calls(self, mock_get_source):
         """update_backfill_configuration should execute independently for each call"""
         config2 = {
             "org_id": "Org1",
