@@ -967,7 +967,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         # irrigating at the boundary.
         start_cursor = conn.cursor()
         start_cursor.execute(f"""
-            select min(event_start_ts)::date::string
+            select to_char(min(event_start_ts)::date, 'YYYY-MM-DD')
             from irrigation_{self.org_id}_ongoing
         """)
         start_row = start_cursor.fetchone()

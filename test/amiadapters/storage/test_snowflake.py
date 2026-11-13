@@ -271,7 +271,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
         all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
         normalized = [self.normalize_sql(sql) for sql in all_sqls]
 
-        # Expects exactly 24 execute calls:
+        # Expects exactly 25 execute calls:
         # 1 meters_score CREATE, 1 meters_score DELETE, 1 meters_score INSERT,
         # 1 meters_score_agg,
         # 1 leaks CREATE, 1 leaks ongoing, 1 leaks recomputed, 1 begin, 2 leaks DELETE,
@@ -609,7 +609,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
 
         # --- how far back to read: the earliest stored start of those events ---
         self.assertIn(
-            "select min(event_start_ts)::date::string from irrigation_org-id_ongoing",
+            "select to_char(min(event_start_ts)::date, 'YYYY-MM-DD') from irrigation_org-id_ongoing",
             normalized[2],
         )
 

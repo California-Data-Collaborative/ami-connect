@@ -221,7 +221,9 @@ def backfill_irrigation(
     ],
     start_date: Annotated[
         datetime,
-        typer.Option(help="First day of irrigation history to recompute, YYYY-MM-DD."),
+        typer.Option(
+            help="First day of irrigation history to recompute, YYYY-MM-DD. An event running across this day is recomputed from its stored start, so start at the beginning of the history or on a day no event crosses."
+        ),
     ],
     end_date: Annotated[
         datetime,
