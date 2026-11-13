@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 LEAK_MAX_LOOKBACK_DAYS = 365
 # Size of each window when recomputing leak history
 LEAK_BACKFILL_WINDOW_DAYS = 30
+# How far back irrigation detection looks for the start of an event that is still running
+IRRIGATION_MAX_LOOKBACK_DAYS = 365
+# Size of each window when recomputing irrigation history
+IRRIGATION_BACKFILL_WINDOW_DAYS = 30
 
 
 class RawSnowflakeTableLoader(ABC):
@@ -537,162 +541,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
 
             self._exec_leak_detection(conn, min_date, max_date)
 
-            # Ensure irrigation detail table exists (no-op after first run)
-            conn.cursor().execute(f"""
-                create table if not exists irrigation_{self.org_id} (
-                    org_id text,
-                    device_id text,
-                    flowtime_ts timestamp_tz,
-                    total_reading_cf float,
-                    irrigation_reading_cf float,
-                    non_irrigation_reading_cf float,
-                    is_irrigation boolean,
-                    event_seq number(18,0),
-                    event_start_ts timestamp_tz,
-                    event_end_ts timestamp_tz,
-                    event_hrs number(10,0),
-                    event_id text
-                )
-            """)
-
-            # Detection rows in the window: the insert below should keep (almost) all of them. Counted
-            # before the delete so a join that matches nothing is reported instead of emptying the window.
-            count_cursor = conn.cursor()
-            count_cursor.execute(f"""
-                select count(*) from (
-                    select distinct *
-                    from wavelet.global_irrigation_detection
-                    where source = '{self.org_id}'
-                    and timestamp::date >= '{min_date.isoformat()}'
-                    and timestamp::date <= '{max_date.isoformat()}'
-                )
-            """)
-            count_row = count_cursor.fetchone()
-            detection_rows = count_row[0] if count_row else 0
-
-            # Delete existing rows in the window, then insert fresh results
-            conn.cursor().execute(f"""
-                delete from irrigation_{self.org_id}
-                where flowtime_ts::date >= '{min_date.isoformat()}'
-                and flowtime_ts::date <= '{max_date.isoformat()}'
-            """)
-
-            ami_irrigation_sql = f"""
-                insert into irrigation_{self.org_id}
-                with source_data as
-                (
-                    select distinct *
-                    from wavelet.global_irrigation_detection
-                    where source = '{self.org_id}'
-                    and timestamp::date >= '{min_date.isoformat()}'
-                    and timestamp::date <= '{max_date.isoformat()}'
-                )
-                -- global_irrigation_detection.timestamp is the reading's clock time without its UTC
-                -- offset, and the offset differs by adapter: some store readings in Pacific time, others
-                -- (Neptune, Moulton Niguel, Coastside) in UTC. Labeling that clock with the session time zone
-                -- put the UTC-stored orgs' events 7-8 hours late. Take the instant from the reading itself.
-                -- flowtime::timestamp_ntz and flowtime::date are evaluated in the reading's own offset, so
-                -- they line up with timestamp and the window above. A detection row whose reading is gone
-                -- is left out rather than given a label in a different offset from its neighbours.
-                , readings_window as
-                (
-                    select device_id
-                        , flowtime
-                        , flowtime::timestamp_ntz as clock_time
-                        -- The fall-back hour has two readings with the same clock time; number them
-                        , row_number() over (partition by device_id, flowtime::timestamp_ntz order by flowtime) as same_clock_rank
-                    from ami_connect.readings
-                    where org_id = '{self.org_id}'
-                    and flowtime::date >= '{min_date.isoformat()}'
-                    and flowtime::date <= '{max_date.isoformat()}'
-                )
-                , detection_ranked as
-                (
-                    -- ... and the detection table can hold one row per such reading; pair them one to one
-                    select d.*
-                        , row_number() over (partition by source, device_id, timestamp order by total_reading) as same_clock_rank
-                    from source_data d
-                )
-                , with_flowtime as
-                (
-                    select d.*
-                        , r.flowtime as flowtime_ts
-                    from detection_ranked d
-                    join readings_window r
-                        on r.device_id = d.device_id
-                        and r.clock_time = d.timestamp
-                        and r.same_clock_rank = d.same_clock_rank
-                )
-                , with_events as
-                (
-                    select
-                        source                                as org_id
-                        , device_id
-                        , flowtime_ts
-                        , total_reading                       as total_reading_cf
-                        , irrigation_reading                  as irrigation_reading_cf
-                        , non_irrigation_reading              as non_irrigation_reading_cf
-                        , coalesce(irrigation_reading, 0) > 0 as is_irrigation
-                        , conditional_change_event(coalesce(irrigation_reading, 0) = 0)
-                              over (partition by source, device_id order by flowtime_ts) as event_seq
-                    from with_flowtime
-                )
-                , with_event_bounds as
-                (
-                    select *
-                        , min(flowtime_ts) over (partition by org_id, device_id, event_seq) as event_start_ts
-                        , max(flowtime_ts) over (partition by org_id, device_id, event_seq) as event_end_ts
-                        , datediff(hour, event_start_ts, event_end_ts) + 1                  as event_hrs
-                        , to_varchar(event_start_ts, 'yyyy/mm/dd@hh - ')
-                              || event_hrs
-                              || iff(max(is_irrigation::int) over (partition by org_id, device_id, event_seq) = 1, 'h', 'h*') as event_id
-                    from with_events
-                )
-                select
-                    org_id
-                    , device_id
-                    , flowtime_ts
-                    , total_reading_cf
-                    , irrigation_reading_cf
-                    , non_irrigation_reading_cf
-                    , is_irrigation
-                    , event_seq
-                    , event_start_ts
-                    , event_end_ts
-                    , event_hrs
-                    , event_id
-                from with_event_bounds
-            """
-            insert_cursor = conn.cursor()
-            insert_cursor.execute(ami_irrigation_sql)
-            inserted_rows = insert_cursor.rowcount
-            if detection_rows and inserted_rows < 0.99 * detection_rows:
-                logger.error(
-                    f"irrigation_{self.org_id}: kept {inserted_rows} of {detection_rows} detection rows for "
-                    f"{min_date.isoformat()}..{max_date.isoformat()}; readings are missing for the rest"
-                )
-
-            ami_irrigation_agg_sql = f"""
-                create or replace table irrigation_{self.org_id}_agg
-                as
-                select
-                    org_id
-                    , device_id
-                    , event_id
-                    , event_start_ts
-                    , event_end_ts
-                    , event_hrs
-                    , max(is_irrigation)                                                           as is_irrigation
-                    , array_agg(flowtime_ts) within group (order by flowtime_ts)                   as flowtime_ts
-                    , array_agg(total_reading_cf) within group (order by flowtime_ts)              as total_reading_cf
-                    , array_agg(irrigation_reading_cf) within group (order by flowtime_ts)         as irrigation_reading_cf
-                    , array_agg(non_irrigation_reading_cf) within group (order by flowtime_ts)     as non_irrigation_reading_cf
-                    , sum(total_reading_cf)                                                        as total_reading_sum_cf
-                    , sum(irrigation_reading_cf)                                                   as irrigation_reading_sum_cf
-                from irrigation_{self.org_id}
-                group by org_id, device_id, event_id, event_start_ts, event_end_ts, event_hrs
-            """
-            conn.cursor().execute(ami_irrigation_agg_sql)
+            self._exec_irrigation_detection(conn, min_date, max_date)
 
     def exec_leak_detection(self, run_id: str, min_date: datetime, max_date: datetime):
         """
@@ -1016,6 +865,297 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             group by org_id, device_id, event_id, event_start_ts, event_end_ts, event_hrs, is_leak
         """
         conn.cursor().execute(ami_leaks_agg_sql)
+
+    def exec_irrigation_detection(
+        self, run_id: str, min_date: datetime, max_date: datetime
+    ):
+        """
+        Recompute irrigation events for the min_date..max_date window without the rest of the
+        post processor, e.g. to backfill irrigation history.
+        """
+        with self.metrics.timed_task(
+            "snowflake_storage_sink.exec_irrigation_detection",
+            tags={"org_id": self.org_id},
+        ):
+            conn = self.sink_config.connection()
+            self._exec_irrigation_detection(conn, min_date, max_date)
+
+    def backfill_irrigation_detection(
+        self,
+        run_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        window_days: int = IRRIGATION_BACKFILL_WINDOW_DAYS,
+    ):
+        """
+        Recompute irrigation history from start_date to end_date in consecutive windows, oldest
+        first, so each window continues the events that were still running at the end of the
+        previous one.
+        """
+        window_start = start_date
+        while window_start.date() <= end_date.date():
+            window_end = min(window_start + timedelta(days=window_days - 1), end_date)
+            logger.info(
+                f"Recomputing irrigation events for {self.org_id} from {window_start.date()} to {window_end.date()}"
+            )
+            self.exec_irrigation_detection(run_id, window_start, window_end)
+            window_start = window_end + timedelta(days=1)
+
+    def _exec_irrigation_detection(self, conn, min_date: datetime, max_date: datetime):
+        """
+        Group the hourly rows of wavelet.global_irrigation_detection into irrigation events,
+        store them per hour in irrigation_{org_id}, then rebuild the per event
+        irrigation_{org_id}_agg table.
+
+        Only the min_date..max_date window is recomputed, except for meters whose last stored
+        hour before the window is irrigating: their event may run into the window, so it is
+        recomputed from its start, up to IRRIGATION_MAX_LOOKBACK_DAYS back, and stored as one
+        event instead of being cut at the window start.
+        """
+        window_start = min_date.date().isoformat()
+        window_end = max_date.date().isoformat()
+        lookback_start = (
+            (max_date - timedelta(days=IRRIGATION_MAX_LOOKBACK_DAYS)).date().isoformat()
+        )
+
+        # Ensure irrigation detail table exists (no-op after first run)
+        conn.cursor().execute(f"""
+            create table if not exists irrigation_{self.org_id} (
+                org_id text,
+                device_id text,
+                flowtime_ts timestamp_tz,
+                total_reading_cf float,
+                irrigation_reading_cf float,
+                non_irrigation_reading_cf float,
+                is_irrigation boolean,
+                event_seq number(18,0),
+                event_start_ts timestamp_tz,
+                event_end_ts timestamp_tz,
+                event_hrs number(10,0),
+                event_id text
+            )
+        """)
+
+        # Meters still irrigating in their last stored hour before the window starts. Their event
+        # may run into the window, so we read their detection rows further back to find where it
+        # really started. Most irrigation events last an hour or two, so this is the few meters
+        # watering at the boundary, not every meter that watered the day before.
+        conn.cursor().execute(f"""
+            create or replace temporary table irrigation_{self.org_id}_ongoing
+            as
+            select org_id, device_id
+            from (
+                select org_id, device_id, is_irrigation
+                from irrigation_{self.org_id}
+                where flowtime_ts::date = dateadd(day, -1, '{window_start}'::date)
+                qualify row_number() over (partition by org_id, device_id order by flowtime_ts desc) = 1
+            )
+            where is_irrigation
+        """)
+
+        # Detection rows in the window: the rewrite below should keep (almost) all of them. Counted
+        # first so a join that matches nothing is reported instead of emptying the window.
+        count_cursor = conn.cursor()
+        count_cursor.execute(f"""
+            select count(*) from (
+                select distinct *
+                from wavelet.global_irrigation_detection
+                where source = '{self.org_id}'
+                and timestamp::date >= '{window_start}'
+                and timestamp::date <= '{window_end}'
+            )
+        """)
+        count_row = count_cursor.fetchone()
+        detection_rows = count_row[0] if count_row else 0
+
+        # Group the detection rows into events in a temporary table first: which stored rows we
+        # replace depends on where the recomputed events start.
+        ami_irrigation_sql = f"""
+            create or replace temporary table irrigation_{self.org_id}_recomputed
+            as
+            with source_data as
+            (
+                select distinct d.*
+                from wavelet.global_irrigation_detection d
+                left join irrigation_{self.org_id}_ongoing o on d.source = o.org_id and d.device_id = o.device_id
+                where d.source = '{self.org_id}'
+                and d.timestamp::date >= '{lookback_start}'
+                and d.timestamp::date <= '{window_end}'
+                -- The window, plus the earlier rows of meters whose event may still be running
+                and (d.timestamp::date >= '{window_start}' or o.device_id is not null)
+            )
+            -- global_irrigation_detection.timestamp is the reading's clock time without its UTC
+            -- offset, and the offset differs by adapter: some store readings in Pacific time, others
+            -- (Neptune, Moulton Niguel, Coastside) in UTC. Labeling that clock with the session time zone
+            -- put the UTC-stored orgs' events 7-8 hours late. Take the instant from the reading itself.
+            -- flowtime::timestamp_ntz and flowtime::date are evaluated in the reading's own offset, so
+            -- they line up with timestamp and the window above. A detection row whose reading is gone
+            -- is left out rather than given a label in a different offset from its neighbours.
+            , readings_window as
+            (
+                select r.device_id
+                    , r.flowtime
+                    , r.flowtime::timestamp_ntz as clock_time
+                    -- The fall-back hour has two readings with the same clock time; number them
+                    , row_number() over (partition by r.device_id, r.flowtime::timestamp_ntz order by r.flowtime) as same_clock_rank
+                from ami_connect.readings r
+                left join irrigation_{self.org_id}_ongoing o on r.org_id = o.org_id and r.device_id = o.device_id
+                where r.org_id = '{self.org_id}'
+                and r.flowtime::date >= '{lookback_start}'
+                and r.flowtime::date <= '{window_end}'
+                and (r.flowtime::date >= '{window_start}' or o.device_id is not null)
+            )
+            , detection_ranked as
+            (
+                -- ... and the detection table can hold one row per such reading; pair them one to one
+                select d.*
+                    , row_number() over (partition by source, device_id, timestamp order by total_reading) as same_clock_rank
+                from source_data d
+            )
+            , with_flowtime as
+            (
+                select d.*
+                    , r.flowtime as flowtime_ts
+                from detection_ranked d
+                join readings_window r
+                    on r.device_id = d.device_id
+                    and r.clock_time = d.timestamp
+                    and r.same_clock_rank = d.same_clock_rank
+            )
+            , with_events as
+            (
+                select
+                    source                                as org_id
+                    , device_id
+                    , flowtime_ts
+                    , total_reading                       as total_reading_cf
+                    , irrigation_reading                  as irrigation_reading_cf
+                    , non_irrigation_reading              as non_irrigation_reading_cf
+                    , coalesce(irrigation_reading, 0) > 0 as is_irrigation
+                    , conditional_change_event(coalesce(irrigation_reading, 0) = 0)
+                          over (partition by source, device_id order by flowtime_ts) as event_seq
+                from with_flowtime
+            )
+            , with_event_bounds as
+            (
+                select *
+                    , min(flowtime_ts) over (partition by org_id, device_id, event_seq) as event_start_ts
+                    , max(flowtime_ts) over (partition by org_id, device_id, event_seq) as event_end_ts
+                    , datediff(hour, event_start_ts, event_end_ts) + 1                  as event_hrs
+                    , to_varchar(event_start_ts, 'yyyy/mm/dd@hh - ')
+                          || event_hrs
+                          || iff(max(is_irrigation::int) over (partition by org_id, device_id, event_seq) = 1, 'h', 'h*') as event_id
+                from with_events
+            )
+            -- Start of the event that is still running when the window starts, per meter
+            , irrigation_keep_from as
+            (
+                select org_id
+                    , device_id
+                    , min(event_start_ts) as keep_from
+                from with_event_bounds
+                where is_irrigation
+                and event_start_ts::date < '{window_start}'
+                and event_end_ts::date >= '{window_start}'
+                group by org_id, device_id
+            )
+            select
+                b.org_id
+                , b.device_id
+                , b.flowtime_ts
+                , b.total_reading_cf
+                , b.irrigation_reading_cf
+                , b.non_irrigation_reading_cf
+                , b.is_irrigation
+                , b.event_seq
+                , b.event_start_ts
+                , b.event_end_ts
+                , b.event_hrs
+                , b.event_id
+            from with_event_bounds b
+            left join irrigation_keep_from k on b.org_id = k.org_id and b.device_id = k.device_id
+            -- Keep the window, plus the earlier part of an event that is still running when it starts
+            where iff(k.keep_from is not null, b.flowtime_ts >= k.keep_from, b.flowtime_ts::date >= '{window_start}')
+        """
+        conn.cursor().execute(ami_irrigation_sql)
+
+        # Rows the rewrite keeps for the window itself, checked against the detection rows above
+        kept_cursor = conn.cursor()
+        kept_cursor.execute(f"""
+            select count(*) from irrigation_{self.org_id}_recomputed
+            where flowtime_ts::date >= '{window_start}'
+        """)
+        kept_row = kept_cursor.fetchone()
+        kept_rows = kept_row[0] if kept_row else 0
+        if detection_rows and kept_rows < 0.99 * detection_rows:
+            logger.error(
+                f"irrigation_{self.org_id}: kept {kept_rows} of {detection_rows} detection rows for "
+                f"{window_start}..{window_end}; readings are missing for the rest"
+            )
+
+        # Replace the stored rows in one transaction, so a failure part way through leaves
+        # the stored rows in place instead of a hole the next run cannot see past.
+        # The scratch tables above and the agg table below stay outside it: creating a
+        # table commits an open transaction.
+        conn.cursor().execute("begin")
+        try:
+            # Delete existing rows in the window, then insert fresh results
+            conn.cursor().execute(f"""
+                delete from irrigation_{self.org_id}
+                where flowtime_ts::date >= '{window_start}'
+                and flowtime_ts::date <= '{window_end}'
+            """)
+
+            # Also delete the stored rows of events that we recomputed from before the window
+            conn.cursor().execute(f"""
+                delete from irrigation_{self.org_id} t
+                using (
+                    select org_id, device_id, min(flowtime_ts) as keep_from
+                    from irrigation_{self.org_id}_recomputed
+                    group by org_id, device_id
+                ) k
+                where t.org_id = k.org_id
+                and t.device_id = k.device_id
+                and t.flowtime_ts >= k.keep_from
+                and t.flowtime_ts::date < '{window_start}'
+            """)
+
+            conn.cursor().execute(f"""
+                insert into irrigation_{self.org_id}
+                select * from irrigation_{self.org_id}_recomputed
+            """)
+            conn.cursor().execute("commit")
+        except Exception:
+            # An error leaves the transaction open and the table locked until it is rolled back
+            try:
+                conn.cursor().execute("rollback")
+            except Exception:
+                logger.exception(
+                    f"Could not roll back the irrigation rewrite for {self.org_id}"
+                )
+            raise
+
+        ami_irrigation_agg_sql = f"""
+            create or replace table irrigation_{self.org_id}_agg
+            as
+            select
+                org_id
+                , device_id
+                , event_id
+                , event_start_ts
+                , event_end_ts
+                , event_hrs
+                , max(is_irrigation)                                                           as is_irrigation
+                , array_agg(flowtime_ts) within group (order by flowtime_ts)                   as flowtime_ts
+                , array_agg(total_reading_cf) within group (order by flowtime_ts)              as total_reading_cf
+                , array_agg(irrigation_reading_cf) within group (order by flowtime_ts)         as irrigation_reading_cf
+                , array_agg(non_irrigation_reading_cf) within group (order by flowtime_ts)     as non_irrigation_reading_cf
+                , sum(total_reading_cf)                                                        as total_reading_sum_cf
+                , sum(irrigation_reading_cf)                                                   as irrigation_reading_sum_cf
+            from irrigation_{self.org_id}
+            group by org_id, device_id, event_id, event_start_ts, event_end_ts, event_hrs
+        """
+        conn.cursor().execute(ami_irrigation_agg_sql)
 
     def _meter_tuple(self, meter: GeneralMeter, row_active_from: datetime):
         result = [

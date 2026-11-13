@@ -270,14 +270,15 @@ class TestSnowflakeStorageSink(BaseTestCase):
         all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
         normalized = [self.normalize_sql(sql) for sql in all_sqls]
 
-        # Expects exactly 18 execute calls:
+        # Expects exactly 24 execute calls:
         # 1 meters_score CREATE, 1 meters_score DELETE, 1 meters_score INSERT,
         # 1 meters_score_agg,
         # 1 leaks CREATE, 1 leaks ongoing, 1 leaks recomputed, 1 begin, 2 leaks DELETE,
         # 1 leaks INSERT, 1 commit, 1 leaks_agg,
-        # 1 irrigation CREATE, 1 irrigation detection-row count, 1 irrigation DELETE,
-        # 1 irrigation INSERT, 1 irrigation_agg
-        self.assertEqual(18, self.mock_cursor.execute.call_count)
+        # 1 irrigation CREATE, 1 irrigation ongoing, 1 irrigation detection-row count,
+        # 1 irrigation recomputed, 1 irrigation kept-row count, 1 begin, 2 irrigation DELETE,
+        # 1 irrigation INSERT, 1 commit, 1 irrigation_agg
+        self.assertEqual(24, self.mock_cursor.execute.call_count)
 
         # --- meters_score detail table ---
         meters_score_create = next(
@@ -369,6 +370,21 @@ class TestSnowflakeStorageSink(BaseTestCase):
         )
         self.assertIsNotNone(
             irrigation_insert, "Should INSERT into irrigation_{org_id}"
+        )
+        self.assertIn("select * from irrigation_org-id_recomputed", irrigation_insert)
+
+        # --- events recomputed from the detection table into a scratch table ---
+        irrigation_insert = next(
+            (
+                s
+                for s in normalized
+                if "create or replace temporary table irrigation_org-id_recomputed"
+                in s.lower()
+            ),
+            None,
+        )
+        self.assertIsNotNone(
+            irrigation_insert, "Should recompute irrigation_{org_id} events"
         )
         self.assertIn("wavelet.global_irrigation_detection", irrigation_insert)
         self.assertIn("source = 'org-id'", irrigation_insert)
@@ -552,6 +568,161 @@ class TestSnowflakeStorageSink(BaseTestCase):
         self.snowflake_sink.backfill_leak_detection("run-id", day, day)
 
         self.assertEqual(1, self.snowflake_sink.exec_leak_detection.call_count)
+
+    def test_exec_irrigation_detection__recomputes_running_events_from_their_start(
+        self,
+    ):
+        """
+        Verifies that meters irrigating the day before the window have their detection rows
+        and readings read further back, and that stored rows are replaced from the start of an
+        event that is still running when the window starts.
+        """
+        min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
+        max_date = datetime.datetime(2025, 1, 31, tzinfo=pytz.UTC)
+
+        self.snowflake_sink.exec_irrigation_detection("run-id", min_date, max_date)
+
+        all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
+        normalized = [self.normalize_sql(sql) for sql in all_sqls]
+        # create, ongoing, detection count, recomputed, kept count, begin, 2 deletes, insert, commit, agg
+        self.assertEqual(11, len(normalized))
+
+        # --- meters irrigating the day before the window ---
+        ongoing = normalized[1]
+        self.assertIn(
+            "create or replace temporary table irrigation_org-id_ongoing", ongoing
+        )
+        self.assertIn("from irrigation_org-id", ongoing)
+        self.assertIn("dateadd(day, -1, '2025-01-01'::date)", ongoing)
+        # Only the meter's last stored hour of that day decides whether its event is still running
+        self.assertIn(
+            "qualify row_number() over (partition by org_id, device_id order by flowtime_ts desc) = 1",
+            ongoing,
+        )
+        self.assertIn(") where is_irrigation", ongoing)
+
+        # --- detection rows in the window, counted before the rewrite ---
+        self.assertIn("select count(*) from", normalized[2])
+        self.assertIn("wavelet.global_irrigation_detection", normalized[2])
+
+        # --- recomputed events ---
+        recomputed = normalized[3]
+        self.assertIn(
+            "create or replace temporary table irrigation_org-id_recomputed", recomputed
+        )
+        # Lookback for running events is capped at 365 days before the window end, for the
+        # detection rows and for the readings that give them their time
+        self.assertIn("left join irrigation_org-id_ongoing o", recomputed)
+        self.assertIn("d.timestamp::date >= '2024-02-01'", recomputed)
+        self.assertIn("d.timestamp::date <= '2025-01-31'", recomputed)
+        self.assertIn(
+            "(d.timestamp::date >= '2025-01-01' or o.device_id is not null)", recomputed
+        )
+        self.assertIn("r.flowtime::date >= '2024-02-01'", recomputed)
+        self.assertIn("r.flowtime::date <= '2025-01-31'", recomputed)
+        self.assertIn(
+            "(r.flowtime::date >= '2025-01-01' or o.device_id is not null)", recomputed
+        )
+        self.assertIn("irrigation_keep_from", recomputed)
+        self.assertIn(
+            "where iff(k.keep_from is not null, b.flowtime_ts >= k.keep_from, b.flowtime_ts::date >= '2025-01-01')",
+            recomputed,
+        )
+
+        # --- rows kept for the window, for the detection-row check ---
+        self.assertIn("from irrigation_org-id_recomputed", normalized[4])
+        self.assertIn("flowtime_ts::date >= '2025-01-01'", normalized[4])
+
+        # --- the rewrite runs inside one transaction ---
+        self.assertEqual("begin", normalized[5])
+        self.assertEqual("commit", normalized[9])
+
+        # --- deletes: the window, then earlier rows of events recomputed from their start ---
+        window_delete = normalized[6]
+        self.assertIn("delete from irrigation_org-id", window_delete)
+        self.assertIn("flowtime_ts::date >= '2025-01-01'", window_delete)
+        self.assertIn("flowtime_ts::date <= '2025-01-31'", window_delete)
+        earlier_delete = normalized[7]
+        self.assertIn("delete from irrigation_org-id t using", earlier_delete)
+        self.assertIn("from irrigation_org-id_recomputed", earlier_delete)
+        self.assertIn("t.flowtime_ts >= k.keep_from", earlier_delete)
+        self.assertIn("t.flowtime_ts::date < '2025-01-01'", earlier_delete)
+
+        # --- insert and agg ---
+        self.assertIn(
+            "insert into irrigation_org-id select * from irrigation_org-id_recomputed",
+            normalized[8],
+        )
+        self.assertIn("create or replace table irrigation_org-id_agg", normalized[10])
+
+    def test_exec_irrigation_detection__rolls_back_when_the_rewrite_fails(self):
+        min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
+        max_date = datetime.datetime(2025, 1, 31, tzinfo=pytz.UTC)
+
+        def fail_on_insert(sql, *args, **kwargs):
+            if "insert into irrigation_org-id" in self.normalize_sql(sql):
+                raise RuntimeError("warehouse timeout")
+
+        self.mock_cursor.execute.side_effect = fail_on_insert
+
+        with self.assertRaises(RuntimeError):
+            self.snowflake_sink.exec_irrigation_detection("run-id", min_date, max_date)
+
+        normalized = [
+            self.normalize_sql(call[0][0])
+            for call in self.mock_cursor.execute.call_args_list
+        ]
+        # begin, the two deletes, the failed insert, then rollback; no commit, no agg rebuild
+        self.assertEqual("begin", normalized[5])
+        self.assertEqual("rollback", normalized[-1])
+        self.assertNotIn("commit", normalized)
+        self.assertFalse(any("irrigation_org-id_agg" in s for s in normalized))
+
+    def test_exec_postprocessor__runs_irrigation_detection_after_leaks(self):
+        min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
+        max_date = datetime.datetime(2025, 1, 31, tzinfo=pytz.UTC)
+
+        self.snowflake_sink.exec_postprocessor("run-id", min_date, max_date)
+
+        normalized = [
+            self.normalize_sql(call[0][0])
+            for call in self.mock_cursor.execute.call_args_list
+        ]
+        # Irrigation statements come right after the 4 meters_score and 9 leak statements
+        self.assertIn("create table if not exists irrigation_org-id", normalized[13])
+        self.assertIn("create or replace table irrigation_org-id_agg", normalized[23])
+
+    def test_backfill_irrigation_detection__runs_consecutive_windows_oldest_first(
+        self,
+    ):
+        self.snowflake_sink.exec_irrigation_detection = Mock()
+        start_date = datetime.datetime(2025, 1, 1)
+        end_date = datetime.datetime(2025, 3, 15)
+
+        self.snowflake_sink.backfill_irrigation_detection(
+            "run-id", start_date, end_date
+        )
+
+        windows = [
+            (call[0][1].date(), call[0][2].date())
+            for call in self.snowflake_sink.exec_irrigation_detection.call_args_list
+        ]
+        self.assertEqual(
+            [
+                (datetime.date(2025, 1, 1), datetime.date(2025, 1, 30)),
+                (datetime.date(2025, 1, 31), datetime.date(2025, 3, 1)),
+                (datetime.date(2025, 3, 2), datetime.date(2025, 3, 15)),
+            ],
+            windows,
+        )
+
+    def test_backfill_irrigation_detection__single_day(self):
+        self.snowflake_sink.exec_irrigation_detection = Mock()
+        day = datetime.datetime(2025, 1, 1)
+
+        self.snowflake_sink.backfill_irrigation_detection("run-id", day, day)
+
+        self.assertEqual(1, self.snowflake_sink.exec_irrigation_detection.call_count)
 
     def test_store_raw(self):
         self.snowflake_sink.store_raw(
