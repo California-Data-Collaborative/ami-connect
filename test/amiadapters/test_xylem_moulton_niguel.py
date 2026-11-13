@@ -50,6 +50,22 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual("dbu", self.adapter.database_user)
         self.assertEqual("dbp", self.adapter.database_password)
 
+    def test_scheduled_extracts__standard_and_lagged(self):
+        result = self.adapter.scheduled_extracts()
+        self.assertEqual(2, len(result))
+
+        standard_extract = result[0]
+        self.assertEqual("standard", standard_extract.name)
+        self.assertEqual(datetime.timedelta(days=6), standard_extract.interval)
+        self.assertEqual(datetime.timedelta(days=0), standard_extract.lag)
+        self.assertEqual("0 12 * * *", standard_extract.schedule_crontab)
+
+        lagged_extract = result[1]
+        self.assertEqual("lagged", lagged_extract.name)
+        self.assertEqual(datetime.timedelta(days=2), lagged_extract.interval)
+        self.assertEqual(datetime.timedelta(days=14), lagged_extract.lag)
+        self.assertEqual("0 9 * * *", lagged_extract.schedule_crontab)
+
     def _mock_extract_output(
         self, meters, service_points, customers, interval_reads, register_reads
     ):
