@@ -918,12 +918,12 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
 
         Only the min_date..max_date window is recomputed, except for meters whose last stored
         hour before the window is irrigating: their event may run into the window, so it is
-        recomputed from its start, up to IRRIGATION_MAX_LOOKBACK_DAYS back, and stored as one
-        event instead of being cut at the window start.
+        recomputed from its stored start, up to IRRIGATION_MAX_LOOKBACK_DAYS back, and stored as
+        one event instead of being cut at the window start.
         """
         window_start = min_date.date().isoformat()
         window_end = max_date.date().isoformat()
-        lookback_start = (
+        lookback_cap = (
             (min_date - timedelta(days=IRRIGATION_MAX_LOOKBACK_DAYS)).date().isoformat()
         )
 
@@ -952,9 +952,9 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         conn.cursor().execute(f"""
             create or replace temporary table irrigation_{self.org_id}_ongoing
             as
-            select org_id, device_id
+            select org_id, device_id, event_start_ts
             from (
-                select org_id, device_id, is_irrigation
+                select org_id, device_id, is_irrigation, event_start_ts
                 from irrigation_{self.org_id}
                 where flowtime_ts::date = dateadd(day, -1, '{window_start}'::date)
                 qualify row_number() over (partition by org_id, device_id order by flowtime_ts desc) = 1
@@ -962,8 +962,22 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             where is_irrigation
         """)
 
+        # Yesterday's run already stored those events from their start, so read back only as far
+        # as the earliest of those starts, within the cap. Nothing to read back when no meter is
+        # irrigating at the boundary.
+        start_cursor = conn.cursor()
+        start_cursor.execute(f"""
+            select min(event_start_ts)::date::string
+            from irrigation_{self.org_id}_ongoing
+        """)
+        start_row = start_cursor.fetchone()
+        stored_start = start_row[0] if start_row and start_row[0] else None
+        lookback_start = (
+            max(stored_start, lookback_cap) if stored_start else window_start
+        )
+
         # Detection rows in the window: the rewrite below should keep (almost) all of them. Counted
-        # first so a join that matches nothing is reported instead of emptying the window.
+        # first so a join that drops rows is reported; the rewrite still runs.
         count_cursor = conn.cursor()
         count_cursor.execute(f"""
             select count(*) from (
@@ -995,7 +1009,10 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             (
                 select distinct d.*
                 from wavelet.global_irrigation_detection d
-                join irrigation_{self.org_id}_ongoing o on d.source = o.org_id and d.device_id = o.device_id
+                join irrigation_{self.org_id}_ongoing o
+                    on d.source = o.org_id
+                    and d.device_id = o.device_id
+                    and d.timestamp::date >= o.event_start_ts::date
                 where d.source = '{self.org_id}'
                 and d.timestamp::date >= '{lookback_start}'
                 and d.timestamp::date < '{window_start}'
@@ -1023,7 +1040,10 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 union all
                 select r.device_id, r.flowtime
                 from ami_connect.readings r
-                join irrigation_{self.org_id}_ongoing o on r.org_id = o.org_id and r.device_id = o.device_id
+                join irrigation_{self.org_id}_ongoing o
+                    on r.org_id = o.org_id
+                    and r.device_id = o.device_id
+                    and r.flowtime::date >= o.event_start_ts::date
                 where r.org_id = '{self.org_id}'
                 and r.flowtime::date >= '{lookback_start}'
                 and r.flowtime::date < '{window_start}'

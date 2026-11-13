@@ -226,7 +226,7 @@ def backfill_irrigation(
     end_date: Annotated[
         datetime,
         typer.Option(
-            help="Last day of irrigation history to recompute, YYYY-MM-DD. Defaults to today."
+            help="Last day of irrigation history to recompute, YYYY-MM-DD. Defaults to today. Run through today, or at least to 31 days ago: an event crossing the last day stays cut there until a daily run or another backfill covers that boundary."
         ),
     ] = None,
     profile: ANNOTATION__PROFILE = None,
