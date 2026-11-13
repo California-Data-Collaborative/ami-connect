@@ -92,42 +92,55 @@ class TestManualRunForm(unittest.TestCase):
     def test_defaults_are_valid_for_a_one_day_limit(self):
         self._validate(1, {})
 
-    def _extract_range(self, params):
+    def _extract_call(self, params, dag_params):
         adapter = MagicMock()
         adapter.name.return_value = "vendor-my_org"
         adapter.calculate_extract_range.return_value = ("start", "end")
         dag = ami_control_dag_factory(
-            dag_id="my_org-ami-meter-read-dag-manual",
+            dag_id="my_org-ami-meter-read-dag",
             schedule=None,
-            params=manual_run_params(6),
+            params=dag_params,
             adapter=adapter,
             on_failure_sns_notifier=None,
         )
         dag.get_task("extract-vendor-my_org").python_callable(
             adapter, params=params, dag_run=MagicMock(run_id="r")
         )
-        return adapter.calculate_extract_range.call_args.args[:2]
+        return adapter.calculate_extract_range.call_args.args
 
     def test_start_and_days_become_the_extract_range(self):
-        start, end = self._extract_range(
-            {"extract_range_start": "2026-01-01", "extract_range_days": 5}
+        start, end, *_ = self._extract_call(
+            {"extract_range_start": "2026-01-01", "extract_range_days": 5},
+            manual_run_params(6),
         )
         self.assertEqual(datetime.datetime(2026, 1, 1), start)
         self.assertEqual(datetime.datetime(2026, 1, 6), end)
 
-    def test_end_date_in_run_config_is_ignored(self):
-        # Only the start date and number of days are checked against the limit
-        start, end = self._extract_range(
+    def test_end_date_in_run_config_is_ignored_by_the_manual_dag(self):
+        start, end, *_ = self._extract_call(
             {
                 "extract_range_start": "2026-01-01",
                 "extract_range_days": 5,
                 "extract_range_end": "2026-12-31",
-            }
+            },
+            manual_run_params(6),
         )
         self.assertEqual(datetime.datetime(2026, 1, 6), end)
 
-    def test_empty_start_extracts_the_most_recent_days(self):
-        self.assertEqual(
-            (None, None),
-            self._extract_range({"extract_range_start": "", "extract_range_days": 1}),
+    def test_manual_run_without_start_takes_the_most_recent_days(self):
+        start, end, interval, _ = self._extract_call(
+            {"extract_range_start": "", "extract_range_days": 3}, manual_run_params(6)
         )
+        self.assertEqual((None, None), (start, end))
+        self.assertEqual(datetime.timedelta(days=3), interval)
+
+    def test_other_dags_ignore_days_and_read_start_and_end_as_before(self):
+        start, end, *_ = self._extract_call(
+            {
+                "extract_range_start": "2026-10-01",
+                "extract_range_end": "2026-10-04",
+                "extract_range_days": 365,
+            },
+            {},
+        )
+        self.assertEqual(("2026-10-01", "2026-10-04"), (start, end))

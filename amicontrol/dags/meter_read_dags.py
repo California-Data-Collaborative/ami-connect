@@ -47,7 +47,7 @@ def manual_run_params(max_extract_days: int) -> dict:
         "extract_range_start": Param(
             "",
             type="string",
-            description="First day to extract, YYYY-MM-DD. Leave empty to extract the most recent days.",
+            description="First day to extract, YYYY-MM-DD.",
         ),
         "extract_range_days": Param(
             1,
@@ -79,6 +79,10 @@ def ami_control_dag_factory(
     - The backfill runs, which run more frequently and attempt to backfill data
     - Manual runs whose range can be parameterized in the Airflow UI
     """
+
+    # Only a manual DAG (built with manual_run_params) takes a start date and a number of
+    # days; every other DAG reads its range exactly as before.
+    takes_days = "extract_range_days" in (params or {})
 
     @dag(
         dag_id=dag_id,
@@ -144,17 +148,19 @@ def ami_control_dag_factory(
             Given the DAG's inputs, figure out the start and end range for the pipeline's extract.
             Could come from DAG params, from backfill configuration, or could rely on default values.
             """
-            # Manual runs: a start date and a number of days from the trigger form
-            start_from_params = context["params"].get("extract_range_start") or None
-            days_from_params = context["params"].get("extract_range_days")
-            end_from_params = None
-            if start_from_params is not None and days_from_params:
-                start_from_params = datetime.fromisoformat(
-                    str(start_from_params).strip()
-                )
-                end_from_params = start_from_params + timedelta(
-                    days=int(days_from_params)
-                )
+            if takes_days:
+                # Manual run: a start date and a number of days, checked by Airflow against
+                # the source's max_extract_days. Without a start date (possible only through
+                # the API), the most recent that many days.
+                start = context["params"].get("extract_range_start") or None
+                days = timedelta(days=int(context["params"]["extract_range_days"]))
+                if start is None:
+                    return adapter.calculate_extract_range(None, None, days, lag)
+                start = datetime.fromisoformat(str(start).strip())
+                return adapter.calculate_extract_range(start, start + days, days, lag)
+            # start and end dates from Airflow UI, if specified
+            start_from_params = context["params"].get("extract_range_start")
+            end_from_params = context["params"].get("extract_range_end")
             return adapter.calculate_extract_range(
                 start_from_params,
                 end_from_params,
