@@ -255,6 +255,9 @@ def backfill_irrigation(
         config = AMIAdapterConfiguration.from_database()
 
     adapters = [a for a in config.adapters() if a.org_id in org_ids]
+    unmatched = sorted(set(org_ids) - {a.org_id for a in adapters})
+    if unmatched:
+        raise typer.BadParameter(f"No configured adapter for org_ids {unmatched}")
     run_id = f"backfill-irrigation-{datetime.now().isoformat()}"
 
     for adapter in adapters:

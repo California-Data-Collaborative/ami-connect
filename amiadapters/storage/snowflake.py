@@ -867,7 +867,11 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         conn.cursor().execute(ami_leaks_agg_sql)
 
     def exec_irrigation_detection(
-        self, run_id: str, min_date: datetime, max_date: datetime
+        self,
+        run_id: str,
+        min_date: datetime,
+        max_date: datetime,
+        rebuild_agg: bool = True,
     ):
         """
         Recompute irrigation events for the min_date..max_date window without the rest of the
@@ -878,7 +882,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             tags={"org_id": self.org_id},
         ):
             conn = self.sink_config.connection()
-            self._exec_irrigation_detection(conn, min_date, max_date)
+            self._exec_irrigation_detection(conn, min_date, max_date, rebuild_agg)
 
     def backfill_irrigation_detection(
         self,
@@ -890,7 +894,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         """
         Recompute irrigation history from start_date to end_date in consecutive windows, oldest
         first, so each window continues the events that were still running at the end of the
-        previous one.
+        previous one. The per event table is rebuilt once, after the last window.
         """
         window_start = start_date
         while window_start.date() <= end_date.date():
@@ -898,10 +902,15 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             logger.info(
                 f"Recomputing irrigation events for {self.org_id} from {window_start.date()} to {window_end.date()}"
             )
-            self.exec_irrigation_detection(run_id, window_start, window_end)
+            self.exec_irrigation_detection(
+                run_id, window_start, window_end, rebuild_agg=False
+            )
             window_start = window_end + timedelta(days=1)
+        self._rebuild_irrigation_agg(self.sink_config.connection())
 
-    def _exec_irrigation_detection(self, conn, min_date: datetime, max_date: datetime):
+    def _exec_irrigation_detection(
+        self, conn, min_date: datetime, max_date: datetime, rebuild_agg: bool = True
+    ):
         """
         Group the hourly rows of wavelet.global_irrigation_detection into irrigation events,
         store them per hour in irrigation_{org_id}, then rebuild the per event
@@ -915,7 +924,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         window_start = min_date.date().isoformat()
         window_end = max_date.date().isoformat()
         lookback_start = (
-            (max_date - timedelta(days=IRRIGATION_MAX_LOOKBACK_DAYS)).date().isoformat()
+            (min_date - timedelta(days=IRRIGATION_MAX_LOOKBACK_DAYS)).date().isoformat()
         )
 
         # Ensure irrigation detail table exists (no-op after first run)
@@ -973,16 +982,29 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         ami_irrigation_sql = f"""
             create or replace temporary table irrigation_{self.org_id}_recomputed
             as
-            with source_data as
+            with window_rows as
+            (
+                select distinct *
+                from wavelet.global_irrigation_detection
+                where source = '{self.org_id}'
+                and timestamp::date >= '{window_start}'
+                and timestamp::date <= '{window_end}'
+            )
+            -- The earlier rows of meters whose event may still be running when the window starts
+            , earlier_rows as
             (
                 select distinct d.*
                 from wavelet.global_irrigation_detection d
-                left join irrigation_{self.org_id}_ongoing o on d.source = o.org_id and d.device_id = o.device_id
+                join irrigation_{self.org_id}_ongoing o on d.source = o.org_id and d.device_id = o.device_id
                 where d.source = '{self.org_id}'
                 and d.timestamp::date >= '{lookback_start}'
-                and d.timestamp::date <= '{window_end}'
-                -- The window, plus the earlier rows of meters whose event may still be running
-                and (d.timestamp::date >= '{window_start}' or o.device_id is not null)
+                and d.timestamp::date < '{window_start}'
+            )
+            , source_data as
+            (
+                select * from window_rows
+                union all
+                select * from earlier_rows
             )
             -- global_irrigation_detection.timestamp is the reading's clock time without its UTC
             -- offset, and the offset differs by adapter: some store readings in Pacific time, others
@@ -991,19 +1013,29 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             -- flowtime::timestamp_ntz and flowtime::date are evaluated in the reading's own offset, so
             -- they line up with timestamp and the window above. A detection row whose reading is gone
             -- is left out rather than given a label in a different offset from its neighbours.
-            , readings_window as
+            , readings_in_range as
             (
-                select r.device_id
-                    , r.flowtime
-                    , r.flowtime::timestamp_ntz as clock_time
-                    -- The fall-back hour has two readings with the same clock time; number them
-                    , row_number() over (partition by r.device_id, r.flowtime::timestamp_ntz order by r.flowtime) as same_clock_rank
+                select device_id, flowtime
+                from ami_connect.readings
+                where org_id = '{self.org_id}'
+                and flowtime::date >= '{window_start}'
+                and flowtime::date <= '{window_end}'
+                union all
+                select r.device_id, r.flowtime
                 from ami_connect.readings r
-                left join irrigation_{self.org_id}_ongoing o on r.org_id = o.org_id and r.device_id = o.device_id
+                join irrigation_{self.org_id}_ongoing o on r.org_id = o.org_id and r.device_id = o.device_id
                 where r.org_id = '{self.org_id}'
                 and r.flowtime::date >= '{lookback_start}'
-                and r.flowtime::date <= '{window_end}'
-                and (r.flowtime::date >= '{window_start}' or o.device_id is not null)
+                and r.flowtime::date < '{window_start}'
+            )
+            , readings_window as
+            (
+                select device_id
+                    , flowtime
+                    , flowtime::timestamp_ntz as clock_time
+                    -- The fall-back hour has two readings with the same clock time; number them
+                    , row_number() over (partition by device_id, flowtime::timestamp_ntz order by flowtime) as same_clock_rank
+                from readings_in_range
             )
             , detection_ranked as
             (
@@ -1135,6 +1167,11 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 )
             raise
 
+        if rebuild_agg:
+            self._rebuild_irrigation_agg(conn)
+
+    def _rebuild_irrigation_agg(self, conn):
+        """Rebuild the per event irrigation_{org_id}_agg table from the detail table."""
         ami_irrigation_agg_sql = f"""
             create or replace table irrigation_{self.org_id}_agg
             as

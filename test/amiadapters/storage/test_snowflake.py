@@ -610,19 +610,19 @@ class TestSnowflakeStorageSink(BaseTestCase):
         self.assertIn(
             "create or replace temporary table irrigation_org-id_recomputed", recomputed
         )
-        # Lookback for running events is capped at 365 days before the window end, for the
-        # detection rows and for the readings that give them their time
-        self.assertIn("left join irrigation_org-id_ongoing o", recomputed)
-        self.assertIn("d.timestamp::date >= '2024-02-01'", recomputed)
-        self.assertIn("d.timestamp::date <= '2025-01-31'", recomputed)
-        self.assertIn(
-            "(d.timestamp::date >= '2025-01-01' or o.device_id is not null)", recomputed
-        )
-        self.assertIn("r.flowtime::date >= '2024-02-01'", recomputed)
-        self.assertIn("r.flowtime::date <= '2025-01-31'", recomputed)
-        self.assertIn(
-            "(r.flowtime::date >= '2025-01-01' or o.device_id is not null)", recomputed
-        )
+        # The window is read for every meter; the days before it, up to 365 days before the
+        # window start, only for meters whose event may still be running. Both the detection
+        # rows and the readings that give them their time.
+        self.assertIn("timestamp::date >= '2025-01-01'", recomputed)
+        self.assertIn("timestamp::date <= '2025-01-31'", recomputed)
+        self.assertIn("join irrigation_org-id_ongoing o", recomputed)
+        self.assertIn("d.timestamp::date >= '2024-01-02'", recomputed)
+        self.assertIn("d.timestamp::date < '2025-01-01'", recomputed)
+        self.assertIn("flowtime::date >= '2025-01-01'", recomputed)
+        self.assertIn("flowtime::date <= '2025-01-31'", recomputed)
+        self.assertIn("r.flowtime::date >= '2024-01-02'", recomputed)
+        self.assertIn("r.flowtime::date < '2025-01-01'", recomputed)
+        self.assertNotIn("left join irrigation_org-id_ongoing", recomputed)
         self.assertIn("irrigation_keep_from", recomputed)
         self.assertIn(
             "where iff(k.keep_from is not null, b.flowtime_ts >= k.keep_from, b.flowtime_ts::date >= '2025-01-01')",
@@ -703,10 +703,8 @@ class TestSnowflakeStorageSink(BaseTestCase):
             "run-id", start_date, end_date
         )
 
-        windows = [
-            (call[0][1].date(), call[0][2].date())
-            for call in self.snowflake_sink.exec_irrigation_detection.call_args_list
-        ]
+        calls = self.snowflake_sink.exec_irrigation_detection.call_args_list
+        windows = [(call[0][1].date(), call[0][2].date()) for call in calls]
         self.assertEqual(
             [
                 (datetime.date(2025, 1, 1), datetime.date(2025, 1, 30)),
@@ -715,6 +713,17 @@ class TestSnowflakeStorageSink(BaseTestCase):
             ],
             windows,
         )
+        # The per event table is not rebuilt per window, only once after the last one
+        self.assertTrue(all(call[1] == {"rebuild_agg": False} for call in calls))
+        agg_rebuilds = [
+            s
+            for s in (
+                self.normalize_sql(c[0][0])
+                for c in self.mock_cursor.execute.call_args_list
+            )
+            if "create or replace table irrigation_org-id_agg" in s
+        ]
+        self.assertEqual(1, len(agg_rebuilds))
 
     def test_backfill_irrigation_detection__single_day(self):
         self.snowflake_sink.exec_irrigation_detection = Mock()
