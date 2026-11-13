@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 import logging
 from typing import List, Tuple
@@ -30,12 +30,14 @@ logger = logging.getLogger(__name__)
 # start every org's pipeline at the same instant.
 DEFAULT_SCHEDULE_CRONTAB = "0 12 * * *"
 
-# Longest extract window one run may request unless the source config says otherwise
-# (SourceConfigBase.max_extract_days). Every scheduled extract in the codebase is six
-# days or less, so this only bites manual runs and oversized backfill chunks. It exists
-# because a single run holds its whole payload in memory during transform and load, and
-# the Airflow host has no swap: a payload that does not fit livelocks the box instead of
-# failing the task (2026-08-25 and 2026-09-22 incidents).
+# Most days of data one run extracts, unless the source config says otherwise
+# (SourceConfigBase.max_extract_days). A run holds its whole payload in memory through
+# transform and load, and the Airflow host has no swap, so a payload that does not fit
+# livelocks the host instead of failing the task (2026-08-25 and 2026-09-22 incidents).
+# Longer ranges are split, not refused: manual DAG runs and `cli.py run` cut them into
+# pieces of at most this many days and run the pieces one after another (see
+# split_extract_range), and backfill chunks are trimmed to it. Every scheduled extract
+# is six days or less, so scheduled runs are never split.
 DEFAULT_MAX_EXTRACT_DAYS = 14
 
 
@@ -124,6 +126,17 @@ class BaseAMIAdapter(ABC):
         """
         Public function for extract stage.
         """
+        if extract_range_end - extract_range_start > timedelta(
+            days=self.max_extract_days
+        ):
+            # Callers split long ranges before they get here (split_extract_range), so this
+            # only fires if a new caller skips that step. Refuse rather than risk the host.
+            raise Exception(
+                f"Extract range {extract_range_start} -> {extract_range_end} spans more than "
+                f"{self.max_extract_days} days, the most one run of {self.org_id} extracts at once. "
+                f"Split it with split_extract_range and run the pieces one after another, as the "
+                f"manual DAG and `cli.py run` do."
+            )
         with self._base_adapter_metrics.extract_timer():
             logger.info(
                 f"Extracting data for range {extract_range_start} to {extract_range_end}"
@@ -205,6 +218,17 @@ class BaseAMIAdapter(ABC):
         lag: specified_start and specified_end are None, lag tells us if we should extract something farther
             back than the most recent data. Defaults to a lag of zero, i.e. "extract the most recent data".
         """
+        if (
+            backfill_params is not None
+            and int(backfill_params.interval_days) > self.max_extract_days
+        ):
+            logger.info(
+                f"Backfill interval of {backfill_params.interval_days} days for {self.org_id} "
+                f"is longer than max_extract_days; using {self.max_extract_days} days per chunk"
+            )
+            backfill_params = replace(
+                backfill_params, interval_days=self.max_extract_days
+            )
         range_calculator = ExtractRangeCalculator(self.org_id, self.storage_sinks)
         calculated_start, calculated_end = range_calculator.calculate_extract_range(
             specified_start,
@@ -215,6 +239,26 @@ class BaseAMIAdapter(ABC):
         )
         self._validate_extract_range(calculated_start, calculated_end)
         return calculated_start, calculated_end
+
+    def split_extract_range(
+        self, extract_range_start: datetime, extract_range_end: datetime
+    ) -> List[Tuple[datetime, datetime]]:
+        """
+        Cut an extract range into back-to-back pieces of at most max_extract_days, oldest
+        first. A range that already fits comes back as one piece. Run the pieces in the
+        order returned: each load versions the meters table as of load time, so the piece
+        loaded last must be the newest.
+        """
+        self._validate_extract_range(extract_range_start, extract_range_end)
+        piece_length = timedelta(days=self.max_extract_days)
+        pieces = []
+        piece_start = extract_range_start
+        while True:
+            piece_end = min(piece_start + piece_length, extract_range_end)
+            pieces.append((piece_start, piece_end))
+            if piece_end >= extract_range_end:
+                return pieces
+            piece_start = piece_end
 
     def load_raw(self, run_id: str):
         """
@@ -253,12 +297,17 @@ class BaseAMIAdapter(ABC):
         run_id: str,
         extract_range_start: datetime,
         extract_range_end: datetime,
+        cover_extract_range: bool = False,
     ):
         """
         Post processing step after loading data into storage sinks. Includes
         sink-specific post processing, e.g. queries that run on the loaded data to refresh downstream tables.
 
         Also can be configured to publish an event to a message queue saying we finished loading data.
+
+        Sinks post process the last 30 days. cover_extract_range=True starts that window at
+        extract_range_start instead when it is older, so a long manual run, loaded in pieces,
+        is post processed once over everything it loaded.
         """
         with self._base_adapter_metrics.post_process_timer():
             # Sink post processing, e.g. leak detection queries
@@ -269,6 +318,11 @@ class BaseAMIAdapter(ABC):
                     sink_post_process_start_date = (
                         sink_post_process_end_date - timedelta(days=30)
                     )
+                    if cover_extract_range and extract_range_start is not None:
+                        sink_post_process_start_date = min(
+                            sink_post_process_start_date,
+                            extract_range_start.replace(tzinfo=None),
+                        )
                     logger.info(
                         f"Running post processor for sink {sink.__class__.__name__} from {sink_post_process_start_date} to {sink_post_process_end_date}"
                     )
@@ -448,16 +502,6 @@ class BaseAMIAdapter(ABC):
         if extract_range_end < extract_range_start:
             raise Exception(
                 f"Range start must be before end, got extract_range_start={extract_range_start} and extract_range_end={extract_range_end}"
-            )
-        if extract_range_end - extract_range_start > timedelta(
-            days=self.max_extract_days
-        ):
-            raise Exception(
-                f"Extract range {extract_range_start} -> {extract_range_end} spans more than "
-                f"{self.max_extract_days} days, the most one run of {self.org_id} may load at once. "
-                f"Split the range into runs of at most {self.max_extract_days} days (chronological order), "
-                f"or raise the cap with `cli.py config update-source {self.org_id} --config max_extract_days=<n>` "
-                f"if this source has proven it fits in memory."
             )
 
     @staticmethod
