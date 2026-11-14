@@ -56,7 +56,7 @@ Notable data properties:
 Example:
 
 ```
-python cli.py config add-source cadc_roseville itron_roseville America/Los_Angeles --config s3_bucket=cadc-ami --config s3_prefix=rosevillecityof/ --config s3_region=us-east-1 --sinks my_snowflake
+python cli.py config add-source cadc_roseville itron_roseville America/Los_Angeles --config s3_bucket=cadc-ami --config s3_prefix=rosevillecityof/ --config s3_region=us-east-1 --config max_extract_days=7 --sinks my_snowflake
 ```
 
 ## Secrets

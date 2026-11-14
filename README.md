@@ -95,9 +95,9 @@ You can change your configuration with the CLI using one of many commands. In ge
 
 #### Adding a new utility to your pipeline
 
-One common task is to add a new source (a.k.a. utility or agency) to the system. Here's an example that adds the `my_utility` source which uses the `aclara` adapter:
+One common task is to add a new source (a.k.a. utility or agency) to the system. Here's an example that adds the `my_utility` source which uses the `aclara` adapter. `max_extract_days` is required: the most days one manual run may extract for this source, sized from the largest run of a comparable source that has completed on the Airflow host (see docs/pipeline.md):
 ```
-python cli.py config add-source my_utility aclara America/Los_Angeles --sftp-host my-sftp-host --sftp-remote-data-directory ./data --sftp-local-download-directory ./output --sftp-local-known-hosts-file ./known-hosts --sinks my_snowflake
+python cli.py config add-source my_utility aclara America/Los_Angeles --sftp-host my-sftp-host --sftp-remote-data-directory ./data --sftp-local-download-directory ./output --sftp-local-known-hosts-file ./known-hosts --config max_extract_days=7 --sinks my_snowflake
 ```
 
 Then add secrets with:

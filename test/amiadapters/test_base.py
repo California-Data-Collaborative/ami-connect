@@ -24,6 +24,11 @@ class TestBaseAdapter(BaseTestCase):
             configured_metrics=self.TEST_METRICS_CONFIGURATION,
             configured_sinks=[],
         )
+        self.range_start = datetime(2026, 1, 1, tzinfo=pytz.UTC)
+        self.range_end = datetime(2026, 1, 3, tzinfo=pytz.UTC)
+
+    def test_adapter_has_no_extract_limit_until_configuration_sets_it(self):
+        self.assertIsNone(self.adapter.max_extract_days)
 
     def test_datetime_from_iso_str__None_results_in_None(self):
         result = self.adapter.datetime_from_iso_str(None, self.adapter.org_timezone)

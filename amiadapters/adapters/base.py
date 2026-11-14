@@ -71,6 +71,10 @@ class BaseAMIAdapter(ABC):
         self.org_id = org_id
         self.org_timezone = org_timezone
         self.pipeline_configuration = pipeline_configuration
+        # Most days one manual run or backfill chunk may extract for this source, from its
+        # max_extract_days setting (set in AMIAdapterConfiguration.adapters). None: not set,
+        # so the source gets no manual run DAG and backfills cannot be configured for it.
+        self.max_extract_days = None
         self.output_controller = self._create_task_output_controller(
             configured_task_output_controller, org_id
         )

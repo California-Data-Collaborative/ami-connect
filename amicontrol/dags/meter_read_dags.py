@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
+from airflow.models.param import Param
 from airflow.notifications.basenotifier import BaseNotifier
 
 from amiadapters.adapters.base import DEFAULT_SCHEDULE_CRONTAB, BaseAMIAdapter
@@ -36,6 +37,33 @@ def staggered_schedule(schedule_crontab: str, org_index: int, org_count: int) ->
     return f"{minute} {hour} * * *"
 
 
+def manual_run_params(max_extract_days: int) -> dict:
+    """
+    Inputs of a source's manual run DAG: a start date and a number of days, at most the
+    source's max_extract_days. Both are required and have no default. Airflow checks them
+    before it creates a run, so a request without them (such as the older start and end
+    date form) or with more days is rejected at the trigger form (or the API or CLI
+    trigger) and no run starts.
+    """
+    return {
+        "extract_range_start": Param(
+            type="string",
+            format="date",
+            description="First day to extract, YYYY-MM-DD.",
+        ),
+        "extract_range_days": Param(
+            type="integer",
+            minimum=1,
+            maximum=max_extract_days,
+            description=(
+                f"Number of days to extract from the start date, at most {max_extract_days} "
+                f"for this source (its max_extract_days setting). For a longer range, run "
+                f"consecutive manual runs, starting each after the previous one finishes."
+            ),
+        ),
+    }
+
+
 def ami_control_dag_factory(
     dag_id: str,
     schedule: str,
@@ -52,6 +80,10 @@ def ami_control_dag_factory(
     - The backfill runs, which run more frequently and attempt to backfill data
     - Manual runs whose range can be parameterized in the Airflow UI
     """
+
+    # Only a manual DAG (built with manual_run_params) takes a start date and a number of
+    # days; every other DAG reads its range exactly as before.
+    takes_days = "extract_range_days" in (params or {})
 
     @dag(
         dag_id=dag_id,
@@ -117,6 +149,22 @@ def ami_control_dag_factory(
             Given the DAG's inputs, figure out the start and end range for the pipeline's extract.
             Could come from DAG params, from backfill configuration, or could rely on default values.
             """
+            if takes_days:
+                # Manual run: a start date and a number of days, checked by Airflow against
+                # the source's max_extract_days when the run was created. Airflow checks them
+                # again when each task starts and passes None for a value that no longer
+                # passes, e.g. after the source's limit was lowered.
+                start = context["params"].get("extract_range_start")
+                days = context["params"].get("extract_range_days")
+                if not start or not days:
+                    raise Exception(
+                        f"This run's start date ({start}) or number of days ({days}) is "
+                        f"missing or no longer allowed by {adapter.org_id}'s max_extract_days "
+                        f"of {adapter.max_extract_days}. Trigger a new run."
+                    )
+                start = datetime.fromisoformat(str(start))
+                days = timedelta(days=int(days))
+                return adapter.calculate_extract_range(start, start + days, days, lag)
             # start and end dates from Airflow UI, if specified
             start_from_params = context["params"].get("extract_range_start")
             end_from_params = context["params"].get("extract_range_end")
@@ -128,4 +176,4 @@ def ami_control_dag_factory(
                 backfill_params=backfill_params,
             )
 
-    ami_control_dag()
+    return ami_control_dag()
