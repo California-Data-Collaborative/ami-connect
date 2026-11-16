@@ -271,15 +271,16 @@ class TestSnowflakeStorageSink(BaseTestCase):
         all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
         normalized = [self.normalize_sql(sql) for sql in all_sqls]
 
-        # Expects exactly 25 execute calls:
+        # Expects exactly 26 execute calls:
         # 1 meters_score CREATE, 1 meters_score DELETE, 1 meters_score INSERT,
         # 1 meters_score_agg,
-        # 1 leaks CREATE, 1 leaks ongoing, 1 leaks recomputed, 1 begin, 2 leaks DELETE,
+        # 1 leaks CREATE, 1 leaks ongoing, 1 leaks stored-start read, 1 leaks recomputed,
+        # 1 begin, 2 leaks DELETE,
         # 1 leaks INSERT, 1 commit, 1 leaks_agg,
         # 1 irrigation CREATE, 1 irrigation ongoing, 1 irrigation stored-start read,
         # 1 irrigation detection-row count, 1 irrigation recomputed, 1 irrigation kept-row count,
         # 1 begin, 2 irrigation DELETE, 1 irrigation INSERT, 1 commit, 1 irrigation_agg
-        self.assertEqual(25, self.mock_cursor.execute.call_count)
+        self.assertEqual(26, self.mock_cursor.execute.call_count)
 
         # --- meters_score detail table ---
         meters_score_create = next(
@@ -442,39 +443,47 @@ class TestSnowflakeStorageSink(BaseTestCase):
 
     def test_exec_leak_detection__recomputes_active_leaks_from_their_start(self):
         """
-        Verifies that meters leaking the day before the window are read further back,
-        that the window gets one extra day of readings, and that stored rows are replaced
-        from the start of a leak that is still active when the window starts.
+        Verifies that meters leaking the day before the window are read back from the stored
+        start of their leak, however long ago, that the window gets one extra day of readings,
+        and that stored rows are replaced from the start of a leak that is still active when
+        the window starts.
         """
         min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
         max_date = datetime.datetime(2025, 1, 31, tzinfo=pytz.UTC)
+        # The day before the earliest active leak's start, well over a year before the window
+        self.mock_cursor.fetchone.return_value = ("2023-06-14",)
 
         self.snowflake_sink.exec_leak_detection("run-id", min_date, max_date)
 
         all_sqls = [call[0][0] for call in self.mock_cursor.execute.call_args_list]
         normalized = [self.normalize_sql(sql) for sql in all_sqls]
-        # create, ongoing, recomputed, begin, 2 deletes, insert, commit, agg
-        self.assertEqual(9, len(normalized))
+        # create, ongoing, stored start, recomputed, begin, 2 deletes, insert, commit, agg
+        self.assertEqual(10, len(normalized))
 
-        # --- meters leaking the day before the window ---
+        # --- meters leaking the day before the window, with their stored leak start ---
         ongoing = normalized[1]
         self.assertIn("create or replace temporary table leaks_org-id_ongoing", ongoing)
+        self.assertIn("min(event_start_ts) as event_start_ts", ongoing)
         self.assertIn("from leaks_org-id", ongoing)
         self.assertIn("dateadd(day, -1, '2025-01-01'::date)", ongoing)
+        self.assertIn("group by org_id, device_id", ongoing)
+        self.assertIn("dateadd(day, -1, min(event_start_ts)::date)", normalized[2])
+        self.assertIn("from leaks_org-id_ongoing", normalized[2])
 
         # --- recomputed leaks ---
-        recomputed = normalized[2]
+        recomputed = normalized[3]
         self.assertIn(
             "create or replace temporary table leaks_org-id_recomputed", recomputed
         )
         self.assertIn("ami_connect.readings", recomputed)
         self.assertIn("left join leaks_org-id_ongoing o", recomputed)
-        # Lookback for active leaks is capped at 365 days before the window end
-        self.assertIn("r.flowtime::date >= '2024-02-01'", recomputed)
+        # Read back as far as the earliest active leak needs, with no cap
+        self.assertIn("r.flowtime::date >= '2023-06-14'", recomputed)
         self.assertIn("r.flowtime::date <= '2025-01-31'", recomputed)
-        # Everyone else gets one extra day before the window
+        # Each active leak from the day before its own start, everyone else one day before the window
         self.assertIn(
-            "r.flowtime::date >= dateadd(day, -1, '2025-01-01'::date) or o.device_id is not null",
+            "r.flowtime::date >= dateadd(day, -1, '2025-01-01'::date) "
+            "or r.flowtime::date >= dateadd(day, -1, o.event_start_ts::date)",
             recomputed,
         )
         self.assertIn("leaks_keep_from", recomputed)
@@ -484,15 +493,15 @@ class TestSnowflakeStorageSink(BaseTestCase):
         )
 
         # --- the rewrite runs inside one transaction ---
-        self.assertEqual("begin", normalized[3])
-        self.assertEqual("commit", normalized[7])
+        self.assertEqual("begin", normalized[4])
+        self.assertEqual("commit", normalized[8])
 
         # --- deletes: the window, then earlier rows of leaks recomputed from their start ---
-        window_delete = normalized[4]
+        window_delete = normalized[5]
         self.assertIn("delete from leaks_org-id", window_delete)
         self.assertIn("flowtime_ts::date >= '2025-01-01'", window_delete)
         self.assertIn("flowtime_ts::date <= '2025-01-31'", window_delete)
-        earlier_delete = normalized[5]
+        earlier_delete = normalized[6]
         self.assertIn("delete from leaks_org-id t using", earlier_delete)
         self.assertIn("from leaks_org-id_recomputed", earlier_delete)
         self.assertIn("t.flowtime_ts >= k.keep_from", earlier_delete)
@@ -501,9 +510,23 @@ class TestSnowflakeStorageSink(BaseTestCase):
         # --- insert and agg ---
         self.assertIn(
             "insert into leaks_org-id select * from leaks_org-id_recomputed",
-            normalized[6],
+            normalized[7],
         )
-        self.assertIn("create or replace table leaks_org-id_agg", normalized[8])
+        self.assertIn("create or replace table leaks_org-id_agg", normalized[9])
+
+    def test_exec_leak_detection__reads_one_day_before_the_window_without_active_leaks(
+        self,
+    ):
+        min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
+        max_date = datetime.datetime(2025, 1, 31, tzinfo=pytz.UTC)
+        self.mock_cursor.fetchone.return_value = (None,)
+
+        self.snowflake_sink.exec_leak_detection("run-id", min_date, max_date)
+
+        recomputed = self.normalize_sql(
+            self.mock_cursor.execute.call_args_list[3][0][0]
+        )
+        self.assertIn("r.flowtime::date >= '2024-12-31'", recomputed)
 
     def test_exec_leak_detection__rolls_back_when_the_rewrite_fails(self):
         min_date = datetime.datetime(2025, 1, 1, tzinfo=pytz.UTC)
@@ -523,7 +546,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
             for call in self.mock_cursor.execute.call_args_list
         ]
         # begin, the two deletes, the failed insert, then rollback; no commit, no agg rebuild
-        self.assertEqual("begin", normalized[3])
+        self.assertEqual("begin", normalized[4])
         self.assertEqual("rollback", normalized[-1])
         self.assertNotIn("commit", normalized)
         self.assertFalse(any("leaks_org-id_agg" in s for s in normalized))
@@ -540,7 +563,7 @@ class TestSnowflakeStorageSink(BaseTestCase):
         ]
         # Leak statements come right after the 4 meters_score statements
         self.assertIn("create table if not exists leaks_org-id", normalized[4])
-        self.assertIn("create or replace table leaks_org-id_agg", normalized[12])
+        self.assertIn("create or replace table leaks_org-id_agg", normalized[13])
 
     def test_backfill_leak_detection__runs_consecutive_windows_oldest_first(self):
         self.snowflake_sink.exec_leak_detection = Mock()
@@ -753,9 +776,9 @@ class TestSnowflakeStorageSink(BaseTestCase):
             self.normalize_sql(call[0][0])
             for call in self.mock_cursor.execute.call_args_list
         ]
-        # Irrigation statements come right after the 4 meters_score and 9 leak statements
-        self.assertIn("create table if not exists irrigation_org-id", normalized[13])
-        self.assertIn("create or replace table irrigation_org-id_agg", normalized[24])
+        # Irrigation statements come right after the 4 meters_score and 10 leak statements
+        self.assertIn("create table if not exists irrigation_org-id", normalized[14])
+        self.assertIn("create or replace table irrigation_org-id_agg", normalized[25])
 
     def test_backfill_irrigation_detection__runs_consecutive_windows_oldest_first(
         self,
