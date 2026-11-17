@@ -15,8 +15,6 @@ from amiadapters.storage.base import BaseAMIStorageSink, BaseAMIDataQualityCheck
 
 logger = logging.getLogger(__name__)
 
-# How far back leak detection looks for the start of a leak that is still active
-LEAK_MAX_LOOKBACK_DAYS = 365
 # Size of each window when recomputing leak history
 LEAK_BACKFILL_WINDOW_DAYS = 30
 # How far back irrigation detection looks for the start of an event that is still running
@@ -581,15 +579,13 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         the per event leaks_{org_id}_agg table.
 
         Only the min_date..max_date window is recomputed, except for meters with a leak still
-        active when the window starts. Those are recomputed from the start of that leak, up to
-        LEAK_MAX_LOOKBACK_DAYS back, so a long leak is stored as one event instead of being cut
-        at the window start.
+        active when the window starts. Those are recomputed from the stored start of that leak,
+        however long ago, so a long leak is stored as one event instead of being cut. A capped
+        read back restarted such a leak at the cap and left the older rows stored, so every run
+        stacked another overlapping copy of it.
         """
         window_start = min_date.date().isoformat()
         window_end = max_date.date().isoformat()
-        lookback_start = (
-            (max_date - timedelta(days=LEAK_MAX_LOOKBACK_DAYS)).date().isoformat()
-        )
 
         # Ensure leaks table exists (no-op after first run)
         conn.cursor().execute(f"""
@@ -620,16 +616,31 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             )
         """)
 
-        # Meters that were leaking the day before the window starts. Their leak may still be
-        # active, so we read their readings further back to find where it really started.
+        # Meters that were leaking the day before the window starts, with the stored start of
+        # that leak. Their leak may still be active, so we read their readings back from that start.
+        # The earliest start covers copies of a leak stacked by older runs, so they are replaced too.
         conn.cursor().execute(f"""
             create or replace temporary table leaks_{self.org_id}_ongoing
             as
-            select distinct org_id, device_id
+            select org_id, device_id, min(event_start_ts) as event_start_ts
             from leaks_{self.org_id}
             where is_leak
             and flowtime_ts::date = dateadd(day, -1, '{window_start}'::date)
+            group by org_id, device_id
         """)
+
+        # How far back the readings query reaches: one day before the earliest of those starts,
+        # or one day before the window when no meter is leaking at its start. A literal date
+        # keeps Snowflake pruning the readings table.
+        window_read_start = (min_date - timedelta(days=1)).date().isoformat()
+        start_cursor = conn.cursor()
+        start_cursor.execute(f"""
+            select to_char(dateadd(day, -1, min(event_start_ts)::date), 'YYYY-MM-DD')
+            from leaks_{self.org_id}_ongoing
+        """)
+        start_row = start_cursor.fetchone()
+        stored_start = start_row[0] if start_row and start_row[0] else None
+        lookback_start = min(stored_start or window_read_start, window_read_start)
 
         # Detect leaks into a temporary table first: which stored rows we replace depends on
         # where the recomputed leaks start.
@@ -652,8 +663,12 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 and r.org_id = '{self.org_id}'
                 and r.flowtime::date >= '{lookback_start}'
                 and r.flowtime::date <= '{window_end}'
-                -- One extra day before the window so its first hour has a previous reading to compare against
-                and (r.flowtime::date >= dateadd(day, -1, '{window_start}'::date) or o.device_id is not null)
+                -- One extra day before the window, or before an active leak's start, so the first hour
+                -- has a previous reading to compare against
+                and (
+                    r.flowtime::date >= dateadd(day, -1, '{window_start}'::date)
+                    or r.flowtime::date >= dateadd(day, -1, o.event_start_ts::date)
+                )
             )
             ,leaks_groups0 as
             (
