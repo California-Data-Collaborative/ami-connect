@@ -270,7 +270,7 @@ class MetersenseAdapter(BaseAMIAdapter):
                 name="lagged",
                 interval=timedelta(days=2),
                 lag=timedelta(days=14),
-                schedule_crontab="0 9 * * *",
+                schedule_crontab="0 8 * * *",
             ),
         ]
 

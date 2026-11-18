@@ -56,7 +56,7 @@ class TestMetersenseAdapter(BaseTestCase):
         self.assertEqual("lagged", lagged_extract.name)
         self.assertEqual(datetime.timedelta(days=2), lagged_extract.interval)
         self.assertEqual(datetime.timedelta(days=14), lagged_extract.lag)
-        self.assertEqual("0 9 * * *", lagged_extract.schedule_crontab)
+        self.assertEqual("0 8 * * *", lagged_extract.schedule_crontab)
 
     def _account_service_factory(
         self, active_dt="2024-01-01T00:00:00", inactive_dt="2025-01-01T00:00:00"
