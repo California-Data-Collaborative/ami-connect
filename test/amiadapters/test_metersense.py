@@ -42,6 +42,22 @@ class TestMetersenseAdapter(BaseTestCase):
             database_password="dbp",
         )
 
+    def test_scheduled_extracts__standard_and_lagged(self):
+        result = self.adapter.scheduled_extracts()
+        self.assertEqual(2, len(result))
+
+        standard_extract = result[0]
+        self.assertEqual("standard", standard_extract.name)
+        self.assertEqual(datetime.timedelta(days=3), standard_extract.interval)
+        self.assertEqual(datetime.timedelta(days=0), standard_extract.lag)
+        self.assertEqual("0 12 * * *", standard_extract.schedule_crontab)
+
+        lagged_extract = result[1]
+        self.assertEqual("lagged", lagged_extract.name)
+        self.assertEqual(datetime.timedelta(days=2), lagged_extract.interval)
+        self.assertEqual(datetime.timedelta(days=14), lagged_extract.lag)
+        self.assertEqual("0 9 * * *", lagged_extract.schedule_crontab)
+
     def _account_service_factory(
         self, active_dt="2024-01-01T00:00:00", inactive_dt="2025-01-01T00:00:00"
     ) -> MetersenseAccountService:
