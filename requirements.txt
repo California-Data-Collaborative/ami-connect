@@ -1,9 +1,9 @@
-certifi==2026.7.22
+certifi==2026.10.18
 charset-normalizer==3.4.9
 idna==3.18
 requests==2.34.2
-urllib3==2.7.0
-black==26.5.1
+urllib3==2.8.0
+black==26.10.1
 PyYAML==6.0.3
 boto3==1.43.56
 paramiko==5.0.0
