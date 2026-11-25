@@ -132,7 +132,9 @@ def _fixture_rows():
     hour = FIRST_HOUR
     while hour <= LAST_HOUR:
         for device_id, (stored_tz, value) in METERS.items():
-            rows.append((device_id, hour.astimezone(stored_tz).isoformat(), value(hour)))
+            rows.append(
+                (device_id, hour.astimezone(stored_tz).isoformat(), value(hour))
+            )
         hour += datetime.timedelta(hours=1)
     return rows
 
@@ -197,7 +199,9 @@ def _procedure_under_test(qualified_schema):
             "'WITH district_overrides AS (' and '),' + 'watermarks AS (' around the district list"
         )
     if "CADC_AMI.WAVELET.DETECT_IRRIGATION_V4" not in procedure:
-        raise AssertionError("the procedure no longer calls CADC_AMI.WAVELET.DETECT_IRRIGATION_V4")
+        raise AssertionError(
+            "the procedure no longer calls CADC_AMI.WAVELET.DETECT_IRRIGATION_V4"
+        )
     return procedure
 
 
@@ -336,7 +340,9 @@ class SnowflakePostprocessorBehaviorTest(unittest.TestCase):
     @classmethod
     def _detection_facts(cls):
         return {
-            "rows": cls._query("SELECT COUNT(*) FROM GLOBAL_IRRIGATION_DETECTION")[0][0],
+            "rows": cls._query("SELECT COUNT(*) FROM GLOBAL_IRRIGATION_DETECTION")[0][
+                0
+            ],
             "readings": cls._query(
                 "SELECT COUNT(*) FROM READINGS WHERE INTERVAL_VALUE IS NOT NULL"
             )[0][0],
@@ -349,8 +355,7 @@ class SnowflakePostprocessorBehaviorTest(unittest.TestCase):
                 LEFT JOIN READINGS r ON r.DEVICE_ID = d.DEVICE_ID AND r.FLOWTIME = d.FLOWTIME
                 WHERE r.DEVICE_ID IS NULL
             """)[0][0],
-            "irrigation_hours": dict(
-                cls._query(f"""
+            "irrigation_hours": dict(cls._query(f"""
                     SELECT DEVICE_ID || '|' || IFF(TIMESTAMP < '2026-11-01', 'before', 'after'),
                            LISTAGG(DISTINCT HOUR(TIMESTAMP), ',') WITHIN GROUP (ORDER BY HOUR(TIMESTAMP))
                     FROM GLOBAL_IRRIGATION_DETECTION
@@ -359,16 +364,12 @@ class SnowflakePostprocessorBehaviorTest(unittest.TestCase):
                       -- leave out the seam runs (21:00 to 02:00 Pacific, 22:00 to 03:00 UTC)
                       AND NOT (TIMESTAMP >= '2026-11-13 21:00' AND TIMESTAMP <= '2026-11-14 03:00')
                     GROUP BY 1
-                """)
-            ),
-            "fall_back_offsets": [
-                row[0]
-                for row in cls._query("""
+                """)),
+            "fall_back_offsets": [row[0] for row in cls._query("""
                     SELECT TO_CHAR(FLOWTIME, 'TZH:TZM') FROM GLOBAL_IRRIGATION_DETECTION
                     WHERE DEVICE_ID = 'pacific-irrigates' AND TIMESTAMP = '2026-11-01 01:00'
                     ORDER BY 1
-                """)
-            ],
+                """)],
             "utc_clock_of_first_watering": cls._query("""
                 SELECT TO_CHAR(MIN(TIMESTAMP), 'YYYY-MM-DD HH24:MI') FROM GLOBAL_IRRIGATION_DETECTION
                 WHERE DEVICE_ID = 'utc-irrigates' AND IRRIGATION_READING > 0
@@ -377,19 +378,18 @@ class SnowflakePostprocessorBehaviorTest(unittest.TestCase):
 
     def _events(self, table, device_id, flag):
         """Events of a device as (start in UTC, hours), oldest first."""
-        return [
-            (row[0], row[1])
-            for row in self._query(f"""
+        return [(row[0], row[1]) for row in self._query(f"""
                 SELECT TO_CHAR(CONVERT_TIMEZONE('UTC', EVENT_START_TS), 'YYYY-MM-DD HH24:MI'), EVENT_HRS
                 FROM {table}
                 WHERE DEVICE_ID = '{device_id}' AND {flag}
                 ORDER BY EVENT_START_TS
-            """)
-        ]
+            """)]
 
     # --- detection ---
 
-    def test_procedure_classifies_every_reading_once_and_a_third_call_adds_nothing(self):
+    def test_procedure_classifies_every_reading_once_and_a_third_call_adds_nothing(
+        self,
+    ):
         self.assertEqual(self.detection_facts["readings"], self.detection_facts["rows"])
         self.assertTrue(
             self.call_results[2].endswith(": 0 new rows inserted"), self.call_results
@@ -401,8 +401,12 @@ class SnowflakePostprocessorBehaviorTest(unittest.TestCase):
         self.assertEqual(0, self.detection_facts["without_reading"])
 
     def test_utc_meter_keeps_its_utc_clock(self):
-        self.assertEqual("12,13", self.detection_facts["irrigation_hours"]["utc-irrigates|before"])
-        self.assertEqual("12,13", self.detection_facts["irrigation_hours"]["utc-irrigates|after"])
+        self.assertEqual(
+            "12,13", self.detection_facts["irrigation_hours"]["utc-irrigates|before"]
+        )
+        self.assertEqual(
+            "12,13", self.detection_facts["irrigation_hours"]["utc-irrigates|after"]
+        )
         self.assertEqual(
             "2026-10-14 12:00", self.detection_facts["utc_clock_of_first_watering"]
         )
@@ -410,10 +414,16 @@ class SnowflakePostprocessorBehaviorTest(unittest.TestCase):
     def test_pacific_meter_keeps_its_pacific_clock_across_the_fall_back(self):
         # 12:00 and 13:00 UTC are 5 and 6 AM in daylight time, 4 and 5 AM in standard time. The
         # fall-back day itself is in standard time by 12:00 UTC.
-        self.assertEqual("5,6", self.detection_facts["irrigation_hours"]["pacific-irrigates|before"])
-        self.assertEqual("4,5", self.detection_facts["irrigation_hours"]["pacific-irrigates|after"])
+        self.assertEqual(
+            "5,6", self.detection_facts["irrigation_hours"]["pacific-irrigates|before"]
+        )
+        self.assertEqual(
+            "4,5", self.detection_facts["irrigation_hours"]["pacific-irrigates|after"]
+        )
         # Both readings of the repeated 1 AM hour have a detection row with their own offset
-        self.assertEqual(["-07:00", "-08:00"], self.detection_facts["fall_back_offsets"])
+        self.assertEqual(
+            ["-07:00", "-08:00"], self.detection_facts["fall_back_offsets"]
+        )
 
     # --- irrigation events ---
 
@@ -433,7 +443,9 @@ class SnowflakePostprocessorBehaviorTest(unittest.TestCase):
             ("missing-flowtime", PACIFIC_SEAM),
         ):
             first, last = (t.astimezone(UTC).strftime("%Y-%m-%d %H:%M") for t in seam)
-            events = self._events("IRRIGATION_CADC_INT_TEST_AGG", device_id, "IS_IRRIGATION")
+            events = self._events(
+                "IRRIGATION_CADC_INT_TEST_AGG", device_id, "IS_IRRIGATION"
+            )
             with self.subTest(device_id=device_id):
                 # One event of 6 hours from the run's first hour, and no piece of it on its own
                 self.assertEqual(
@@ -441,7 +453,9 @@ class SnowflakePostprocessorBehaviorTest(unittest.TestCase):
                 )
 
     def test_daily_watering_is_two_hour_events_at_the_readings_time(self):
-        utc_events = self._events("IRRIGATION_CADC_INT_TEST_AGG", "utc-irrigates", "IS_IRRIGATION")
+        utc_events = self._events(
+            "IRRIGATION_CADC_INT_TEST_AGG", "utc-irrigates", "IS_IRRIGATION"
+        )
         pacific_events = self._events(
             "IRRIGATION_CADC_INT_TEST_AGG", "pacific-irrigates", "IS_IRRIGATION"
         )
@@ -465,7 +479,9 @@ class SnowflakePostprocessorBehaviorTest(unittest.TestCase):
         """)[0][0]
         self.assertEqual(0, kept)
         self.assertTrue(
-            any("detection rows" in m and "kept" in m for m in self.first_window_errors),
+            any(
+                "detection rows" in m and "kept" in m for m in self.first_window_errors
+            ),
             self.first_window_errors,
         )
         self.assertEqual([], self.second_window_errors)
