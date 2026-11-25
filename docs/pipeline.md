@@ -51,6 +51,8 @@ Users control the pipeline via the CLI, which alters tables in the Snowflake dat
 
 Each AMI source defined in configuration becomes its own set of pipeline DAGs in Airflow.
 
+Every source has a `max_extract_days` setting, the most days of data one manual run or backfill chunk may extract for it (`cli.py config update-source <org_id> --config max_extract_days=<n>`; `add-source` requires it). A run holds its whole payload in memory through transform and load, and the Airflow host has no swap, so a payload that does not fit freezes the host instead of failing the task. Size the setting from the largest run of the source, or of a comparable source, that has completed on the host. A source's manual DAG takes a start date and a number of days; Airflow rejects more days than the setting allows before it creates a run, so a longer range is run as consecutive manual runs, each started after the previous one finishes. A source without the setting gets no manual DAG. `cli.py config update-backfill` rejects an `interval_days` above it. Scheduled runs are not affected.
+
 ---
 
 ## Airflow Integration
@@ -62,7 +64,7 @@ For each configured AMI source, the system generates **three Airflow DAGs**:
    - Runs the ETL daily for that source.  
 
 2. **Manual DAG**  
-   - Allows on-demand runs for an arbitrary date range.  
+   - Allows on-demand runs: a start date and a number of days, up to the source's `max_extract_days`.  
 
 3. **Backfill DAGs** (optional)  
    - Created when automated backfills are specified in configuration.  

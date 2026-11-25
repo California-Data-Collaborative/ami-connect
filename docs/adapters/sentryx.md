@@ -8,7 +8,7 @@ The Sentryx adapter retrieves data via Sentryx's HTTP API.
 
 Example:
 ```
-python cli.py config add-source my_utility sentryx America/Los_Angeles --config utility-name=name-of-my-utility-in-api-url --sinks my_snowflake
+python cli.py config add-source my_utility sentryx America/Los_Angeles --config utility-name=name-of-my-utility-in-api-url --config max_extract_days=7 --sinks my_snowflake
 ```
 
 ## Secrets

@@ -257,11 +257,21 @@ class MetersenseAdapter(BaseAMIAdapter):
         """
         We've seen in some cases that Metersense meter reads aren't fully represented in the source until two days
         after the flowtime. We set our standard extract range to 3+ days to cover this lag.
+
+        Some reads reach the source up to two weeks after the flowtime, after the standard extract has moved
+        past them. A lagged extract re-retrieves two days from two weeks ago, so each day gets two more
+        chances to load.
         """
         return [
             ScheduledExtract(
                 interval=timedelta(days=3),
-            )
+            ),
+            ScheduledExtract(
+                name="lagged",
+                interval=timedelta(days=2),
+                lag=timedelta(days=14),
+                schedule_crontab="0 8 * * *",
+            ),
         ]
 
     def _extract(

@@ -6,13 +6,15 @@ SQL queries to get configuration.
 from datetime import datetime
 import logging
 
-from airflow.models.param import Param
-
 from amiadapters.config import AMIAdapterConfiguration
 from amiadapters.configuration.env import set_global_aws_region
 from amicontrol.dags.administration_dags import log_cleanup_dag_factory
 from amicontrol.dags.data_quality_check_dags import data_quality_check_dag_factory
-from amicontrol.dags.meter_read_dags import ami_control_dag_factory, staggered_schedule
+from amicontrol.dags.meter_read_dags import (
+    ami_control_dag_factory,
+    manual_run_params,
+    staggered_schedule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,26 +35,20 @@ on_failure_sns_notifier = config.on_failure_sns_notifier()
 # Create DAGs for each configured utility. Sorted by org_id so each org's
 # staggered schedule slot is deterministic across DAG refreshes.
 for org_index, adapter in enumerate(sorted(utility_adapters, key=lambda a: a.org_id)):
-    # Manual runs
-    user_provided_params = {
-        "extract_range_start": Param(
-            type="string",
-            description="Start of date range for which we'll extract meter read data",
-            default="",
-        ),
-        "extract_range_end": Param(
-            type="string",
-            description="End of date range for which we'll extract meter read data",
-            default="",
-        ),
-    }
-    ami_control_dag_factory(
-        f"{adapter.org_id}-ami-meter-read-dag-manual",
-        None,
-        user_provided_params,
-        adapter,
-        on_failure_sns_notifier,
-    )
+    # Manual runs, at most max_extract_days per run (checked by Airflow at trigger time)
+    if adapter.max_extract_days:
+        ami_control_dag_factory(
+            f"{adapter.org_id}-ami-meter-read-dag-manual",
+            None,
+            manual_run_params(adapter.max_extract_days),
+            adapter,
+            on_failure_sns_notifier,
+        )
+    else:
+        logger.error(
+            f"No manual run DAG for {adapter.org_id}: its max_extract_days is not set. "
+            f"Set it with `cli.py config update-source {adapter.org_id} --config max_extract_days=<n>`."
+        )
 
     # Scheduled runs
     for scheduled_extract in adapter.scheduled_extracts():

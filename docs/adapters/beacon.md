@@ -8,7 +8,7 @@ A report on the last two days of meter readings for a utility with ~30,000 conne
 
 Example:
 ```
-python cli.py config add-source my_utility beacon_360 America/Los_Angeles --sinks my_snowflake
+python cli.py config add-source my_utility beacon_360 America/Los_Angeles --config max_extract_days=7 --sinks my_snowflake
 ```
 
 ## Secrets

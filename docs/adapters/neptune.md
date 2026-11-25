@@ -19,7 +19,7 @@ server and add it as a [deploy key](https://docs.github.com/en/authentication/co
 
 Example:
 ```
-python cli.py config add-source my_utility neptune America/Los_Angeles --config external-adapter-location=./neptune-ami-connect/neptune --sinks my_snowflake
+python cli.py config add-source my_utility neptune America/Los_Angeles --config external-adapter-location=./neptune-ami-connect/neptune --config max_extract_days=7 --sinks my_snowflake
 ```
 
 ## Secrets

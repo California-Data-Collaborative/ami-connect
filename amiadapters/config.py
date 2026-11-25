@@ -267,6 +267,7 @@ class AMIAdapterConfiguration:
         """
         adapters = []
         for source in self._sources:
+            built_before = len(adapters)
             match source.type:
                 case ConfiguredAMISourceTypes.ACLARA.value.type:
                     adapters.append(
@@ -444,6 +445,11 @@ class AMIAdapterConfiguration:
                             source.sinks,
                         )
                     )
+
+            # Per-source limit on how many days one run may extract (see
+            # BaseAMIAdapter.max_extract_days); adapters start with none set.
+            if source.max_extract_days is not None and len(adapters) > built_before:
+                adapters[-1].max_extract_days = source.max_extract_days
 
         return adapters
 

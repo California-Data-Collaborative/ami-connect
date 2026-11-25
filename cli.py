@@ -214,6 +214,64 @@ def backfill_leaks(
 
 @app.command()
 @sets_environment_from_profile
+def backfill_irrigation(
+    org_ids: Annotated[
+        list[str],
+        typer.Option(help="Org_ids to recompute irrigation events for."),
+    ],
+    start_date: Annotated[
+        datetime,
+        typer.Option(
+            help="First day of irrigation history to recompute, YYYY-MM-DD. An event running across this day is recomputed from its stored start, so start at the beginning of the history or on a day no event crosses."
+        ),
+    ],
+    end_date: Annotated[
+        datetime,
+        typer.Option(
+            help="Last day of irrigation history to recompute, YYYY-MM-DD. Defaults to today. Run through today, or at least to 31 days ago: an event crossing the last day stays cut there until a daily run or another backfill covers that boundary."
+        ),
+    ] = None,
+    profile: ANNOTATION__PROFILE = None,
+    local: Annotated[
+        str,
+        typer.Option(
+            help="Local configuration file that includes secret and non-secret configuration. Used instead of database configuration if specified. Meant for local development."
+        ),
+    ] = None,
+):
+    """
+    Recompute the irrigation tables in Snowflake from start_date to end_date, oldest first, without running the rest of the pipeline.
+    """
+    if start_date is None:
+        raise typer.BadParameter("start_date is required")
+    if end_date is None:
+        end_date = datetime.today()
+    if start_date.date() > end_date.date():
+        raise typer.BadParameter("start_date must be on or before end_date")
+
+    if local is not None:
+        logger.info(f"Loading configuration from local file {local}")
+        config = AMIAdapterConfiguration.from_yaml(local, local)
+    else:
+        logger.info(f"Loading configuration from database using profile {profile}")
+        config = AMIAdapterConfiguration.from_database()
+
+    adapters = [a for a in config.adapters() if a.org_id in org_ids]
+    unmatched = sorted(set(org_ids) - {a.org_id for a in adapters})
+    if unmatched:
+        raise typer.BadParameter(f"No configured adapter for org_ids {unmatched}")
+    run_id = f"backfill-irrigation-{datetime.now().isoformat()}"
+
+    for adapter in adapters:
+        for sink in adapter.storage_sinks:
+            if isinstance(sink, SnowflakeStorageSink):
+                sink.backfill_irrigation_detection(run_id, start_date, end_date)
+
+    logger.info(f"Finished recomputing irrigation events for {len(adapters)} adapters")
+
+
+@app.command()
+@sets_environment_from_profile
 def download_intermediate_output(
     path: Annotated[
         str,

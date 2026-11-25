@@ -148,6 +148,12 @@ def add_source_configuration(connection, source_configuration: dict):
     # Validate
     new_source = _create_and_validate_source_config_from_dict(source_configuration)
     new_source.validate()
+    if new_source.max_extract_days is None:
+        raise ValueError(
+            "Source configuration is missing field: max_extract_days (the most days one "
+            "manual run may extract for this source; size it from the largest run of a "
+            "comparable source that has completed on the Airflow host)"
+        )
 
     config = new_source.type_specific_config_dict()
 
@@ -435,6 +441,22 @@ def update_backfill_configuration(connection, backfill_configuration: dict):
     org_id = backfill_configuration["org_id"].lower()
 
     cursor = connection.cursor()
+    sources = _get_source_by_org_id(cursor, org_id)
+    if len(sources) != 1:
+        raise ValueError(
+            f"Expected one source with org_id {org_id}, got {len(sources)}"
+        )
+    max_extract_days = json.loads(sources[0][4] or "{}").get("max_extract_days")
+    if max_extract_days is None:
+        raise ValueError(
+            f"Source {org_id} has no max_extract_days; set it with update-source before adding a backfill"
+        )
+    if int(backfill_configuration["interval_days"]) > int(max_extract_days):
+        raise ValueError(
+            f"interval_days {backfill_configuration['interval_days']} is more than {org_id}'s "
+            f"max_extract_days of {max_extract_days}"
+        )
+
     cursor.execute(
         """
         MERGE INTO configuration_backfills AS target
