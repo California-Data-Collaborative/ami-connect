@@ -85,9 +85,10 @@ BEGIN
 END;
 $$;
 
--- 3. Backfill existing rows, one agency at a time (LARGE warehouse; Long Beach alone is 1.4B rows). The reading with
---    the same clock time gives the instant; the DST fall-back hour has two such readings, the earlier one is taken.
---    Re-runnable: only rows still NULL are touched.
+-- 3. Backfill existing rows, one agency at a time, smallest first (MEDIUM warehouse). Long Beach and Moulton Niguel
+--    go one calendar year per statement: add AND g.TIMESTAMP >= '<year>-01-01' AND g.TIMESTAMP < '<year+1>-01-01' to
+--    the inner query and the same on t. The reading with the same clock time gives the instant; the DST fall-back hour
+--    has two such readings, the earlier one is taken. Re-runnable: only rows still NULL are touched.
 UPDATE CADC_AMI.WAVELET.GLOBAL_IRRIGATION_DETECTION t
    SET FLOWTIME = s.FLOWTIME
   FROM (
