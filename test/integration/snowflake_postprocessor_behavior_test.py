@@ -18,7 +18,8 @@ Usage:
     python -m test.integration.snowflake_postprocessor_behavior_test
 
 Optional: AMI_CONNECT__SNOWFLAKE_CI_USER, _ROLE, _WAREHOUSE, _DATABASE (defaults below) and
-AMI_CONNECT__SNOWFLAKE_CI_RUN_ID (names the scratch schema; the workflow sets the GitHub run id).
+AMI_CONNECT__SNOWFLAKE_CI_RUN_ID (names the scratch schema; the workflow sets the GitHub run id) and
+AMI_CONNECT__SNOWFLAKE_CI_KEEP=1 (keeps the scratch schema after the run, to inspect a failure).
 """
 
 import datetime
@@ -33,7 +34,6 @@ import pytz
 from amiadapters.configuration.base import create_snowflake_connection
 from amiadapters.configuration.models import ConfiguredStorageSink, SnowflakeSecrets
 from amiadapters.metrics.base import NOOP_METRICS
-from amiadapters.models import GeneralMeterRead
 from amiadapters.storage.snowflake import SnowflakeStorageSink
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -126,30 +126,35 @@ MISSING_FROM = "2026-10-20 00:00"
 MISSING_TO = "2026-10-26 06:00"
 
 
-def _fixture_reads():
-    reads = []
+def _fixture_rows():
+    """(device id, the reading's moment as ISO text with its stored offset, interval value) for every hour."""
+    rows = []
     hour = FIRST_HOUR
     while hour <= LAST_HOUR:
         for device_id, (stored_tz, value) in METERS.items():
-            reads.append(
-                GeneralMeterRead(
-                    org_id=ORG,
-                    device_id=device_id,
-                    account_id=f"account-{device_id}",
-                    location_id=f"location-{device_id}",
-                    flowtime=hour.astimezone(stored_tz),
-                    register_value=None,
-                    register_unit=None,
-                    interval_value=value(hour),
-                    interval_unit="CF",
-                    battery=None,
-                    install_date=None,
-                    estimated=0,
-                    connection=None,
-                )
-            )
+            rows.append((device_id, hour.astimezone(stored_tz).isoformat(), value(hour)))
         hour += datetime.timedelta(hours=1)
-    return reads
+    return rows
+
+
+def _insert_readings(cursor, rows):
+    """
+    Insert the fixture readings with each moment written out as text with its offset, so the stored offset
+    is exactly the one an adapter would store (UTC or Pacific). Binding timezone-aware datetimes through the
+    Python connector is not used: depending on its version and the batch size, it stores them in UTC or
+    reinterprets them in the session time zone.
+    """
+    for i in range(0, len(rows), 500):
+        values = ",\n".join(
+            f"('{ORG}', '{d}', 'account-{d}', 'location-{d}', '{t}', {v}, 'CF', 0)"
+            for d, t, v in rows[i : i + 500]
+        )
+        cursor.execute(f"""
+            INSERT INTO READINGS (ORG_ID, DEVICE_ID, ACCOUNT_ID, LOCATION_ID, FLOWTIME, INTERVAL_VALUE, INTERVAL_UNIT, ESTIMATED)
+            SELECT column1, column2, column3, column4,
+                   TO_TIMESTAMP_TZ(column5, 'YYYY-MM-DD"T"HH24:MI:SSTZH:TZM'), column6, column7, column8
+            FROM VALUES {values}
+        """)
 
 
 def _read_sql(name):
@@ -240,11 +245,13 @@ class SnowflakePostprocessorBehaviorTest(unittest.TestCase):
             f"CREATE OR REPLACE TRANSIENT SCHEMA {cls.qualified_schema} DATA_RETENTION_TIME_IN_DAYS = 0"
         )
         cls.addClassCleanup(admin.close)
-        cls.addClassCleanup(
-            lambda: admin.cursor().execute(
-                f"DROP SCHEMA IF EXISTS {cls.qualified_schema} CASCADE"
+        # AMI_CONNECT__SNOWFLAKE_CI_KEEP=1 leaves the scratch schema in place to inspect a failure
+        if os.environ.get(ENV + "KEEP") != "1":
+            cls.addClassCleanup(
+                lambda: admin.cursor().execute(
+                    f"DROP SCHEMA IF EXISTS {cls.qualified_schema} CASCADE"
+                )
             )
-        )
 
         cls.conn = connect(schema)
         cls.addClassCleanup(cls.conn.close)
@@ -274,11 +281,7 @@ class SnowflakePostprocessorBehaviorTest(unittest.TestCase):
             detection_table="global_irrigation_detection",
             readings_table="readings",
         )
-        # In batches of 1,000: production loads keep each reading's own offset, and a larger batch makes
-        # newer Snowflake connectors (3.18) upload through a stage that stores every offset as UTC
-        reads = _fixture_reads()
-        for i in range(0, len(reads), 1000):
-            cls.sink._upsert_reads(reads[i : i + 1000], cls.conn, table_name="readings")
+        _insert_readings(cursor, _fixture_rows())
 
         # The procedure reads from its watermark, the newest stored hour of the org. A seed row makes
         # the first call start about 15 days before 2026-10-13 23:00 and reach 21 days after it.
