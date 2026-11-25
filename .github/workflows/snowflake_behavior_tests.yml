@@ -1,0 +1,40 @@
+name: snowflake_behavior_tests
+
+# Runs the leak and irrigation behavior test (test/integration/snowflake_postprocessor_behavior_test.py)
+# against Snowflake, in the test database CADC_AMI_CI, as the test user AMI_CONNECT_CI_SVC. That user's role
+# owns CADC_AMI_CI and can use the production detection function; it cannot read agency data.
+on:
+  pull_request:
+    paths:
+      - "amiadapters/storage/snowflake.py"
+      - "sql/**"
+      - "requirements.txt"
+      - "test/integration/snowflake_postprocessor_behavior_test.py"
+      - ".github/workflows/snowflake_behavior_tests.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: snowflake-behavior-${{ github.head_ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  behavior:
+    # GitHub does not pass secrets to pull requests from forks
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+      - name: Behavior test
+        env:
+          AMI_CONNECT__SNOWFLAKE_CI_ACCOUNT: ${{ secrets.SNOWFLAKE_CI_ACCOUNT }}
+          AMI_CONNECT__SNOWFLAKE_CI_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_CI_PRIVATE_KEY }}
+          AMI_CONNECT__SNOWFLAKE_CI_RUN_ID: ${{ github.run_id }}_${{ github.run_attempt }}
+        run: python -m test.integration.snowflake_postprocessor_behavior_test

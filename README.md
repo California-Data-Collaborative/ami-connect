@@ -61,6 +61,11 @@ Run unit tests from the project's root directory with
 python -m unittest
 ```
 
+The leak and irrigation behavior test runs in GitHub's checks on pull requests that change `amiadapters/storage/snowflake.py`, `sql/` or `requirements.txt` (workflow `snowflake_behavior_tests`). It loads made-up meters into a scratch schema of the test database `CADC_AMI_CI` as the test user `AMI_CONNECT_CI_SVC`. To run it locally with that user's key:
+```
+AMI_CONNECT__SNOWFLAKE_CI_ACCOUNT=<account> AMI_CONNECT__SNOWFLAKE_CI_PRIVATE_KEY="$(cat <key.p8>)" python -m test.integration.snowflake_postprocessor_behavior_test
+```
+
 ### Using the CLI
 
 You can use the CLI called `cli.py` to interact with AMI Connect. Turn on the virtual environment and run:

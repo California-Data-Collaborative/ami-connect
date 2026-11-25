@@ -395,17 +395,12 @@ class TestSnowflakeStorageSink(BaseTestCase):
         self.assertIn("conditional_change_event", irrigation_insert)
         # source column renamed to org_id
         self.assertIn("source as org_id", irrigation_insert.lower())
-        # Each hour's time comes from the reading itself (its own UTC offset), not from the
-        # detection clock labeled with the session time zone
-        self.assertIn("from ami_connect.readings", irrigation_insert.lower())
-        self.assertIn(
-            "join readings_window r on r.device_id = d.device_id "
-            "and r.clock_time = d.timestamp "
-            "and r.same_clock_rank = d.same_clock_rank",
-            " ".join(irrigation_insert.lower().split()),
-        )
-        self.assertIn("r.flowtime as flowtime_ts", irrigation_insert.lower())
+        # Each hour's time is the detection table's flowtime (the real moment, time zone
+        # included), not the clock column labeled with the session time zone
+        self.assertIn("d.flowtime as flowtime_ts", irrigation_insert.lower())
+        self.assertIn("where d.flowtime is not null", irrigation_insert.lower())
         self.assertNotIn("timestamp::timestamp_tz", irrigation_insert.lower())
+        self.assertNotIn("ami_connect.readings", irrigation_insert.lower())
 
         # --- agg table ---
         irrigation_agg = next(
@@ -593,6 +588,13 @@ class TestSnowflakeStorageSink(BaseTestCase):
 
         self.assertEqual(1, self.snowflake_sink.exec_leak_detection.call_count)
 
+    def test_event_building_reads_the_production_tables_by_default(self):
+        # The behavior test points these at its own tables; production must keep the real ones
+        self.assertEqual(
+            "wavelet.global_irrigation_detection", self.snowflake_sink.detection_table
+        )
+        self.assertEqual("ami_connect.readings", self.snowflake_sink.readings_table)
+
     def test_exec_irrigation_detection__recomputes_running_events_from_their_start(
         self,
     ):
@@ -647,19 +649,17 @@ class TestSnowflakeStorageSink(BaseTestCase):
         )
         # The window is read for every meter; the days before it, from the earliest stored start
         # of a still-running event, only for the meters whose event may still be running and
-        # from each one's own stored start. Both the detection rows and the readings that give
-        # them their time.
+        # from each one's own stored start.
         self.assertIn("timestamp::date >= '2025-01-01'", recomputed)
         self.assertIn("timestamp::date <= '2025-01-31'", recomputed)
         self.assertIn("join irrigation_org-id_ongoing o", recomputed)
         self.assertIn("d.timestamp::date >= o.event_start_ts::date", recomputed)
         self.assertIn("d.timestamp::date >= '2024-12-30'", recomputed)
         self.assertIn("d.timestamp::date < '2025-01-01'", recomputed)
-        self.assertIn("flowtime::date >= '2025-01-01'", recomputed)
-        self.assertIn("flowtime::date <= '2025-01-31'", recomputed)
-        self.assertIn("r.flowtime::date >= o.event_start_ts::date", recomputed)
-        self.assertIn("r.flowtime::date >= '2024-12-30'", recomputed)
-        self.assertIn("r.flowtime::date < '2025-01-01'", recomputed)
+        # Each hour's time is the detection row's own flowtime; the readings are not read
+        self.assertIn("d.flowtime as flowtime_ts", recomputed)
+        self.assertIn("where d.flowtime is not null", recomputed)
+        self.assertNotIn("ami_connect.readings", recomputed)
         self.assertNotIn("left join irrigation_org-id_ongoing", recomputed)
         self.assertIn("irrigation_keep_from", recomputed)
         self.assertIn(
@@ -706,7 +706,6 @@ class TestSnowflakeStorageSink(BaseTestCase):
             self.mock_cursor.execute.call_args_list[4][0][0]
         )
         self.assertIn("d.timestamp::date >= '2024-01-02'", recomputed)
-        self.assertIn("r.flowtime::date >= '2024-01-02'", recomputed)
 
         # No meter irrigating at the boundary: nothing before the window is read
         self.mock_cursor.execute.reset_mock()

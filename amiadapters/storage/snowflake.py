@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 LEAK_BACKFILL_WINDOW_DAYS = 30
 # How far back irrigation detection looks for the start of an event that is still running
 IRRIGATION_MAX_LOOKBACK_DAYS = 365
+# Tables read by leak and irrigation event building, relative to the sink's database
+DETECTION_TABLE = "wavelet.global_irrigation_detection"
+READINGS_TABLE = "ami_connect.readings"
 # Size of each window when recomputing irrigation history
 IRRIGATION_BACKFILL_WINDOW_DAYS = 30
 
@@ -241,10 +244,15 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         sink_config: ConfiguredStorageSink,
         raw_loader: RawSnowflakeLoader,
         metrics: Metrics,
+        detection_table: str = DETECTION_TABLE,
+        readings_table: str = READINGS_TABLE,
     ):
         self.org_id = org_id
         self.org_timezone = org_timezone
         self.raw_loader = raw_loader
+        # The tables leak and irrigation event building read. Tests point them at their own copies.
+        self.detection_table = detection_table
+        self.readings_table = readings_table
         super().__init__(sink_config, metrics)
 
     def store_raw(self, run_id: str, extract_outputs: ExtractOutput):
@@ -657,7 +665,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     ,r.register_value
                     ,coalesce(r.estimated::boolean, false) as estimated
                     ,case when not coalesce(r.estimated::boolean, false) and flowinterval = 3600 and r.interval_value > 0 then r.interval_value end as interval_value_clean
-                from ami_connect.readings r
+                from {self.readings_table} r
                 left join leaks_{self.org_id}_ongoing o on r.org_id = o.org_id and r.device_id = o.device_id
                 where 1=1
                 and r.org_id = '{self.org_id}'
@@ -997,7 +1005,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         count_cursor.execute(f"""
             select count(*) from (
                 select distinct *
-                from wavelet.global_irrigation_detection
+                from {self.detection_table}
                 where source = '{self.org_id}'
                 and timestamp::date >= '{window_start}'
                 and timestamp::date <= '{window_end}'
@@ -1014,7 +1022,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             with window_rows as
             (
                 select distinct *
-                from wavelet.global_irrigation_detection
+                from {self.detection_table}
                 where source = '{self.org_id}'
                 and timestamp::date >= '{window_start}'
                 and timestamp::date <= '{window_end}'
@@ -1023,7 +1031,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             , earlier_rows as
             (
                 select distinct d.*
-                from wavelet.global_irrigation_detection d
+                from {self.detection_table} d
                 join irrigation_{self.org_id}_ongoing o
                     on d.source = o.org_id
                     and d.device_id = o.device_id
@@ -1038,56 +1046,16 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                 union all
                 select * from earlier_rows
             )
-            -- global_irrigation_detection.timestamp is the reading's clock time without its UTC
-            -- offset, and the offset differs by adapter: some store readings in Pacific time, others
-            -- (Neptune, Moulton Niguel, Coastside) in UTC. Labeling that clock with the session time zone
-            -- put the UTC-stored orgs' events 7-8 hours late. Take the instant from the reading itself.
-            -- flowtime::timestamp_ntz and flowtime::date are evaluated in the reading's own offset, so
-            -- they line up with timestamp and the window above. A detection row whose reading is gone
-            -- is left out rather than given a label in a different offset from its neighbours.
-            , readings_in_range as
-            (
-                select device_id, flowtime
-                from ami_connect.readings
-                where org_id = '{self.org_id}'
-                and flowtime::date >= '{window_start}'
-                and flowtime::date <= '{window_end}'
-                union all
-                select r.device_id, r.flowtime
-                from ami_connect.readings r
-                join irrigation_{self.org_id}_ongoing o
-                    on r.org_id = o.org_id
-                    and r.device_id = o.device_id
-                    and r.flowtime::date >= o.event_start_ts::date
-                where r.org_id = '{self.org_id}'
-                and r.flowtime::date >= '{lookback_start}'
-                and r.flowtime::date < '{window_start}'
-            )
-            , readings_window as
-            (
-                select device_id
-                    , flowtime
-                    , flowtime::timestamp_ntz as clock_time
-                    -- The fall-back hour has two readings with the same clock time; number them
-                    , row_number() over (partition by device_id, flowtime::timestamp_ntz order by flowtime) as same_clock_rank
-                from readings_in_range
-            )
-            , detection_ranked as
-            (
-                -- ... and the detection table can hold one row per such reading; pair them one to one
-                select d.*
-                    , row_number() over (partition by source, device_id, timestamp order by total_reading) as same_clock_rank
-                from source_data d
-            )
+            -- global_irrigation_detection.flowtime is the hour's real moment, time zone included
+            -- (written by the detection procedure; see sql/irrigation_detection_flowtime.sql).
+            -- timestamp is that moment's clock reading without its offset and only serves as the
+            -- table's key. A row without flowtime is a detection row whose reading no longer exists.
             , with_flowtime as
             (
                 select d.*
-                    , r.flowtime as flowtime_ts
-                from detection_ranked d
-                join readings_window r
-                    on r.device_id = d.device_id
-                    and r.clock_time = d.timestamp
-                    and r.same_clock_rank = d.same_clock_rank
+                    , d.flowtime as flowtime_ts
+                from source_data d
+                where d.flowtime is not null
             )
             , with_events as
             (
@@ -1157,7 +1125,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         if detection_rows and kept_rows < 0.99 * detection_rows:
             logger.error(
                 f"irrigation_{self.org_id}: kept {kept_rows} of {detection_rows} detection rows for "
-                f"{window_start}..{window_end}; readings are missing for the rest"
+                f"{window_start}..{window_end}; the rest have no flowtime (reading gone)"
             )
 
         # Replace the stored rows in one transaction, so a failure part way through leaves
