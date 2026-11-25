@@ -588,6 +588,13 @@ class TestSnowflakeStorageSink(BaseTestCase):
 
         self.assertEqual(1, self.snowflake_sink.exec_leak_detection.call_count)
 
+    def test_event_building_reads_the_production_tables_by_default(self):
+        # The behavior test points these at its own tables; production must keep the real ones
+        self.assertEqual(
+            "wavelet.global_irrigation_detection", self.snowflake_sink.detection_table
+        )
+        self.assertEqual("ami_connect.readings", self.snowflake_sink.readings_table)
+
     def test_exec_irrigation_detection__recomputes_running_events_from_their_start(
         self,
     ):

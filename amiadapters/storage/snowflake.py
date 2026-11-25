@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 LEAK_BACKFILL_WINDOW_DAYS = 30
 # How far back irrigation detection looks for the start of an event that is still running
 IRRIGATION_MAX_LOOKBACK_DAYS = 365
+# Tables read by leak and irrigation event building, relative to the sink's database
+DETECTION_TABLE = "wavelet.global_irrigation_detection"
+READINGS_TABLE = "ami_connect.readings"
 # Size of each window when recomputing irrigation history
 IRRIGATION_BACKFILL_WINDOW_DAYS = 30
 
@@ -241,10 +244,15 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         sink_config: ConfiguredStorageSink,
         raw_loader: RawSnowflakeLoader,
         metrics: Metrics,
+        detection_table: str = DETECTION_TABLE,
+        readings_table: str = READINGS_TABLE,
     ):
         self.org_id = org_id
         self.org_timezone = org_timezone
         self.raw_loader = raw_loader
+        # The tables leak and irrigation event building read. Tests point them at their own copies.
+        self.detection_table = detection_table
+        self.readings_table = readings_table
         super().__init__(sink_config, metrics)
 
     def store_raw(self, run_id: str, extract_outputs: ExtractOutput):
@@ -657,7 +665,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
                     ,r.register_value
                     ,coalesce(r.estimated::boolean, false) as estimated
                     ,case when not coalesce(r.estimated::boolean, false) and flowinterval = 3600 and r.interval_value > 0 then r.interval_value end as interval_value_clean
-                from ami_connect.readings r
+                from {self.readings_table} r
                 left join leaks_{self.org_id}_ongoing o on r.org_id = o.org_id and r.device_id = o.device_id
                 where 1=1
                 and r.org_id = '{self.org_id}'
@@ -997,7 +1005,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
         count_cursor.execute(f"""
             select count(*) from (
                 select distinct *
-                from wavelet.global_irrigation_detection
+                from {self.detection_table}
                 where source = '{self.org_id}'
                 and timestamp::date >= '{window_start}'
                 and timestamp::date <= '{window_end}'
@@ -1014,7 +1022,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             with window_rows as
             (
                 select distinct *
-                from wavelet.global_irrigation_detection
+                from {self.detection_table}
                 where source = '{self.org_id}'
                 and timestamp::date >= '{window_start}'
                 and timestamp::date <= '{window_end}'
@@ -1023,7 +1031,7 @@ class SnowflakeStorageSink(BaseAMIStorageSink):
             , earlier_rows as
             (
                 select distinct d.*
-                from wavelet.global_irrigation_detection d
+                from {self.detection_table} d
                 join irrigation_{self.org_id}_ongoing o
                     on d.source = o.org_id
                     and d.device_id = o.device_id
