@@ -8,7 +8,9 @@
 --
 -- Run under the owning role (USE ROLE AMI_CONNECT_ADMIN_ROLE as PRIMARY; see docs/irrigation edit conventions), in this
 -- order, before deploying the ami-connect change that reads the column. Nothing here changes TIMESTAMP, the MERGE key,
--- or any detection value.
+-- or any stored detection value. For rows written after step 2, the detector's month feature is the agency's local
+-- month (DETECT_IRRIGATION_V4 receives the hour but does not use it), so for UTC-stored agencies the first 7-8 hours of
+-- a month can fall in a different month's set of the seasonal gate (January/February, July/August).
 
 -- 1. The column. TIMESTAMP stays as the merge key; FLOWTIME is the same hour as an instant.
 ALTER TABLE CADC_AMI.WAVELET.GLOBAL_IRRIGATION_DETECTION ADD COLUMN IF NOT EXISTS FLOWTIME TIMESTAMP_TZ;
@@ -99,7 +101,8 @@ UPDATE CADC_AMI.WAVELET.GLOBAL_IRRIGATION_DETECTION t
          WHERE g.SOURCE = '<org_id>' AND g.FLOWTIME IS NULL AND r.ORG_ID = '<org_id>'
         QUALIFY ROW_NUMBER() OVER (PARTITION BY g.SOURCE, g.DEVICE_ID, g.TIMESTAMP ORDER BY r.FLOWTIME) = 1
        ) s
- WHERE t.SOURCE = s.SOURCE AND t.DEVICE_ID = s.DEVICE_ID AND t.TIMESTAMP = s.TIMESTAMP AND t.SOURCE = '<org_id>';
+ WHERE t.SOURCE = s.SOURCE AND t.DEVICE_ID = s.DEVICE_ID AND t.TIMESTAMP = s.TIMESTAMP AND t.SOURCE = '<org_id>'
+   AND t.FLOWTIME IS NULL;
 
 -- 4. Check, per agency: rows still without FLOWTIME are detection rows whose reading no longer exists.
 SELECT SOURCE, COUNT(*) AS rows_total, COUNT_IF(FLOWTIME IS NULL) AS rows_without_flowtime,
