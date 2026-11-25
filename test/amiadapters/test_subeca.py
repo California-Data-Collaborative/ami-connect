@@ -345,6 +345,34 @@ class TestSubecaAdapter(BaseTestCase):
         # Includes one retry
         self.assertEqual(4, mock_request.call_count)
 
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_metadata_handles_null_nested_objects(self, mock_request):
+        response = create_mock_account_metadata_response()
+        response.json.return_value["meterInfo"] = None
+        response.json.return_value["device"]["latestReading"] = None
+        mock_request.return_value = response
+
+        account = self.adapter._extract_metadata_for_account("acct1")
+
+        self.assertEqual(account.accountId, "acct1")
+        self.assertIsNone(account.meterSize)
+        self.assertEqual(account.deviceId, "device1")
+        self.assertEqual(account.latestReading.deviceId, "device1")
+        self.assertIsNone(account.latestReading.value)
+        self.assertIsNone(account.latestReading.usageTime)
+
+    @patch("amiadapters.adapters.subeca.requests.request")
+    def test_extract_metadata_handles_null_device(self, mock_request):
+        response = create_mock_account_metadata_response()
+        response.json.return_value["device"] = None
+        mock_request.return_value = response
+
+        account = self.adapter._extract_metadata_for_account("acct1")
+
+        self.assertEqual(account.meterSize, "5/8")
+        self.assertIsNone(account.deviceId)
+        self.assertIsNone(account.latestReading.value)
+
     def make_extract_output(self, accounts, usages):
         return ExtractOutput(
             {

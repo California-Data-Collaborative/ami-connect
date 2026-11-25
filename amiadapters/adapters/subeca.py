@@ -259,12 +259,16 @@ class SubecaAdapter(BaseAMIAdapter):
         )
 
         raw_account = result.json()
+        # Use `or {}` rather than a .get() default: the API returns explicit
+        # nulls for these nested objects on some accounts.
         raw_device = raw_account.get("device") or {}
+        raw_latest_reading = raw_device.get("latestReading") or {}
+        raw_meter_info = raw_account.get("meterInfo") or {}
         latest_reading = SubecaReading(
             deviceId=raw_device.get("deviceId"),
-            usageTime=raw_device.get("latestReading", {}).get("date"),
-            value=raw_device.get("latestReading", {}).get("value"),
-            unit=raw_device.get("latestReading", {}).get("unit"),
+            usageTime=raw_latest_reading.get("date"),
+            value=raw_latest_reading.get("value"),
+            unit=raw_latest_reading.get("unit"),
         )
         return SubecaAccount(
             accountId=raw_account["accountId"],
@@ -272,7 +276,7 @@ class SubecaAdapter(BaseAMIAdapter):
             meterSerial=raw_account.get("meterSerial"),
             billingRoute=raw_account.get("billingRoute"),
             registerSerial=raw_account.get("registerSerial"),
-            meterSize=raw_account.get("meterInfo", {}).get("meterSize"),
+            meterSize=raw_meter_info.get("meterSize"),
             createdAt=raw_account.get("createdAt"),
             deviceId=raw_device.get("deviceId"),
             activeProtocol=raw_device.get("activeProtocol"),
